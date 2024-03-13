@@ -1,0 +1,6 @@
+export DPDK_DIR=/root/ovsgw/dpdk-stable-19.11.2
+export DPDK_TARGET=x86_64-native-linuxapp-gcc
+export RTE_SDK=/root/ovsgw/dpdk-stable-19.11.2
+export RTE_TARGET=x86_64-native-linuxapp-gcc
+export DPDK_BUILD=$DPDK_DIR/x86_64-native-linuxapp-gcc
+export LD_LIBRARY_PATH=$DPDK_DIR/x86_64-native-linuxapp-gcc/lib
