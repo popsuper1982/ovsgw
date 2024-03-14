@@ -262,6 +262,12 @@ enum ofp_raw_action_type {
     /* OF1.5+(29): uint32_t. */
     OFPAT_RAW15_METER,
 
+    /* OF1.0+(28): struct ofp_action_config_gw. */
+    OFPAT_RAW_CONFIG_GW,
+
+    /* OF1.0+(29): struct ofp_action_handle_gw. */
+    OFPAT_RAW_HANDLE_GW,
+
 /* ## ------------------------- ## */
 /* ## Nicira extension actions. ## */
 /* ## ------------------------- ## */
@@ -2727,6 +2733,35 @@ check_REG_MOVE(const struct ofpact_reg_move *a,
 {
     return nxm_reg_move_check(a, cp->match);
 }
+
+struct ofp_action_config_gw {
+    ovs_be16 type;
+    ovs_be16 len;
+    uint32_t param1;
+    ovs_be32 param2;
+    struct eth_addr param3;
+    uint32_t param4;
+    ovs_be32 param5;
+    struct eth_addr param6;
+    uint32_t param7;
+    ovs_be32 param8;
+    struct eth_addr param9;
+    uint8_t pad[2];
+};
+OFP_ASSERT(sizeof(struct ofp_action_config_gw) == 48);
+
+struct ofp_action_handle_gw {
+    ovs_be16 type;
+    ovs_be16 len;
+    uint32_t pipeline1;
+    uint32_t pipeline2;
+    uint32_t pipeline3;
+    uint32_t pipeline4;
+    uint32_t pipeline5;
+};
+OFP_ASSERT(sizeof(struct ofp_action_handle_gw) == 24);
+
+
 
 /* Action structure for OFPAT12_SET_FIELD. */
 struct ofp12_action_set_field {
@@ -8883,6 +8918,8 @@ get_ofpact_map(enum ofp_version version)
         { OFPACT_SET_L4_SRC_PORT, 9 },
         { OFPACT_SET_L4_DST_PORT, 10 },
         { OFPACT_ENQUEUE, 11 },
+        { OFPACT_CONFIG_GW, 28},
+        { OFPACT_HANDLE_GW, 29},
         { 0, -1 },
     };
 
@@ -8913,6 +8950,8 @@ get_ofpact_map(enum ofp_version version)
         { OFPACT_GROUP, 22 },
         { OFPACT_SET_IP_TTL, 23 },
         { OFPACT_DEC_TTL, 24 },
+        { OFPACT_CONFIG_GW, 28},
+        { OFPACT_HANDLE_GW, 29},
         { 0, -1 },
     };
 
@@ -8934,6 +8973,8 @@ get_ofpact_map(enum ofp_version version)
         { OFPACT_SET_FIELD, 25 },
         /* OF1.3+ OFPAT_PUSH_PBB (26) not supported. */
         /* OF1.3+ OFPAT_POP_PBB (27) not supported. */
+        { OFPACT_CONFIG_GW, 28},
+        { OFPACT_HANDLE_GW, 29},
         { 0, -1 },
     };
 
