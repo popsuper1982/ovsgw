@@ -1385,14 +1385,6 @@ parse_CONFIG_GW(const char *arg, const struct ofpact_parse_params *pp)
 }
 
 static void
-format_LEARN(const struct ofpact_learn *a,
-             const struct ofpact_format_params *fp)
-             struct ofpact_config_gw *config_gw;
-
- 
-             
-
-static void
 format_CONFIG_GW(const struct ofpact_config_gw *a, const struct ofpact_format_params *fp)
 {
     struct ds *s;
@@ -1400,93 +1392,288 @@ format_CONFIG_GW(const struct ofpact_config_gw *a, const struct ofpact_format_pa
     s = fp->s;
 
     ds_put_format(s, "config_gw(");
-
     if (a->param1 != 0) {
-        ds_put_format(s, ",fin_idle_timeout=%s%"PRIu16,
-                      colors.param, colors.end, learn->fin_idle_timeout);
+        ds_put_format(s, "param1=%"PRIu32, a->param1);
     }
-    if (learn->fin_hard_timeout) {
-        ds_put_format(s, "%s,fin_hard_timeout=%s%"PRIu16,
-                      colors.param, colors.end, learn->fin_hard_timeout);
+    if (a->param2 != 0) {
+        ds_put_format(s, ",param2=%"PRIx32, ntohl(a->param2));
     }
-    if (learn->priority != OFP_DEFAULT_PRIORITY) {
-        ds_put_format(s, "%s,priority=%s%"PRIu16,
-                      colors.special, colors.end, learn->priority);
+    if (a->param3 != 0) {
+        ds_put_format(s, ",param3=%"ETH_ADDR_FMT, ETH_ADDR_ARGS(a->param3));
     }
-    if (learn->flags & NX_LEARN_F_SEND_FLOW_REM) {
-        ds_put_format(s, ",%ssend_flow_rem%s", colors.value, colors.end);
+    if (a->param4 != 0) {
+        ds_put_format(s, "param1=%"PRIu32, a->param1);
     }
-    if (learn->flags & NX_LEARN_F_DELETE_LEARNED) {
-        ds_put_format(s, ",%sdelete_learned%s", colors.value, colors.end);
+    if (a->param5 != 0) {
+        ds_put_format(s, ",param2=%"PRIx32, ntohl(a->param2));
     }
-    if (learn->cookie != 0) {
-        ds_put_format(s, ",%scookie=%s%#"PRIx64,
-                      colors.param, colors.end, ntohll(learn->cookie));
+    if (a->param6 != 0) {
+        ds_put_format(s, ",param3=%"ETH_ADDR_FMT, ETH_ADDR_ARGS(a->param3));
     }
-    if (learn->limit != 0) {
-        ds_put_format(s, ",%slimit=%s%"PRIu32,
-                      colors.param, colors.end, learn->limit);
+    if (a->param7 != 0) {
+        ds_put_format(s, "param1=%"PRIu32, a->param1);
     }
-    if (learn->flags & NX_LEARN_F_WRITE_RESULT) {
-        ds_put_format(s, ",%sresult_dst=%s", colors.param, colors.end);
-        mf_format_subfield(&learn->result_dst, s);
+    if (a->param8 != 0) {
+        ds_put_format(s, ",param2=%"PRIx32, ntohl(a->param2));
+    }
+    if (a->param9 != 0) {
+        ds_put_format(s, ",param3=%"ETH_ADDR_FMT, ETH_ADDR_ARGS(a->param3));
     }
 
-    OFPACT_LEARN_SPEC_FOR_EACH (spec, learn) {
-        unsigned int n_bytes = DIV_ROUND_UP(spec->n_bits, 8);
-        ds_put_char(s, ',');
-
-        switch (spec->src_type | spec->dst_type) {
-        case NX_LEARN_SRC_IMMEDIATE | NX_LEARN_DST_MATCH: {
-            if (spec->dst.ofs == 0
-                && spec->dst.n_bits == spec->dst.field->n_bits) {
-                union mf_value value;
-
-                memset(&value, 0, sizeof value);
-                memcpy(&value.b[spec->dst.field->n_bytes - n_bytes],
-                       ofpact_learn_spec_imm(spec), n_bytes);
-                ds_put_format(s, "%s%s=%s", colors.param,
-                              spec->dst.field->name, colors.end);
-                mf_format(spec->dst.field, &value, NULL, port_map, s);
-            } else {
-                ds_put_format(s, "%s", colors.param);
-                mf_format_subfield(&spec->dst, s);
-                ds_put_format(s, "=%s", colors.end);
-                ds_put_hex(s, ofpact_learn_spec_imm(spec), n_bytes);
-            }
-            break;
-        }
-        case NX_LEARN_SRC_FIELD | NX_LEARN_DST_MATCH:
-            ds_put_format(s, "%s", colors.param);
-            mf_format_subfield(&spec->dst, s);
-            ds_put_format(s, "%s", colors.end);
-            if (spec->src.field != spec->dst.field ||
-                spec->src.ofs != spec->dst.ofs) {
-                ds_put_format(s, "%s=%s", colors.param, colors.end);
-                mf_format_subfield(&spec->src, s);
-            }
-            break;
-
-        case NX_LEARN_SRC_IMMEDIATE | NX_LEARN_DST_LOAD:
-            ds_put_format(s, "%sload:%s", colors.special, colors.end);
-            ds_put_hex(s, ofpact_learn_spec_imm(spec), n_bytes);
-            ds_put_format(s, "%s->%s", colors.special, colors.end);
-            mf_format_subfield(&spec->dst, s);
-            break;
-
-        case NX_LEARN_SRC_FIELD | NX_LEARN_DST_LOAD:
-            ds_put_format(s, "%sload:%s", colors.special, colors.end);
-            mf_format_subfield(&spec->src, s);
-            ds_put_format(s, "%s->%s", colors.special, colors.end);
-            mf_format_subfield(&spec->dst, s);
-            break;
-
-        case NX_LEARN_SRC_FIELD | NX_LEARN_DST_OUTPUT:
-            ds_put_format(s, "%soutput:%s", colors.special, colors.end);
-            mf_format_subfield(&spec->src, s);
-            break;
-        }
-    }
-    ds_put_format(s, "%s)%s", colors.learn, colors.end);
-    ds_put_format(s, "gtp_pgw_eth:"ETH_ADDR_FMT, ETH_ADDR_ARGS(a->mac));
+    ds_put_format(s, ")");
 }
+
+
+////////////////////4. action实现，fast path，模式一，内核模式datapath
+
+datapath\linux\compat\include\linux\openvswitch.h
+
+enum ovs_action_attr {
+    OVS_ACTION_ATTR_UNSPEC,
+    OVS_ACTION_ATTR_OUTPUT,       /* u32 port number. */
+    OVS_ACTION_ATTR_USERSPACE,    /* Nested OVS_USERSPACE_ATTR_*. */
+    OVS_ACTION_ATTR_SET,          /* One nested OVS_KEY_ATTR_*. */
+    OVS_ACTION_ATTR_PUSH_VLAN,    /* struct ovs_action_push_vlan. */
+    OVS_ACTION_ATTR_POP_VLAN,     /* No argument. */
+    OVS_ACTION_ATTR_SAMPLE,       /* Nested OVS_SAMPLE_ATTR_*. */
+    OVS_ACTION_ATTR_RECIRC,       /* u32 recirc_id. */
+    OVS_ACTION_ATTR_HASH,         /* struct ovs_action_hash. */
+    OVS_ACTION_ATTR_PUSH_MPLS,    /* struct ovs_action_push_mpls. */
+    OVS_ACTION_ATTR_POP_MPLS,     /* __be16 ethertype. */
+    OVS_ACTION_ATTR_SET_MASKED,   /* One nested OVS_KEY_ATTR_* including
+                       * data immediately followed by a mask.
+                       * The data must be zero for the unmasked
+                       * bits. */
+    OVS_ACTION_ATTR_CT,           /* Nested OVS_CT_ATTR_* . */
+    OVS_ACTION_ATTR_TRUNC,        /* u32 struct ovs_action_trunc. */
+    OVS_ACTION_ATTR_PUSH_ETH,     /* struct ovs_action_push_eth. */
+    OVS_ACTION_ATTR_POP_ETH,      /* No argument. */
+    OVS_ACTION_ATTR_CT_CLEAR,     /* No argument. */
+    OVS_ACTION_ATTR_PUSH_NSH,     /* Nested OVS_NSH_KEY_ATTR_*. */
+    OVS_ACTION_ATTR_POP_NSH,      /* No argument. */
+    OVS_ACTION_ATTR_METER,        /* u32 meter number. */
+    OVS_ACTION_ATTR_CLONE,        /* Nested OVS_CLONE_ATTR_*.  */
+    OVS_ACTION_ATTR_CHECK_PKT_LEN, /* Nested OVS_CHECK_PKT_LEN_ATTR_*. */
+
+#ifndef __KERNEL__
+    OVS_ACTION_ATTR_TUNNEL_PUSH,   /* struct ovs_action_push_tnl*/
+    OVS_ACTION_ATTR_TUNNEL_POP,    /* u32 port number. */
+    OVS_ACTION_ATTR_DROP,          /* u32 xlate_error. */
+    OVS_ACTION_ATTR_LB_OUTPUT,     /* u32 bond-id. */
+#endif
+    __OVS_ACTION_ATTR_MAX,        /* Nothing past this will be accepted
+                       * from userspace. */
+
+#ifdef __KERNEL__
+    OVS_ACTION_ATTR_SET_TO_MASKED, /* Kernel module internal masked
+                    * set action converted from
+                    * OVS_ACTION_ATTR_SET. */
+#endif
+};
+
+/* Execute a list of actions against 'skb'. */
+static int do_execute_actions(struct datapath *dp, struct sk_buff *skb,
+                  struct sw_flow_key *key,
+                  const struct nlattr *attr, int len)
+{
+    const struct nlattr *a;
+    int rem;
+
+    for (a = attr, rem = len; rem > 0;
+         a = nla_next(a, &rem)) {
+        int err = 0;
+
+        switch (nla_type(a)) {
+        case OVS_ACTION_ATTR_OUTPUT: {
+            int port = nla_get_u32(a);
+            struct sk_buff *clone;
+
+            /* Every output action needs a separate clone
+             * of 'skb', In case the output action is the
+             * last action, cloning can be avoided.
+             */
+            if (nla_is_last(a, rem)) {
+                do_output(dp, skb, port, key);
+                /* 'skb' has been used for output.
+                 */
+                return 0;
+            }
+
+            clone = skb_clone(skb, GFP_ATOMIC);
+            if (clone)
+                do_output(dp, clone, port, key);
+            OVS_CB(skb)->cutlen = 0;
+            break;
+        }
+
+        case OVS_ACTION_ATTR_TRUNC: {
+            struct ovs_action_trunc *trunc = nla_data(a);
+
+            if (skb->len > trunc->max_len)
+                OVS_CB(skb)->cutlen = skb->len - trunc->max_len;
+            break;
+        }
+
+        case OVS_ACTION_ATTR_USERSPACE:
+            output_userspace(dp, skb, key, a, attr,
+                             len, OVS_CB(skb)->cutlen);
+            OVS_CB(skb)->cutlen = 0;
+            break;
+
+        case OVS_ACTION_ATTR_HASH:
+            execute_hash(skb, key, a);
+            break;
+
+        case OVS_ACTION_ATTR_PUSH_MPLS:
+            err = push_mpls(skb, key, nla_data(a));
+            break;
+
+        case OVS_ACTION_ATTR_POP_MPLS:
+            err = pop_mpls(skb, key, nla_get_be16(a));
+            break;
+
+        case OVS_ACTION_ATTR_PUSH_VLAN:
+            err = push_vlan(skb, key, nla_data(a));
+            break;
+
+        case OVS_ACTION_ATTR_POP_VLAN:
+            err = pop_vlan(skb, key);
+            break;
+
+        case OVS_ACTION_ATTR_RECIRC: {
+            bool last = nla_is_last(a, rem);
+
+            err = execute_recirc(dp, skb, key, a, last);
+            if (last) {
+                /* If this is the last action, the skb has
+                 * been consumed or freed.
+                 * Return immediately.
+                 */
+                return err;
+            }
+            break;
+        }
+
+        case OVS_ACTION_ATTR_SET:
+            err = execute_set_action(skb, key, nla_data(a));
+            break;
+
+        case OVS_ACTION_ATTR_SET_MASKED:
+        case OVS_ACTION_ATTR_SET_TO_MASKED:
+            err = execute_masked_set_action(skb, key, nla_data(a));
+            break;
+
+        case OVS_ACTION_ATTR_SAMPLE: {
+            bool last = nla_is_last(a, rem);
+
+            err = sample(dp, skb, key, a, last);
+            if (last)
+                return err;
+
+            break;
+        }
+
+        case OVS_ACTION_ATTR_CT:
+            if (!is_flow_key_valid(key)) {
+                err = ovs_flow_key_update(skb, key);
+                if (err)
+                    return err;
+            }
+
+            err = ovs_ct_execute(ovs_dp_get_net(dp), skb, key,
+                         nla_data(a));
+
+            /* Hide stolen IP fragments from user space. */
+            if (err)
+                return err == -EINPROGRESS ? 0 : err;
+            break;
+
+        case OVS_ACTION_ATTR_CT_CLEAR:
+            err = ovs_ct_clear(skb, key);
+            break;
+
+        case OVS_ACTION_ATTR_PUSH_ETH:
+            err = push_eth(skb, key, nla_data(a));
+            break;
+
+        case OVS_ACTION_ATTR_POP_ETH:
+            err = pop_eth(skb, key);
+            break;
+
+        case OVS_ACTION_ATTR_PUSH_NSH: {
+            u8 buffer[NSH_HDR_MAX_LEN];
+            struct nshhdr *nh = (struct nshhdr *)buffer;
+
+            err = nsh_hdr_from_nlattr(nla_data(a), nh,
+                          NSH_HDR_MAX_LEN);
+            if (unlikely(err))
+                break;
+            err = push_nsh(skb, key, nh);
+            break;
+        }
+
+        case OVS_ACTION_ATTR_POP_NSH:
+            err = pop_nsh(skb, key);
+            break;
+
+        case OVS_ACTION_ATTR_METER:
+            if (ovs_meter_execute(dp, skb, key, nla_get_u32(a))) {
+                consume_skb(skb);
+                return 0;
+            }
+                       break;
+
+        case OVS_ACTION_ATTR_CLONE: {
+            bool last = nla_is_last(a, rem);
+
+            err = clone(dp, skb, key, a, last);
+            if (last)
+                return err;
+            break;
+        }
+
+        case OVS_ACTION_ATTR_CHECK_PKT_LEN: {
+                        bool last = nla_is_last(a, rem);
+
+                        err = execute_check_pkt_len(dp, skb, key, a, last);
+                        if (last)
+                                return err;
+
+                        break;
+                }
+        }
+
+        if (unlikely(err)) {
+            kfree_skb(skb);
+            return err;
+        }
+    }
+
+/*
+#ifndef HAVE_CONSUME_SKB
+#define consume_skb kfree_skb
+#endif
+*/
+    consume_skb(skb);
+    return 0;
+}
+
+////////////////////5. action实现，fast path，模式二，DPDK模式
+
+
+
+////////////////////6. action实现，slow path
+
+
+
+////////////////////7. 处理upcall，slow path处理完毕后，将flow放入fast path
+
+
+
+////////////////////8. 用户态和内核态netlink互通
+
+
+
+////////////////////9. 命令行ovs-ofctl修改
+
+
