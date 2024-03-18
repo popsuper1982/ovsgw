@@ -1670,6 +1670,20 @@ ovs_thread_create->udpif_upcall_handler->recv_upcalls->upcall_receive + process_
 
 process_upcall->upcall_xlate->xlate_actions->rule_dpif_lookup_from_table + do_xlate_actions
 
+xlate_actions函数：openflow流表匹配完成后，调用do_xlate_actions函数把openflow action转化为精确流表的action；
+Translating ofpact action- Kernel datapath  In ofproto-dpif-xlate.c do_xlate_actions nl_msg_put_u16
+Eg.
+ OpenFlows
+table=0, priority=100 in_port=1,ip,actions=check_pkt_larger:1500->NXM_NX_REG0[0],resubmit(,1)
+table=1, priority=200,in_port=1,ip,reg0=0x1/0x1 actions=output:3
+table=1, priority=100,in_port=1,ip,actions=output:4
+Translated to datapath action as:
+ check_pkt_len(1500, gt(output:3), less_eq(output:4))
+
+Translating ofpact action- DPDK datapath  in lib/odp-execute.c odp_execute_actions
+
+
+
 handle_upcalls 将flow rule添加到内核中的fast path -> dpif_operate -> dpif_netlink_operate
 
 handler线程只对传统ovs架构下,对内核upcall的消息进行处理。即慢速路径的处理就是handler线程的工作内容。ovs+dpdk下，handler线程也存在，但是一直处于堵塞状态，实际上什么也没干。ovs+dpdk下的慢速路径的处理直接由收包线程执行，由pmd线程做的。
@@ -1678,11 +1692,11 @@ handler线程只对传统ovs架构下,对内核upcall的消息进行处理。即
 
 fast_path_processing->dp_netdev_pmd_lookup_dpcls + dpcls_lookup(查找fast path)->如果miss，直接调用 handle_packet_upcall->dp_netdev_upcall + dp_netdev_execute_actions + dp_netdev_flow_add + emc_probabilistic_insert
 
-dp_netdev_upcall->upcall_receive + process_upcall
+dp_netdev_upcall->upcall_cb->upcall_receive + process_upcall
 dp_netdev_execute_actions->odp_execute_actions->dp_execute_cb
 dp_netdev_flow_add + emc_probabilistic_insert 将flow rule添加到DPDK中的fast path
 
-upcall_receive里面有
+upcall_receive 里面有
 upcall->type = classify_upcall(type, userdata, &upcall->cookie);
 
 
