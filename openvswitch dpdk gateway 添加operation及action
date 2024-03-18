@@ -1662,8 +1662,327 @@ static int do_execute_actions(struct datapath *dp, struct sk_buff *skb,
 
 
 
-////////////////////6. action实现，slow path
+////////////////////6. fast path没有匹配上，upcall到慢路径，action实现，slow path
 
+对于内核态的fast path，如何upcall到show path呢？
+
+ovs_thread_create->udpif_upcall_handler->recv_upcalls->upcall_receive + process_upcall + handle_upcalls
+
+process_upcall->upcall_xlate->xlate_actions->rule_dpif_lookup_from_table + do_xlate_actions
+
+handle_upcalls 将flow rule添加到内核中的fast path -> dpif_operate -> dpif_netlink_operate
+
+handler线程只对传统ovs架构下,对内核upcall的消息进行处理。即慢速路径的处理就是handler线程的工作内容。ovs+dpdk下，handler线程也存在，但是一直处于堵塞状态，实际上什么也没干。ovs+dpdk下的慢速路径的处理直接由收包线程执行，由pmd线程做的。
+
+对于DPDK的fast path，如果upcall到slow path呢？
+
+fast_path_processing->dp_netdev_pmd_lookup_dpcls + dpcls_lookup(查找fast path)->如果miss，直接调用 handle_packet_upcall->dp_netdev_upcall + dp_netdev_execute_actions + dp_netdev_flow_add + emc_probabilistic_insert
+
+dp_netdev_upcall->upcall_receive + process_upcall
+dp_netdev_execute_actions->odp_execute_actions->dp_execute_cb
+dp_netdev_flow_add + emc_probabilistic_insert 将flow rule添加到DPDK中的fast path
+
+lib/ofp-actions.c
+
+/* Returns the ofpact following 'ofpact', except that if 'ofpact' contains
+ * nested ofpacts it returns the first one. */
+struct ofpact *
+ofpact_next_flattened(const struct ofpact *ofpact)
+{
+    switch (ofpact->type) {
+    case OFPACT_OUTPUT:
+    case OFPACT_GROUP:
+    case OFPACT_CONTROLLER:
+    case OFPACT_ENQUEUE:
+    case OFPACT_OUTPUT_REG:
+    case OFPACT_OUTPUT_TRUNC:
+    case OFPACT_BUNDLE:
+    case OFPACT_SET_FIELD:
+    case OFPACT_SET_VLAN_VID:
+    case OFPACT_SET_VLAN_PCP:
+    case OFPACT_STRIP_VLAN:
+    case OFPACT_PUSH_VLAN:
+    case OFPACT_SET_ETH_SRC:
+    case OFPACT_SET_ETH_DST:
+    case OFPACT_SET_IPV4_SRC:
+    case OFPACT_SET_IPV4_DST:
+    case OFPACT_SET_IP_DSCP:
+    case OFPACT_SET_IP_ECN:
+    case OFPACT_SET_IP_TTL:
+    case OFPACT_SET_L4_SRC_PORT:
+    case OFPACT_SET_L4_DST_PORT:
+    case OFPACT_REG_MOVE:
+    case OFPACT_STACK_PUSH:
+    case OFPACT_STACK_POP:
+    case OFPACT_DEC_TTL:
+    case OFPACT_SET_MPLS_LABEL:
+    case OFPACT_SET_MPLS_TC:
+    case OFPACT_SET_MPLS_TTL:
+    case OFPACT_DEC_MPLS_TTL:
+    case OFPACT_PUSH_MPLS:
+    case OFPACT_POP_MPLS:
+    case OFPACT_SET_TUNNEL:
+    case OFPACT_SET_QUEUE:
+    case OFPACT_POP_QUEUE:
+    case OFPACT_FIN_TIMEOUT:
+    case OFPACT_RESUBMIT:
+    case OFPACT_LEARN:
+    case OFPACT_CONJUNCTION:
+    case OFPACT_MULTIPATH:
+    case OFPACT_NOTE:
+    case OFPACT_EXIT:
+    case OFPACT_SAMPLE:
+    case OFPACT_UNROLL_XLATE:
+    case OFPACT_CT_CLEAR:
+    case OFPACT_DEBUG_RECIRC:
+    case OFPACT_DEBUG_SLOW:
+    case OFPACT_METER:
+    case OFPACT_CLEAR_ACTIONS:
+    case OFPACT_WRITE_METADATA:
+    case OFPACT_GOTO_TABLE:
+    case OFPACT_NAT:
+    case OFPACT_ENCAP:
+    case OFPACT_DECAP:
+    case OFPACT_DEC_NSH_TTL:
+    case OFPACT_CHECK_PKT_LARGER:
+    case OFPACT_DELETE_FIELD:
+        return ofpact_next(ofpact);
+
+    case OFPACT_CLONE:
+        return ofpact_get_CLONE(ofpact)->actions;
+
+    case OFPACT_CT:
+        return ofpact_get_CT(ofpact)->actions;
+
+    case OFPACT_WRITE_ACTIONS:
+        return ofpact_get_WRITE_ACTIONS(ofpact)->actions;
+    }
+
+    OVS_NOT_REACHED();
+}
+
+
+enum ovs_instruction_type
+ovs_instruction_type_from_ofpact_type(enum ofpact_type type,
+                                      enum ofp_version version)
+{
+    switch (type) {
+    case OFPACT_METER:
+        return (version >= OFP15_VERSION
+                ? OVSINST_OFPIT11_APPLY_ACTIONS
+                : OVSINST_OFPIT13_METER);
+    case OFPACT_CLEAR_ACTIONS:
+        return OVSINST_OFPIT11_CLEAR_ACTIONS;
+    case OFPACT_WRITE_ACTIONS:
+        return OVSINST_OFPIT11_WRITE_ACTIONS;
+    case OFPACT_WRITE_METADATA:
+        return OVSINST_OFPIT11_WRITE_METADATA;
+    case OFPACT_GOTO_TABLE:
+        return OVSINST_OFPIT11_GOTO_TABLE;
+    case OFPACT_OUTPUT:
+    case OFPACT_GROUP:
+    case OFPACT_CLONE:
+    case OFPACT_CONTROLLER:
+    case OFPACT_ENQUEUE:
+    case OFPACT_OUTPUT_REG:
+    case OFPACT_OUTPUT_TRUNC:
+    case OFPACT_BUNDLE:
+    case OFPACT_SET_VLAN_VID:
+    case OFPACT_SET_VLAN_PCP:
+    case OFPACT_STRIP_VLAN:
+    case OFPACT_PUSH_VLAN:
+    case OFPACT_SET_ETH_SRC:
+    case OFPACT_SET_ETH_DST:
+    case OFPACT_SET_IPV4_SRC:
+    case OFPACT_SET_IPV4_DST:
+    case OFPACT_SET_IP_DSCP:
+    case OFPACT_SET_IP_ECN:
+    case OFPACT_SET_IP_TTL:
+    case OFPACT_SET_L4_SRC_PORT:
+    case OFPACT_SET_L4_DST_PORT:
+    case OFPACT_REG_MOVE:
+    case OFPACT_SET_FIELD:
+    case OFPACT_STACK_PUSH:
+    case OFPACT_STACK_POP:
+    case OFPACT_DEC_TTL:
+    case OFPACT_SET_MPLS_LABEL:
+    case OFPACT_SET_MPLS_TC:
+    case OFPACT_SET_MPLS_TTL:
+    case OFPACT_DEC_MPLS_TTL:
+    case OFPACT_PUSH_MPLS:
+    case OFPACT_POP_MPLS:
+    case OFPACT_SET_TUNNEL:
+    case OFPACT_SET_QUEUE:
+    case OFPACT_POP_QUEUE:
+    case OFPACT_FIN_TIMEOUT:
+    case OFPACT_RESUBMIT:
+    case OFPACT_LEARN:
+    case OFPACT_CONJUNCTION:
+    case OFPACT_MULTIPATH:
+    case OFPACT_NOTE:
+    case OFPACT_EXIT:
+    case OFPACT_UNROLL_XLATE:
+    case OFPACT_SAMPLE:
+    case OFPACT_DEBUG_RECIRC:
+    case OFPACT_DEBUG_SLOW:
+    case OFPACT_CT:
+    case OFPACT_CT_CLEAR:
+    case OFPACT_NAT:
+    case OFPACT_ENCAP:
+    case OFPACT_DECAP:
+    case OFPACT_DEC_NSH_TTL:
+    case OFPACT_CHECK_PKT_LARGER:
+    case OFPACT_DELETE_FIELD:
+    default:
+        return OVSINST_OFPIT11_APPLY_ACTIONS;
+    }
+}
+
+/* Returns true if 'action' outputs to 'port', false otherwise. */
+static bool
+ofpact_outputs_to_port(const struct ofpact *ofpact, ofp_port_t port)
+{
+    switch (ofpact->type) {
+    case OFPACT_OUTPUT:
+        return ofpact_get_OUTPUT(ofpact)->port == port;
+    case OFPACT_ENQUEUE:
+        return ofpact_get_ENQUEUE(ofpact)->port == port;
+    case OFPACT_CONTROLLER:
+        return port == OFPP_CONTROLLER;
+
+    case OFPACT_OUTPUT_REG:
+    case OFPACT_OUTPUT_TRUNC:
+    case OFPACT_BUNDLE:
+    case OFPACT_SET_VLAN_VID:
+    case OFPACT_SET_VLAN_PCP:
+    case OFPACT_STRIP_VLAN:
+    case OFPACT_PUSH_VLAN:
+    case OFPACT_SET_ETH_SRC:
+    case OFPACT_SET_ETH_DST:
+    case OFPACT_SET_IPV4_SRC:
+    case OFPACT_SET_IPV4_DST:
+    case OFPACT_SET_IP_DSCP:
+    case OFPACT_SET_IP_ECN:
+    case OFPACT_SET_IP_TTL:
+    case OFPACT_SET_L4_SRC_PORT:
+    case OFPACT_SET_L4_DST_PORT:
+    case OFPACT_REG_MOVE:
+    case OFPACT_SET_FIELD:
+    case OFPACT_STACK_PUSH:
+    case OFPACT_STACK_POP:
+    case OFPACT_DEC_TTL:
+    case OFPACT_SET_MPLS_LABEL:
+    case OFPACT_SET_MPLS_TC:
+    case OFPACT_SET_MPLS_TTL:
+    case OFPACT_DEC_MPLS_TTL:
+    case OFPACT_SET_TUNNEL:
+    case OFPACT_WRITE_METADATA:
+    case OFPACT_SET_QUEUE:
+    case OFPACT_POP_QUEUE:
+    case OFPACT_FIN_TIMEOUT:
+    case OFPACT_RESUBMIT:
+    case OFPACT_LEARN:
+    case OFPACT_CONJUNCTION:
+    case OFPACT_MULTIPATH:
+    case OFPACT_NOTE:
+    case OFPACT_EXIT:
+    case OFPACT_UNROLL_XLATE:
+    case OFPACT_PUSH_MPLS:
+    case OFPACT_POP_MPLS:
+    case OFPACT_SAMPLE:
+    case OFPACT_CLEAR_ACTIONS:
+    case OFPACT_CLONE:
+    case OFPACT_WRITE_ACTIONS:
+    case OFPACT_GOTO_TABLE:
+    case OFPACT_METER:
+    case OFPACT_GROUP:
+    case OFPACT_DEBUG_RECIRC:
+    case OFPACT_DEBUG_SLOW:
+    case OFPACT_CT:
+    case OFPACT_CT_CLEAR:
+    case OFPACT_NAT:
+    case OFPACT_ENCAP:
+    case OFPACT_DECAP:
+    case OFPACT_DEC_NSH_TTL:
+    case OFPACT_CHECK_PKT_LARGER:
+    case OFPACT_DELETE_FIELD:
+    default:
+        return false;
+    }
+}
+
+/* True if an action is allowed in the action set.
+ * False otherwise. */
+static bool
+ofpact_is_allowed_in_actions_set(const struct ofpact *a)
+{
+    return action_set_classify(a) != ACTION_SLOT_INVALID;
+}
+static enum action_set_class
+action_set_classify(const struct ofpact *a)
+{
+    switch (a->type) {
+#define SLOT(OFPACT) case OFPACT: return ACTION_SLOT_##OFPACT;
+        ACTION_SET_ORDER
+#undef SLOT
+
+#define FINAL(OFPACT) case OFPACT: return ACTION_SLOT_##OFPACT;
+        ACTION_SET_FINAL_PRIORITY
+#undef FINAL
+
+    case OFPACT_SET_FIELD:
+    case OFPACT_REG_MOVE:
+    case OFPACT_SET_ETH_DST:
+    case OFPACT_SET_ETH_SRC:
+    case OFPACT_SET_IP_DSCP:
+    case OFPACT_SET_IP_ECN:
+    case OFPACT_SET_IP_TTL:
+    case OFPACT_SET_IPV4_DST:
+    case OFPACT_SET_IPV4_SRC:
+    case OFPACT_SET_L4_DST_PORT:
+    case OFPACT_SET_L4_SRC_PORT:
+    case OFPACT_SET_MPLS_LABEL:
+    case OFPACT_SET_MPLS_TC:
+    case OFPACT_SET_MPLS_TTL:
+    case OFPACT_SET_QUEUE:
+    case OFPACT_SET_TUNNEL:
+    case OFPACT_SET_VLAN_PCP:
+    case OFPACT_SET_VLAN_VID:
+        return ACTION_SLOT_SET_OR_MOVE;
+
+    case OFPACT_BUNDLE:
+    case OFPACT_CLEAR_ACTIONS:
+    case OFPACT_CLONE:
+    case OFPACT_NAT:
+    case OFPACT_CONTROLLER:
+    case OFPACT_ENQUEUE:
+    case OFPACT_EXIT:
+    case OFPACT_UNROLL_XLATE:
+    case OFPACT_FIN_TIMEOUT:
+    case OFPACT_GOTO_TABLE:
+    case OFPACT_LEARN:
+    case OFPACT_CONJUNCTION:
+    case OFPACT_METER:
+    case OFPACT_MULTIPATH:
+    case OFPACT_NOTE:
+    case OFPACT_OUTPUT_REG:
+    case OFPACT_OUTPUT_TRUNC:
+    case OFPACT_POP_QUEUE:
+    case OFPACT_SAMPLE:
+    case OFPACT_STACK_POP:
+    case OFPACT_STACK_PUSH:
+    case OFPACT_WRITE_ACTIONS:
+    case OFPACT_WRITE_METADATA:
+    case OFPACT_DEBUG_RECIRC:
+    case OFPACT_DEBUG_SLOW:
+    case OFPACT_CHECK_PKT_LARGER:
+    case OFPACT_DELETE_FIELD:
+        return ACTION_SLOT_INVALID;
+
+    default:
+        OVS_NOT_REACHED();
+    }
+}
 
 
 ////////////////////7. 处理upcall，slow path处理完毕后，将flow放入fast path
