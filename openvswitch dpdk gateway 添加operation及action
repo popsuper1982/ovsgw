@@ -1682,6 +1682,12 @@ dp_netdev_upcall->upcall_receive + process_upcall
 dp_netdev_execute_actions->odp_execute_actions->dp_execute_cb
 dp_netdev_flow_add + emc_probabilistic_insert 将flow rule添加到DPDK中的fast path
 
+upcall_receive里面有
+upcall->type = classify_upcall(type, userdata, &upcall->cookie);
+
+
+
+
 lib/ofp-actions.c
 
 /* Returns the ofpact following 'ofpact', except that if 'ofpact' contains
