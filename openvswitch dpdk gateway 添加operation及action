@@ -1710,10 +1710,85 @@ dp_netdev_flow_add + emc_probabilistic_insert 将flow rule添加到DPDK中的fas
 我们需要解析一下，对于datapath kernel模式和DPDK模式下，process_upcall 一直调用到 do_xlate_actions ，两者的区别是什么？DPDK会调用do_xlate_actions吗，如果调用的话，是在这里执行的action吗，DPDK后面不是有一个函数odp_execute_actions专门执行action吗，如果不执行action，那datapath模式在哪里执行的action呢？
 
 猜测，do_xlate_actions所做的不是执行action，而是转换action，对于datapath内核模式，转换成为内核的action，然后通过netlink告知内核。
+对于DPDK模式，转换称为DPDK的action，然后odp_execute_actions执行DPDK的action。
+
+--------------data path mode
+
+static size_t
+recv_upcalls(struct handler *handler)
+{
+    struct udpif *udpif = handler->udpif;
+    struct ofpbuf *recv_buf = &recv_bufs[n_upcalls];
+    struct dpif_upcall *dupcall = &dupcalls[n_upcalls];
+    struct upcall *upcall = &upcalls[n_upcalls];
+    struct flow *flow = &flows[n_upcalls];
+    dpif_recv(udpif->dpif, handler->handler_id, dupcall, recv_buf)
+    upcall->fitness = odp_flow_key_to_flow(dupcall->key, dupcall->key_len, sflow, NULL);
+    upcall_receive(upcall, udpif->backer, &dupcall->packet,
+                   dupcall->type, dupcall->userdata, flow, mru,
+                   &dupcall->ufid, PMD_ID_NULL);//这里面赋值给upcall的内容，upcall->pmd_id = PMD_ID_NULL，upcall->fitness = 
+    upcall->key = dupcall->key;
+    upcall->key_len = dupcall->key_len;
+    upcall->ufid = &dupcall->ufid;
+    upcall->hash = hash;
+    upcall->out_tun_key = dupcall->out_tun_key;
+    upcall->actions = dupcall->actions;
+    pkt_metadata_from_flow(&dupcall->packet.md, flow);
+    flow_extract(&dupcall->packet, flow);
+    process_upcall(udpif, upcall,
+                   &upcall->odp_actions, &upcall->wc);
+    handle_upcalls(handler->udpif, upcalls, n_upcalls);
+}
+
+/* How well a kernel-provided flow key (a sequence of OVS_KEY_ATTR_*
+ * attributes) matches OVS userspace expectations.
+ *
+ * These values are arranged so that greater values are "more important" than
+ * lesser ones.  In particular, a single flow key can fit the descriptions for
+ * both ODP_FIT_TOO_LITTLE and ODP_FIT_TOO_MUCH.  Such a key is treated as
+ * ODP_FIT_TOO_LITTLE. */
+enum odp_key_fitness {
+    ODP_FIT_PERFECT,            /* The key had exactly the fields we expect. */
+    ODP_FIT_TOO_MUCH,           /* The key had fields we don't understand. */
+    ODP_FIT_TOO_LITTLE,         /* The key lacked fields we expected to see. */
+    ODP_FIT_ERROR,              /* The key was invalid. */
+};
+
+--------------------dpdk modes
+
+static int
+upcall_cb(const struct dp_packet *packet, const struct flow *flow, ovs_u128 *ufid,
+          unsigned pmd_id, enum dpif_upcall_type type,
+          const struct nlattr *userdata, struct ofpbuf *actions,
+          struct flow_wildcards *wc, struct ofpbuf *put_actions, void *aux)
+{
+    struct udpif *udpif = aux;
+    struct upcall upcall;
+    upcall_receive(&upcall, udpif->backer, packet, type, userdata,
+                           flow, 0, ufid, pmd_id);
+    upcall.fitness = ODP_FIT_PERFECT;
+    process_upcall(udpif, &upcall, actions, wc);
+    if (upcall.xout.slow && put_actions) {
+        ofpbuf_put(put_actions, upcall.put_actions.data,
+                   upcall.put_actions.size);
+    }
+}
+
+-------------------------------
 
 
+static int
+process_upcall(struct udpif *udpif, struct upcall *upcall,
+               struct ofpbuf *odp_actions, struct flow_wildcards *wc)
+{
+    switch (upcall->type) {
+    case MISS_UPCALL:
+    case SLOW_PATH_UPCALL:
+        upcall_xlate(udpif, upcall, odp_actions, wc);
+        return 0;
+}
 
-
+--------------------------------
 
 lib/ofp-actions.c
 
