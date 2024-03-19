@@ -1670,7 +1670,18 @@ ovs_thread_create->udpif_upcall_handler->recv_upcalls->upcall_receive + process_
 
 process_upcall->upcall_xlate->xlate_actions->rule_dpif_lookup_from_table + do_xlate_actions
 
-xlate_actions函数：openflow流表匹配完成后，调用do_xlate_actions函数把openflow action转化为精确流表的action；
+xlate_actions函数：openflow流表匹配完成后，调用do_xlate_actions函数把openflow action转化为精确流表的action
+
+/* Translates the flow, actions, or rule in 'xin' into datapath actions in
+ * 'xout'.
+ * The caller must take responsibility for eventually freeing 'xout', with
+ * xlate_out_uninit().
+ * Returns 'XLATE_OK' if translation was successful.  In case of an error an
+ * empty set of actions will be returned in 'xin->odp_actions' (if non-NULL),
+ * so that most callers may ignore the return value and transparently install a
+ * drop flow when the translation fails. */
+enum xlate_error xlate_actions(struct xlate_in *xin, struct xlate_out *xout)
+
 Translating ofpact action- Kernel datapath  In ofproto-dpif-xlate.c do_xlate_actions nl_msg_put_u16
 Eg.
  OpenFlows
@@ -1696,8 +1707,10 @@ dp_netdev_upcall->upcall_cb->upcall_receive + process_upcall
 dp_netdev_execute_actions->odp_execute_actions->dp_execute_cb
 dp_netdev_flow_add + emc_probabilistic_insert 将flow rule添加到DPDK中的fast path
 
-upcall_receive 里面有
-upcall->type = classify_upcall(type, userdata, &upcall->cookie);
+我们需要解析一下，对于datapath kernel模式和DPDK模式下，process_upcall 一直调用到 do_xlate_actions ，两者的区别是什么？DPDK会调用do_xlate_actions吗，如果调用的话，是在这里执行的action吗，DPDK后面不是有一个函数odp_execute_actions专门执行action吗，如果不执行action，那datapath模式在哪里执行的action呢？
+
+猜测，do_xlate_actions所做的不是执行action，而是转换action，对于datapath内核模式，转换成为内核的action，然后通过netlink告知内核。
+
 
 
 
