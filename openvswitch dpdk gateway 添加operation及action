@@ -1788,6 +1788,123 @@ process_upcall(struct udpif *udpif, struct upcall *upcall,
         return 0;
 }
 
+struct upcall {
+    struct ofproto_dpif *ofproto;  /* Parent ofproto. */
+    const struct recirc_id_node *recirc; /* Recirculation context. */
+    bool have_recirc_ref;                /* Reference held on recirc ctx? */
+
+    /* The flow and packet are only required to be constant when using
+     * dpif-netdev.  If a modification is absolutely necessary, a const cast
+     * may be used with other datapaths. */
+    const struct flow *flow;       /* Parsed representation of the packet. */
+    enum odp_key_fitness fitness;  /* Fitness of 'flow' relative to ODP key. */
+    const ovs_u128 *ufid;          /* Unique identifier for 'flow'. */
+    unsigned pmd_id;               /* Datapath poll mode driver id. */
+    const struct dp_packet *packet;   /* Packet associated with this upcall. */
+    ofp_port_t ofp_in_port;        /* OpenFlow in port, or OFPP_NONE. */
+    uint16_t mru;                  /* If !0, Maximum receive unit of
+                                      fragmented IP packet */
+    uint64_t hash;
+
+    enum upcall_type type;         /* Type of the upcall. */
+    const struct nlattr *actions;  /* Flow actions in DPIF_UC_ACTION Upcalls. */
+
+    bool xout_initialized;         /* True if 'xout' must be uninitialized. */
+    struct xlate_out xout;         /* Result of xlate_actions(). */
+    struct ofpbuf odp_actions;     /* Datapath actions from xlate_actions(). */
+    struct flow_wildcards wc;      /* Dependencies that megaflow must match. */
+    struct ofpbuf put_actions;     /* Actions 'put' in the fastpath. */
+
+    struct dpif_ipfix *ipfix;      /* IPFIX pointer or NULL. */
+    struct dpif_sflow *sflow;      /* SFlow pointer or NULL. */
+
+    struct udpif_key *ukey;        /* Revalidator flow cache. */
+    bool ukey_persists;            /* Set true to keep 'ukey' beyond the
+                                      lifetime of this upcall. */
+
+    uint64_t reval_seq;            /* udpif->reval_seq at translation time. */
+
+    /* Not used by the upcall callback interface. */
+    const struct nlattr *key;      /* Datapath flow key. */
+    size_t key_len;                /* Datapath flow key length. */
+    const struct nlattr *out_tun_key;  /* Datapath output tunnel key. */
+
+    struct user_action_cookie cookie;
+
+    uint64_t odp_actions_stub[1024 / 8]; /* Stub for odp_actions. */
+};
+
+static void
+upcall_xlate(struct udpif *udpif, struct upcall *upcall,
+             struct ofpbuf *odp_actions, struct flow_wildcards *wc)
+{
+    struct xlate_in xin;
+    struct ds output;
+
+    xlate_in_init(&xin, upcall->ofproto,
+                  ofproto_dpif_get_tables_version(upcall->ofproto),
+                  upcall->flow, upcall->ofp_in_port, NULL,
+                  stats.tcp_flags, upcall->packet, wc, odp_actions);
+
+    xlate_actions(&xin, &upcall->xout);
+    upcall->xout_initialized = true;
+
+    if (upcall->fitness == ODP_FIT_TOO_LITTLE) {
+        upcall->xout.slow |= SLOW_MATCH;
+    }
+    if (!upcall->xout.slow) {
+        ofpbuf_use_const(&upcall->put_actions,
+                         odp_actions->data, odp_actions->size);
+    } else {
+        /* upcall->put_actions already initialized by upcall_receive(). */
+        compose_slow_path(udpif, &upcall->xout,
+                          upcall->flow->in_port.odp_port, upcall->ofp_in_port,
+                          &upcall->put_actions,
+                          upcall->ofproto->up.slowpath_meter_id,
+                          &upcall->ofproto->uuid);
+    }
+
+    /* This function is also called for slow-pathed flows.  As we are only
+     * going to create new datapath flows for actual datapath misses, there is
+     * no point in creating a ukey otherwise. */
+    if (upcall->type == MISS_UPCALL) {
+        upcall->ukey = ukey_create_from_upcall(upcall, wc);
+    }
+}
+
+void
+xlate_in_init(struct xlate_in *xin, struct ofproto_dpif *ofproto,
+              ovs_version_t version, const struct flow *flow,
+              ofp_port_t in_port, struct rule_dpif *rule, uint16_t tcp_flags,
+              const struct dp_packet *packet, struct flow_wildcards *wc,
+              struct ofpbuf *odp_actions)
+{
+    xin->ofproto = ofproto;
+    xin->tables_version = version;
+    xin->flow = *flow;
+    xin->upcall_flow = flow;
+    xin->flow.in_port.ofp_port = in_port;
+    xin->flow.actset_output = OFPP_UNSET;
+    xin->packet = packet;
+    xin->allow_side_effects = packet != NULL;
+    xin->rule = rule;
+    xin->xcache = NULL;
+    xin->ofpacts = NULL;
+    xin->ofpacts_len = 0;
+    xin->tcp_flags = tcp_flags;
+    xin->trace = NULL;
+    xin->resubmit_stats = NULL;
+    xin->depth = 0;
+    xin->resubmits = 0;
+    xin->wc = wc;
+    xin->odp_actions = odp_actions;
+    xin->in_packet_out = false;
+    xin->recirc_queue = NULL;
+    xin->xport_uuid = UUID_ZERO;
+}
+
+
+
 --------------------------------
 
 lib/ofp-actions.c
