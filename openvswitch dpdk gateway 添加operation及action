@@ -1471,6 +1471,61 @@ enum ovs_action_attr {
 #endif
 };
 
+定义内核中的action
+
+在datapath/linux/compat/include/linux/openvswitch.h:中添加：
+
+enum ovs_action_attr {
+    /* ... */
+
+    /*
+    * after #ifndef __KERNEL__ ... #endif.
+    * the equals is thus ABSOLUTELY NECESSARY
+    */
+
+    OVS_ACTION_ATTR_PROBDROP = 23, /* unit32_t, prob in [0,2^32 -1] */
+
+    __OVS_ACTION_ATTR_MAX, /* Nothing past this will be accepted
+                            * from userspace. */
+
+    /* ... */
+
+}
+
+OVS_ACTION_ATTR_PROBDROP = 23 如果我们不为该枚举条目指定显式值，则内核和用户区部分 ovs-vswitchd将对新操作使用不同的代码（这里不加会出错）
+
+在内核模块中实现action函数，并调用执行，datapath/actions.c
+
+/* Ask for a random number.
+   "p" is the amount we should let through, here true means drop,
+   false means let it pass on */
+static bool prob_drop(uint32_t prob)
+{
+    /* since we can't use rand() in the kernel */
+    return prandom_u32() > prob;　　
+}
+
+static int do_execute_actions(/* ... */)
+{
+    /* ... */
+    switch (nla_type(a)) {
+    /* ... */
+    case OVS_ACTION_ATTR_PROBDROP:
+        /* No need to free, taken care of for us
+           This function just reads the attribute to
+           know if we should drop. */
+        if(prob_drop(nla_get_u32(a)))
+        {
+            while (rem) {
+                a = nla_next(a, &rem);
+            }
+        }
+        break;
+    }
+    /* ... */
+}
+
+
 /* Execute a list of actions against 'skb'. */
 static int do_execute_actions(struct datapath *dp, struct sk_buff *skb,
                   struct sw_flow_key *key,
@@ -1659,6 +1714,123 @@ static int do_execute_actions(struct datapath *dp, struct sk_buff *skb,
 }
 
 ////////////////////5. action实现，模式二，DPDK模式
+
+lib/packets.h：
+
+/* ... */
+
+bool prob_drop(uint32_t prob);
+
+#endif /* packets.h */
+
+lib/packets.c:
+
+/* Ask for a random number.
+   "p" is the amount we should let through, here true means drop,
+   false means let it pass on */
+bool
+prob_drop(uint32_t prob)
+{
+    unsigned int roll_i;
+    random_bytes(&roll_i, sizeof(roll_i));
+    return roll_i > prob;
+}
+
+lib/dpif-netdev.c:
+
+static void
+dp_execute_cb( /* ... */ )
+{
+    /* ... */
+    switch ((enum ovs_action_attr)type) {
+    /* ... */
+    case OVS_ACTION_ATTR_PROBDROP:
+        OVS_NOT_REACHED();
+    }
+}
+
+static bool
+requires_datapath_assistance(const struct nlattr *a)
+{
+    enum ovs_action_attr type = nl_attr_type(a);
+
+    switch (type) {
+    /* ... */
+    case OVS_ACTION_ATTR_PROBDROP:
+        return false;
+    /* ... */
+    }
+}
+
+odp_execute_actions(&aux, packets, should_steal, actions,
+                        actions_len, dp_execute_cb);
+在这个函数里面，只有requires_datapath_assistance为true，才会调用dp_execute_cb
+
+lib/odp-execute.c
+
+void
+odp_execute_actions( /* ... */ )
+{
+    /* ... */
+    switch ((enum ovs_action_attr)type) {
+    /* ... */
+    case OVS_ACTION_ATTR_PROBDROP: {　　　　
+        size_t i;
+        const size_t num = dp_packet_batch_size(batch);
+
+        DP_PACKET_BATCH_REFILL_FOR_EACH (i, num, packet, batch) {
+            if (!prob_drop(nl_attr_get_u32(a))) {
+                dp_packet_batch_refill(batch, packet, i);
+            } else {
+                dp_packet_delete(packet);
+            }
+        }
+        break;
+    }
+
+    }
+}
+
+
+lib/dpif.c:
+
+static void
+dpif_execute_helper_cb( /* ... */ )
+{
+    /* ... */
+    switch ((enum ovs_action_attr)type) {
+    /* ... */
+    case OVS_ACTION_ATTR_PROBDROP:
+        OVS_NOT_REACHED();
+    }
+}
+
+ofproto/ofproto-dpif-ipfix.c:
+
+void
+dpif_ipfix_read_actions( /* ... */ )
+{
+    /* ... */
+    switch (type) {
+    /* ... */
+    case OVS_ACTION_ATTR_PROBDROP:
+        /* Again, ignore for now. Not needed. */
+        break;
+    }
+}
+
+ofproto/ofproto-dpif-sflow.c:
+
+void
+dpif_sflow_read_actions( /* ... */ )
+{
+    switch (type) {
+    /* ... */
+    case OVS_ACTION_ATTR_PROBDROP:
+        /* Ignore sFlow for now, unless needed. */
+        break;
+    }
+}
 
 /* Executes all of the 'actions_len' bytes of datapath actions in 'actions' on
  * the packets in 'batch'.  If 'steal' is true, possibly modifies and
@@ -3663,6 +3835,27 @@ static int __ovs_nla_copy_actions(struct net *net, const struct nlattr *attr,
     return 0;
 }
 
+static int __ovs_nla_copy_actions( /*...*/ )
+{
+    /* ... */
+    static const u32 action_lens[OVS_ACTION_ATTR_MAX + 1] = {
+        /* ... */
+        [OVS_ACTION_ATTR_PROBDROP] = sizeof(u32),
+    };
+    /* ... */
+
+    /* Be careful here, your compiler may not catch this one
+    * even with -Werror */
+    switch (type) {
+    /* ... */
+    case OVS_ACTION_ATTR_PROBDROP:
+        /* Finalest sanity checks in the kernel. */
+        break;
+    /* ... */
+    }
+    /* ... */
+}
+
 OFPACT_SET_ETH_DST在内核中对应的action其实是OVS_ACTION_ATTR_SET_MASKED，是设置一个attr，设置什么attr呢，OVS_KEY_ATTR_ETHERNET，同理可以设置ip，OVS_KEY_ATTR_IPV4
 
 在内核中执行action的时候 do_execute_actions
@@ -3770,6 +3963,75 @@ static int execute_masked_set_action(struct sk_buff *skb,
 }
 
 -------------------------
+
+/* Put this with the other "compose" functions. */
+static void
+compose_probdrop_action(struct xlate_ctx *ctx, struct ofpact_probdrop *op)
+{
+    uint32_t prob = op->prob;
+
+    nl_msg_put_u32(ctx->odp_actions, OVS_ACTION_ATTR_PROBDROP, prob);
+}
+
+/* ... */
+
+static void
+do_xlate_actions( /* ... */ )
+{
+    switch (a->type) {
+    /* ... */
+
+    case OFPACT_PROBDROP:
+        compose_probdrop_action(ctx, ofpact_get_PROBDROP(a));
+        break;
+    }
+}
+/* ... */
+
+/* No action can undo the packet drop: reflect this. */
+static bool
+reversible_actions(const struct ofpact *ofpacts, size_t ofpacts_len)
+{
+    const struct ofpact *a;
+
+    OFPACT_FOR_EACH (a, ofpacts, ofpacts_len) {
+        switch (a->type) {
+        /*... */
+        case OFPACT_PROBDROP:
+            return false;
+        }
+    }
+    return true;
+}
+
+/* ... */
+
+/* PROBDROP likely doesn't require explicit thawing. */
+static void
+freeze_unroll_actions( /* ... */ )
+{
+    /* ... */
+    switch (a->type) {
+        case OFPACT_PROBDROP:
+            /* These may not generate PACKET INs. */
+            break;
+    }
+}
+
+/* ... */
+
+/* Naturally, don't need to recirculate since we don't change packets. */
+static void
+recirc_for_mpls(const struct ofpact *a, struct xlate_ctx *ctx)
+{
+    /* ... */
+
+    switch (a->type) {
+    case OFPACT_PROBDROP:
+    default:
+        break;
+    }
+}
 
 static void
 do_xlate_actions(const struct ofpact *ofpacts, size_t ofpacts_len,
@@ -5094,6 +5356,44 @@ ofproto_rule_insert__(struct ofproto *ofproto, struct rule *rule)
 
 这里需要添加新的OFPACT_的action
 
+struct ofpact *
+ofpact_next_flattened(const struct ofpact *ofpact)
+{
+    switch (ofpact->type) {
+        /* ... */
+        case OFPACT_PROBDROP:
+            return ofpact_next(ofpact);
+    }
+    /* ... */
+}
+
+/* ... */
+
+enum ovs_instruction_type
+ovs_instruction_type_from_ofpact_type(enum ofpact_type type)
+{
+    switch (type) {
+    /* ... */
+    case OFPACT_PROBDROP:
+    default:
+        return OVSINST_OFPIT11_APPLY_ACTIONS;
+    /* ... */
+    }
+}
+
+/* ... */
+
+static bool
+ofpact_outputs_to_port(const struct ofpact *ofpact, ofp_port_t port)
+{
+    switch (ofpact->type) {
+    /* ... */
+    case OFPACT_PROBDROP:
+    default:
+        return false;
+    }
+}
+
 /* Returns the ofpact following 'ofpact', except that if 'ofpact' contains
  * nested ofpacts it returns the first one. */
 struct ofpact *
@@ -5367,6 +5667,22 @@ enum action_set_class {
     /* Actions that shouldn't appear in the action set at all. */
     ACTION_SLOT_INVALID
 };
+
+static enum action_set_class
+action_set_classify(const struct ofpact a*)
+{
+    switch (a->type) {
+    /* ... */
+
+
+    /* NEVER */
+    /* ... */
+    case OFPACT_PROBDROP:
+        return ACTION_SLOT_INVALID;
+
+    /* ... */
+    }
+}
 
 static enum action_set_class
 action_set_classify(const struct ofpact *a)
@@ -5864,3 +6180,28 @@ odp_action_len(uint16_t type)
 }
 
 
+static void
+format_odp_action( /* ... */ )
+{
+    /* ... */
+    switch (type) {
+    /* ... */
+
+    case OVS_ACTION_ATTR_PROBDROP: 
+        ds_put_format(ds, "pdrop(%"PRIu32")", nl_attr_get_u32(a));
+        break;
+
+    /* ... */
+    }
+}
+
+static int
+odp_action_len(uint16_t type)
+{
+    /* ... */
+
+    switch ((enum ovs_action_attr) type) {
+    /* ... */
+    case OVS_ACTION_ATTR_PROBDROP: return sizeof(uint32_t);
+    }
+}
