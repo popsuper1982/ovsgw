@@ -1424,7 +1424,7 @@ format_CONFIG_GW(const struct ofpact_config_gw *a, const struct ofpact_format_pa
 }
 
 
-////////////////////4. action实现，fast path，模式一，内核模式datapath
+////////////////////4. action实现，模式一，内核模式datapath
 
 datapath\linux\compat\include\linux\openvswitch.h
 
@@ -1658,334 +1658,270 @@ static int do_execute_actions(struct datapath *dp, struct sk_buff *skb,
     return 0;
 }
 
-////////////////////5. action实现，fast path，模式二，DPDK模式
+////////////////////5. action实现，模式二，DPDK模式
 
-static void
-dp_execute_cb(void *aux_, struct dp_packet_batch *packets_,
-              const struct nlattr *a, bool should_steal)
-    OVS_NO_THREAD_SAFETY_ANALYSIS
+/* Executes all of the 'actions_len' bytes of datapath actions in 'actions' on
+ * the packets in 'batch'.  If 'steal' is true, possibly modifies and
+ * definitely free the packets in 'batch', otherwise leaves 'batch' unchanged.
+ *
+ * Some actions (e.g. output actions) can only be executed by a datapath.  This
+ * function implements those actions by passing the action and the packets to
+ * 'dp_execute_action' (along with 'dp').  If 'dp_execute_action' is passed a
+ * true 'steal' parameter then it must definitely free the packets passed into
+ * it.  The packet can be modified whether 'steal' is false or true.  If a
+ * packet is removed from the batch, then the fate of the packet is determined
+ * by the code that does this removal, irrespective of the value of 'steal'.
+ * Otherwise, if the packet is not removed from the batch and 'steal' is false
+ * then the packet could either be cloned or not. */
+void
+odp_execute_actions(void *dp, struct dp_packet_batch *batch, bool steal,
+                    const struct nlattr *actions, size_t actions_len,
+                    odp_execute_cb dp_execute_action)
 {
-    struct dp_netdev_execute_aux *aux = aux_;
-    uint32_t *depth = recirc_depth_get();
-    struct dp_netdev_pmd_thread *pmd = aux->pmd;
-    struct dp_netdev *dp = pmd->dp;
-    int type = nl_attr_type(a);
-    struct tx_port *p;
-    uint32_t packet_count, packets_dropped;
+    struct dp_packet *packet;
+    const struct nlattr *a;
+    unsigned int left;
 
-    switch ((enum ovs_action_attr)type) {
-    case OVS_ACTION_ATTR_OUTPUT:
-        dp_execute_output_action(pmd, packets_, should_steal,
-                                 nl_attr_get_odp_port(a));
-        return;
+    NL_ATTR_FOR_EACH_UNSAFE (a, left, actions, actions_len) {
+        int type = nl_attr_type(a);
+        bool last_action = (left <= NLA_ALIGN(a->nla_len));
 
-    case OVS_ACTION_ATTR_LB_OUTPUT:
-        dp_execute_lb_output_action(pmd, packets_, should_steal,
-                                    nl_attr_get_u32(a));
-        return;
+        if (requires_datapath_assistance(a)) {
+            if (dp_execute_action) {
+                /* Allow 'dp_execute_action' to steal the packet data if we do
+                 * not need it any more. */
+                bool should_steal = steal && last_action;
 
-    case OVS_ACTION_ATTR_TUNNEL_PUSH:
-        if (should_steal) {
-            /* We're requested to push tunnel header, but also we need to take
-             * the ownership of these packets. Thus, we can avoid performing
-             * the action, because the caller will not use the result anyway.
-             * Just break to free the batch. */
-            break;
-        }
-        dp_packet_batch_apply_cutlen(packets_);
-        packet_count = dp_packet_batch_size(packets_);
-        if (push_tnl_action(pmd, a, packets_)) {
-            COVERAGE_ADD(datapath_drop_tunnel_push_error,
-                         packet_count);
-        }
-        return;
+                dp_execute_action(dp, batch, a, should_steal);
 
-    case OVS_ACTION_ATTR_TUNNEL_POP:
-        if (*depth < MAX_RECIRC_DEPTH) {
-            struct dp_packet_batch *orig_packets_ = packets_;
-            odp_port_t portno = nl_attr_get_odp_port(a);
-
-            p = pmd_tnl_port_cache_lookup(pmd, portno);
-            if (p) {
-                struct dp_packet_batch tnl_pkt;
-
-                if (!should_steal) {
-                    dp_packet_batch_clone(&tnl_pkt, packets_);
-                    packets_ = &tnl_pkt;
-                    dp_packet_batch_reset_cutlen(orig_packets_);
-                }
-
-                dp_packet_batch_apply_cutlen(packets_);
-
-                packet_count = dp_packet_batch_size(packets_);
-                netdev_pop_header(p->port->netdev, packets_);
-                packets_dropped =
-                   packet_count - dp_packet_batch_size(packets_);
-                if (packets_dropped) {
-                    COVERAGE_ADD(datapath_drop_tunnel_pop_error,
-                                 packets_dropped);
-                }
-                if (dp_packet_batch_is_empty(packets_)) {
+                if (last_action || dp_packet_batch_is_empty(batch)) {
+                    /* We do not need to free the packets.
+                     * Either dp_execute_actions() has stolen them
+                     * or the batch is freed due to errors. In either
+                     * case we do not need to execute further actions.
+                     */
                     return;
                 }
-
-                struct dp_packet *packet;
-                DP_PACKET_BATCH_FOR_EACH (i, packet, packets_) {
-                    packet->md.in_port.odp_port = portno;
-                }
-
-                (*depth)++;
-                dp_netdev_recirculate(pmd, packets_);
-                (*depth)--;
-                return;
             }
-            COVERAGE_ADD(datapath_drop_invalid_tnl_port,
-                         dp_packet_batch_size(packets_));
-        } else {
-            COVERAGE_ADD(datapath_drop_recirc_error,
-                         dp_packet_batch_size(packets_));
-        }
-        break;
-
-    case OVS_ACTION_ATTR_USERSPACE:
-        if (!fat_rwlock_tryrdlock(&dp->upcall_rwlock)) {
-            struct dp_packet_batch *orig_packets_ = packets_;
-            const struct nlattr *userdata;
-            struct dp_packet_batch usr_pkt;
-            struct ofpbuf actions;
-            struct flow flow;
-            ovs_u128 ufid;
-            bool clone = false;
-
-            userdata = nl_attr_find_nested(a, OVS_USERSPACE_ATTR_USERDATA);
-            ofpbuf_init(&actions, 0);
-
-            if (packets_->trunc) {
-                if (!should_steal) {
-                    dp_packet_batch_clone(&usr_pkt, packets_);
-                    packets_ = &usr_pkt;
-                    clone = true;
-                    dp_packet_batch_reset_cutlen(orig_packets_);
-                }
-
-                dp_packet_batch_apply_cutlen(packets_);
-            }
-
-            struct dp_packet *packet;
-            DP_PACKET_BATCH_FOR_EACH (i, packet, packets_) {
-                flow_extract(packet, &flow);
-                odp_flow_key_hash(&flow, sizeof flow, &ufid);
-                dp_execute_userspace_action(pmd, packet, should_steal, &flow,
-                                            &ufid, &actions, userdata);
-            }
-
-            if (clone) {
-                dp_packet_delete_batch(packets_, true);
-            }
-
-            ofpbuf_uninit(&actions);
-            fat_rwlock_unlock(&dp->upcall_rwlock);
-
-            return;
-        }
-        COVERAGE_ADD(datapath_drop_lock_error,
-                     dp_packet_batch_size(packets_));
-        break;
-
-    case OVS_ACTION_ATTR_RECIRC:
-        if (*depth < MAX_RECIRC_DEPTH) {
-            struct dp_packet_batch recirc_pkts;
-
-            if (!should_steal) {
-               dp_packet_batch_clone(&recirc_pkts, packets_);
-               packets_ = &recirc_pkts;
-            }
-
-            struct dp_packet *packet;
-            DP_PACKET_BATCH_FOR_EACH (i, packet, packets_) {
-                packet->md.recirc_id = nl_attr_get_u32(a);
-            }
-
-            (*depth)++;
-            dp_netdev_recirculate(pmd, packets_);
-            (*depth)--;
-
-            return;
+            continue;
         }
 
-        COVERAGE_ADD(datapath_drop_recirc_error,
-                     dp_packet_batch_size(packets_));
-        VLOG_WARN("Packet dropped. Max recirculation depth exceeded.");
-        break;
+        switch ((enum ovs_action_attr) type) {
 
-    case OVS_ACTION_ATTR_CT: {
-        const struct nlattr *b;
-        bool force = false;
-        bool commit = false;
-        unsigned int left;
-        uint16_t zone = 0;
-        uint32_t tp_id = 0;
-        const char *helper = NULL;
-        const uint32_t *setmark = NULL;
-        const struct ovs_key_ct_labels *setlabel = NULL;
-        struct nat_action_info_t nat_action_info;
-        struct nat_action_info_t *nat_action_info_ref = NULL;
-        bool nat_config = false;
+        case OVS_ACTION_ATTR_HASH: {
+            const struct ovs_action_hash *hash_act = nl_attr_get(a);
 
-        NL_ATTR_FOR_EACH_UNSAFE (b, left, nl_attr_get(a),
-                                 nl_attr_get_size(a)) {
-            enum ovs_ct_attr sub_type = nl_attr_type(b);
+            /* Calculate a hash value directly. This might not match the
+             * value computed by the datapath, but it is much less expensive,
+             * and the current use case (bonding) does not require a strict
+             * match to work properly. */
+            switch (hash_act->hash_alg) {
+            case OVS_HASH_ALG_L4: {
+                struct flow flow;
+                uint32_t hash;
 
-            switch(sub_type) {
-            case OVS_CT_ATTR_FORCE_COMMIT:
-                force = true;
-                /* fall through. */
-            case OVS_CT_ATTR_COMMIT:
-                commit = true;
-                break;
-            case OVS_CT_ATTR_ZONE:
-                zone = nl_attr_get_u16(b);
-                break;
-            case OVS_CT_ATTR_HELPER:
-                helper = nl_attr_get_string(b);
-                break;
-            case OVS_CT_ATTR_MARK:
-                setmark = nl_attr_get(b);
-                break;
-            case OVS_CT_ATTR_LABELS:
-                setlabel = nl_attr_get(b);
-                break;
-            case OVS_CT_ATTR_EVENTMASK:
-                /* Silently ignored, as userspace datapath does not generate
-                 * netlink events. */
-                break;
-            case OVS_CT_ATTR_TIMEOUT:
-                if (!str_to_uint(nl_attr_get_string(b), 10, &tp_id)) {
-                    VLOG_WARN("Invalid Timeout Policy ID: %s.",
-                              nl_attr_get_string(b));
-                    tp_id = DEFAULT_TP_ID;
-                }
-                break;
-            case OVS_CT_ATTR_NAT: {
-                const struct nlattr *b_nest;
-                unsigned int left_nest;
-                bool ip_min_specified = false;
-                bool proto_num_min_specified = false;
-                bool ip_max_specified = false;
-                bool proto_num_max_specified = false;
-                memset(&nat_action_info, 0, sizeof nat_action_info);
-                nat_action_info_ref = &nat_action_info;
-
-                NL_NESTED_FOR_EACH_UNSAFE (b_nest, left_nest, b) {
-                    enum ovs_nat_attr sub_type_nest = nl_attr_type(b_nest);
-
-                    switch (sub_type_nest) {
-                    case OVS_NAT_ATTR_SRC:
-                    case OVS_NAT_ATTR_DST:
-                        nat_config = true;
-                        nat_action_info.nat_action |=
-                            ((sub_type_nest == OVS_NAT_ATTR_SRC)
-                                ? NAT_ACTION_SRC : NAT_ACTION_DST);
-                        break;
-                    case OVS_NAT_ATTR_IP_MIN:
-                        memcpy(&nat_action_info.min_addr,
-                               nl_attr_get(b_nest),
-                               nl_attr_get_size(b_nest));
-                        ip_min_specified = true;
-                        break;
-                    case OVS_NAT_ATTR_IP_MAX:
-                        memcpy(&nat_action_info.max_addr,
-                               nl_attr_get(b_nest),
-                               nl_attr_get_size(b_nest));
-                        ip_max_specified = true;
-                        break;
-                    case OVS_NAT_ATTR_PROTO_MIN:
-                        nat_action_info.min_port =
-                            nl_attr_get_u16(b_nest);
-                        proto_num_min_specified = true;
-                        break;
-                    case OVS_NAT_ATTR_PROTO_MAX:
-                        nat_action_info.max_port =
-                            nl_attr_get_u16(b_nest);
-                        proto_num_max_specified = true;
-                        break;
-                    case OVS_NAT_ATTR_PERSISTENT:
-                    case OVS_NAT_ATTR_PROTO_HASH:
-                    case OVS_NAT_ATTR_PROTO_RANDOM:
-                        break;
-                    case OVS_NAT_ATTR_UNSPEC:
-                    case __OVS_NAT_ATTR_MAX:
-                        OVS_NOT_REACHED();
+                DP_PACKET_BATCH_FOR_EACH (i, packet, batch) {
+                    /* RSS hash can be used here instead of 5tuple for
+                     * performance reasons. */
+                    if (dp_packet_rss_valid(packet)) {
+                        hash = dp_packet_get_rss_hash(packet);
+                        hash = hash_int(hash, hash_act->hash_basis);
+                    } else {
+                        flow_extract(packet, &flow);
+                        hash = flow_hash_5tuple(&flow, hash_act->hash_basis);
                     }
-                }
-
-                if (ip_min_specified && !ip_max_specified) {
-                    nat_action_info.max_addr = nat_action_info.min_addr;
-                }
-                if (proto_num_min_specified && !proto_num_max_specified) {
-                    nat_action_info.max_port = nat_action_info.min_port;
-                }
-                if (proto_num_min_specified || proto_num_max_specified) {
-                    if (nat_action_info.nat_action & NAT_ACTION_SRC) {
-                        nat_action_info.nat_action |= NAT_ACTION_SRC_PORT;
-                    } else if (nat_action_info.nat_action & NAT_ACTION_DST) {
-                        nat_action_info.nat_action |= NAT_ACTION_DST_PORT;
-                    }
+                    packet->md.dp_hash = hash;
                 }
                 break;
             }
-            case OVS_CT_ATTR_UNSPEC:
-            case __OVS_CT_ATTR_MAX:
+            case OVS_HASH_ALG_SYM_L4: {
+                struct flow flow;
+                uint32_t hash;
+
+                DP_PACKET_BATCH_FOR_EACH (i, packet, batch) {
+                    flow_extract(packet, &flow);
+                    hash = flow_hash_symmetric_l3l4(&flow,
+                                                    hash_act->hash_basis,
+                                                    false);
+                    packet->md.dp_hash = hash;
+                }
+                break;
+            }
+            default:
+                /* Assert on unknown hash algorithm.  */
                 OVS_NOT_REACHED();
             }
+            break;
         }
 
-        /* We won't be able to function properly in this case, hence
-         * complain loudly. */
-        if (nat_config && !commit) {
-            static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(5, 5);
-            VLOG_WARN_RL(&rl, "NAT specified without commit.");
+        case OVS_ACTION_ATTR_PUSH_VLAN: {
+            const struct ovs_action_push_vlan *vlan = nl_attr_get(a);
+
+            DP_PACKET_BATCH_FOR_EACH (i, packet, batch) {
+                eth_push_vlan(packet, vlan->vlan_tpid, vlan->vlan_tci);
+            }
+            break;
         }
 
-        conntrack_execute(dp->conntrack, packets_, aux->flow->dl_type, force,
-                          commit, zone, setmark, setlabel, aux->flow->tp_src,
-                          aux->flow->tp_dst, helper, nat_action_info_ref,
-                          pmd->ctx.now / 1000, tp_id);
-        break;
+        case OVS_ACTION_ATTR_POP_VLAN:
+            DP_PACKET_BATCH_FOR_EACH (i, packet, batch) {
+                eth_pop_vlan(packet);
+            }
+            break;
+
+        case OVS_ACTION_ATTR_PUSH_MPLS: {
+            const struct ovs_action_push_mpls *mpls = nl_attr_get(a);
+
+            DP_PACKET_BATCH_FOR_EACH (i, packet, batch) {
+                push_mpls(packet, mpls->mpls_ethertype, mpls->mpls_lse);
+            }
+            break;
+         }
+
+        case OVS_ACTION_ATTR_POP_MPLS:
+            DP_PACKET_BATCH_FOR_EACH (i, packet, batch) {
+                pop_mpls(packet, nl_attr_get_be16(a));
+            }
+            break;
+
+        case OVS_ACTION_ATTR_SET:
+            DP_PACKET_BATCH_FOR_EACH (i, packet, batch) {
+                odp_execute_set_action(packet, nl_attr_get(a));
+            }
+            break;
+
+        case OVS_ACTION_ATTR_SET_MASKED:
+            DP_PACKET_BATCH_FOR_EACH(i, packet, batch) {
+                odp_execute_masked_set_action(packet, nl_attr_get(a));
+            }
+            break;
+
+        case OVS_ACTION_ATTR_SAMPLE:
+            DP_PACKET_BATCH_FOR_EACH (i, packet, batch) {
+                odp_execute_sample(dp, packet, steal && last_action, a,
+                                   dp_execute_action);
+            }
+
+            if (last_action) {
+                /* We do not need to free the packets. odp_execute_sample() has
+                 * stolen them*/
+                return;
+            }
+            break;
+
+        case OVS_ACTION_ATTR_TRUNC: {
+            const struct ovs_action_trunc *trunc =
+                        nl_attr_get_unspec(a, sizeof *trunc);
+
+            batch->trunc = true;
+            DP_PACKET_BATCH_FOR_EACH (i, packet, batch) {
+                dp_packet_set_cutlen(packet, trunc->max_len);
+            }
+            break;
+        }
+
+        case OVS_ACTION_ATTR_CLONE:
+            odp_execute_clone(dp, batch, steal && last_action, a,
+                                                dp_execute_action);
+            if (last_action) {
+                /* We do not need to free the packets. odp_execute_clone() has
+                 * stolen them.  */
+                return;
+            }
+            break;
+        case OVS_ACTION_ATTR_METER:
+            /* Not implemented yet. */
+            break;
+        case OVS_ACTION_ATTR_PUSH_ETH: {
+            const struct ovs_action_push_eth *eth = nl_attr_get(a);
+
+            DP_PACKET_BATCH_FOR_EACH (i, packet, batch) {
+                push_eth(packet, &eth->addresses.eth_dst,
+                         &eth->addresses.eth_src);
+            }
+            break;
+        }
+
+        case OVS_ACTION_ATTR_POP_ETH:
+            DP_PACKET_BATCH_FOR_EACH (i, packet, batch) {
+                pop_eth(packet);
+            }
+            break;
+
+        case OVS_ACTION_ATTR_PUSH_NSH: {
+            uint32_t buffer[NSH_HDR_MAX_LEN / 4];
+            struct nsh_hdr *nsh_hdr = ALIGNED_CAST(struct nsh_hdr *, buffer);
+            nsh_reset_ver_flags_ttl_len(nsh_hdr);
+            odp_nsh_hdr_from_attr(nl_attr_get(a), nsh_hdr, NSH_HDR_MAX_LEN);
+            DP_PACKET_BATCH_FOR_EACH (i, packet, batch) {
+                push_nsh(packet, nsh_hdr);
+            }
+            break;
+        }
+        case OVS_ACTION_ATTR_POP_NSH: {
+            size_t i;
+            const size_t num = dp_packet_batch_size(batch);
+
+            DP_PACKET_BATCH_REFILL_FOR_EACH (i, num, packet, batch) {
+                if (pop_nsh(packet)) {
+                    dp_packet_batch_refill(batch, packet, i);
+                } else {
+                    COVERAGE_INC(datapath_drop_nsh_decap_error);
+                    dp_packet_delete(packet);
+                }
+            }
+            break;
+        }
+        case OVS_ACTION_ATTR_CT_CLEAR:
+            DP_PACKET_BATCH_FOR_EACH (i, packet, batch) {
+                conntrack_clear(packet);
+            }
+            break;
+
+        case OVS_ACTION_ATTR_CHECK_PKT_LEN:
+            DP_PACKET_BATCH_FOR_EACH (i, packet, batch) {
+                odp_execute_check_pkt_len(dp, packet, steal && last_action, a,
+                                          dp_execute_action);
+            }
+
+            if (last_action) {
+                /* We do not need to free the packets.
+                 * odp_execute_check_pkt_len() has stolen them. */
+                return;
+            }
+            break;
+
+        case OVS_ACTION_ATTR_DROP:{
+            const enum xlate_error *drop_reason = nl_attr_get(a);
+
+            dp_update_drop_action_counter(*drop_reason,
+                                          dp_packet_batch_size(batch));
+            dp_packet_delete_batch(batch, steal);
+            return;
+        }
+        case OVS_ACTION_ATTR_OUTPUT:
+        case OVS_ACTION_ATTR_LB_OUTPUT:
+        case OVS_ACTION_ATTR_TUNNEL_PUSH:
+        case OVS_ACTION_ATTR_TUNNEL_POP:
+        case OVS_ACTION_ATTR_USERSPACE:
+        case OVS_ACTION_ATTR_RECIRC:
+        case OVS_ACTION_ATTR_CT:
+        case OVS_ACTION_ATTR_UNSPEC:
+        case __OVS_ACTION_ATTR_MAX:
+            OVS_NOT_REACHED();
+        }
     }
 
-    case OVS_ACTION_ATTR_METER:
-        dp_netdev_run_meter(pmd->dp, packets_, nl_attr_get_u32(a),
-                            pmd->ctx.now);
-        break;
-
-    case OVS_ACTION_ATTR_PUSH_VLAN:
-    case OVS_ACTION_ATTR_POP_VLAN:
-    case OVS_ACTION_ATTR_PUSH_MPLS:
-    case OVS_ACTION_ATTR_POP_MPLS:
-    case OVS_ACTION_ATTR_SET:
-    case OVS_ACTION_ATTR_SET_MASKED:
-    case OVS_ACTION_ATTR_SAMPLE:
-    case OVS_ACTION_ATTR_HASH:
-    case OVS_ACTION_ATTR_UNSPEC:
-    case OVS_ACTION_ATTR_TRUNC:
-    case OVS_ACTION_ATTR_PUSH_ETH:
-    case OVS_ACTION_ATTR_POP_ETH:
-    case OVS_ACTION_ATTR_CLONE:
-    case OVS_ACTION_ATTR_PUSH_NSH:
-    case OVS_ACTION_ATTR_POP_NSH:
-    case OVS_ACTION_ATTR_CT_CLEAR:
-    case OVS_ACTION_ATTR_CHECK_PKT_LEN:
-    case OVS_ACTION_ATTR_DROP:
-    case __OVS_ACTION_ATTR_MAX:
-        OVS_NOT_REACHED();
-    }
-
-    dp_packet_delete_batch(packets_, should_steal);
+    dp_packet_delete_batch(batch, steal);
 }
 
-////////////////////6. fast path没有匹配上，upcall到慢路径slow path，action处理，以及处理完毕后，将flow放入fast path，内核态模式
+////////////////////6. fast path处理，到fast path没有匹配上，upcall到慢路径slow path，action处理，以及处理完毕后，将flow放入fast path，的整个流程，内核态模式
 
+netdev_port_receive->ovs_vport_receive->ovs_dp_process_received_packet
+->   ovs_flow_extract
+   + ovs_flow_tbl_lookup
+   + ovs_dp_upcall -> queue_userspace_packet -> genlmsg_unicast (发送消息给用户空间)
+   + ovs_execute_actions -> do_execute_actions (快路径执行action)
 
 对于内核态的fast path，如何upcall到show path呢？
 
@@ -2299,12 +2235,18 @@ out:
     return err;
 }
 
-do_execute_actions 在上面解析了(4. action实现，fast path，模式一，内核模式datapath)
+do_execute_actions 在上面解析了(4. action实现，模式一，内核模式datapath)
  
 
 handler线程只对传统ovs架构下,对内核upcall的消息进行处理。即慢速路径的处理就是handler线程的工作内容。ovs+dpdk下，handler线程也存在，但是一直处于堵塞状态，实际上什么也没干。ovs+dpdk下的慢速路径的处理直接由收包线程执行，由pmd线程做的。
 
-////////////////////7. fast path没有匹配上，upcall到慢路径slow path，action处理，以及处理完毕后，将flow放入fast path，DPDK模式
+////////////////////7. fast path处理，到fast path没有匹配上，upcall到慢路径slow path，action处理，以及处理完毕后，将flow放入fast path，整个流程，DPDK模式
+
+dp_netdev_input
+->   dfc_processing (emc匹配)
+   + fast_path_processing (dpcls匹配 + upcall)
+   + packet_batch_per_flow_execute (执行action，这是快路径中执行action) ->dp_netdev_execute_actions->odp_execute_actions
+
 
 对于DPDK的fast path，如果upcall到slow path呢？
 
@@ -2316,7 +2258,7 @@ fast_path_processing
 
 handle_packet_upcall
 ->   dp_netdev_upcall (在这里，在当前的线程，对actions进行转换，并收集哪些put_actions应该放到dpcls里面)
-   + dp_netdev_execute_actions (执行action，说明在上面只做action的转换，而不做action的执行) 
+   + dp_netdev_execute_actions (执行action，这是慢路径中执行action，说明在xlate只做action的转换，而不做action的执行) 
    + add_actions = put_actions->size ? put_actions : actions (执行完了action之后，如果dpcls表不满，可以将action添加到dpcls，如果error == ENOSPC，这个值是在dp_netdev_upcall里面，被should_install_flow函数赋值的，如果满了，则就是error，如果不满，则不是error)
    + if (OVS_LIKELY(error != ENOSPC)) netdev_flow = dp_netdev_pmd_lookup_flow(pmd, key, NULL);
    + dp_netdev_flow_add(pmd, &match, &ufid, add_actions->data, add_actions->size) (将flow rule添加到DPDK中的fast path的dpcls)
@@ -2327,7 +2269,16 @@ dp_netdev_upcall->upcall_cb(对于DPDK模式来说，这个是处理upcall的核
    + process_upcall (无论是内核模式，还是DPDK模式，都再调用process_upcall查找openflow流表，并对于actions进行转换)
    + should_install_flow(udpif, &upcall) (如果超过了最大流表限制，则返回ENOSPC，这里并不安装流表到dpcls，而到上层函数去安装)
 
-dp_netdev_execute_actions->odp_execute_actions->dp_execute_cb 在上面解析了(5. action实现，fast path，模式二，DPDK模式)
+dp_netdev_execute_actions->odp_execute_actions 在上面解析了(5. action实现，模式二，DPDK模式)
+
+在DPDK模式下，可以看出action的执行可以在外层fast path的最后，也可以在内层handle_packet_upcall中执行，在handle_packet_upcall中执行action的代码里有下面的注释
+/* We can't allow the packet batching in the next loop to execute
+     * the actions.  Otherwise, if there are any slow path actions,
+     * we'll send the packet up twice. */
+    dp_packet_batch_init_packet(&b, packet);
+    dp_netdev_execute_actions(pmd, &b, true, &match.flow,
+                              actions->data, actions->size);
+upcall的时候，直接将action执行完，不需要等到外层再执行。
 
 ////////////////////8. 用户态和内核态netlink互通
 
@@ -2819,6 +2770,1006 @@ exit:
 
     return ctx.error;
 }
+
+Actions有以下的操作：
+output:port 和 output:NXM_NX_REG0[16..31]
+enqueue:port:queue
+mod_vlan_vid:vlan_vid
+strip_vlan
+mod_dl_src:mac 和 mod_dl_dst:mac
+mod_nw_src:ip 和 mod_nw_dst:ip
+mod_tp_src:port 和 mod_tp_dst:port
+set_tunnel:id
+resubmit([port],[table])
+move:src[start..end]−>dst[start..end]
+load:value−>dst[start..end]
+learn(argument[,argument]...)
+
+配置Flow。
+1. 删除所有的Flow
+ovs-ofctl del-flows br-tun
+2. 配置Table 0
+从port 1进来的，由table 1处理
+ovs-ofctl add-flow br-tun "hard_timeout=0 idle_timeout=0 priority=1 in_port=1 actions=resubmit(,1)"
+从port 2/3进来的，由Table 3处理
+ovs-ofctl add-flow br-tun "hard_timeout=0 idle_timeout=0 priority=1 in_port=2 actions=resubmit(,3)"
+ovs-ofctl add-flow br-tun "hard_timeout=0 idle_timeout=0 priority=1 in_port=3 actions=resubmit(,3)"
+默认丢弃
+ovs-ofctl add-flow br-tun "hard_timeout=0 idle_timeout=0 priority=0 actions=drop"
+3. 配置Table 1
+对于单播，由table 20处理
+ovs-ofctl add-flow br-tun "hard_timeout=0 idle_timeout=0 priority=1 table=1 dl_dst=00:00:00:00:00:00/01:00:00:00:00:00 actions=resubmit(,20)"
+对于多播，由table 21处理
+ovs-ofctl add-flow br-tun "hard_timeout=0 idle_timeout=0 priority=1 table=1 dl_dst=01:00:00:00:00:00/01:00:00:00:00:00 actions=resubmit(,21)"
+4. 配置Table 2
+默认丢弃
+ovs-ofctl add-flow br-tun "hard_timeout=0 idle_timeout=0 priority=0 table=2 actions=drop"
+5. 配置Table 3
+默认丢弃
+ovs-ofctl add-flow br-tun "hard_timeout=0 idle_timeout=0 priority=0 table=3 actions=drop"
+Tunnel ID -> VLAN ID
+ovs-ofctl add-flow br-tun "hard_timeout=0 idle_timeout=0 priority=1 table=3 tun_id=0x1 actions=mod_vlan_vid:1,resubmit(,10)"
+ovs-ofctl add-flow br-tun "hard_timeout=0 idle_timeout=0 priority=1 table=3 tun_id=0x2 actions=mod_vlan_vid:2,resubmit(,10)"
+6. 配置Table 10
+MAC地址学习
+ovs-ofctl add-flow br-tun "hard_timeout=0 idle_timeout=0 priority=1 table=10  actions=learn(table=20,priority=1,hard_timeout=300,NXM_OF_VLAN_TCI[0..11],NXM_OF_ETH_DST[]=NXM_OF_ETH_SRC[],load:0->NXM_OF_VLAN_TCI[],load:NXM_NX_TUN_ID[]->NXM_NX_TUN_ID[],output:NXM_OF_IN_PORT[]),output:1"
+
+Table 10是用来学习MAC地址的，学习的结果放在Table 20里面，Table20被称为MAC learning table
+NXM_OF_VLAN_TCI这个是VLAN Tag，在MAC Learning table中，每一个entry都是仅仅对某一个VLAN来说的，不同VLAN的learning table是分开的。在学习的结果的entry中，会标出这个entry是对于哪个VLAN的。
+NXM_OF_ETH_DST[]=NXM_OF_ETH_SRC[]这个的意思是当前包里面的MAC Source Address会被放在学习结果的entry里面的dl_dst里面。这是因为每个switch都是通过Ingress包来学习，某个MAC从某个port进来，switch就应该记住以后发往这个MAC的包要从这个port出去，因而MAC source address就被放在了Mac destination address里面，因为这是为发送用的。
+load:0->NXM_OF_VLAN_TCI[]意思是发送出去的时候，vlan tag设为0，所以结果中有actions=strip_vlan
+load:NXM_NX_TUN_ID[]->NXM_NX_TUN_ID[]意思是发出去的时候，设置tunnel id，进来的时候是多少，发送的时候就是多少，所以结果中有set_tunnel:0x3e9
+output:NXM_OF_IN_PORT[]意思是发送给哪个port，由于是从port2进来的，因而结果中有output:2
+
+7. 配置Table 20
+这个是MAC Address Learning Table，如果不空就按照规则处理。
+如果为空，就使用默认规则，交给Table 21处理。
+ovs-ofctl add-flow br-tun "hard_timeout=0 idle_timeout=0 priority=0 table=20 actions=resubmit(,21)"
+8. 配置Table 21
+默认丢弃
+ovs-ofctl add-flow br-tun "hard_timeout=0 idle_timeout=0 priority=0 table=21 actions=drop"
+VLAN ID -> Tunnel ID
+ovs-ofctl add-flow br-tun "hard_timeout=0 idle_timeout=0 priority=1 table=21 dl_vlan=1 actions=strip_vlan,set_tunnel:0x1,output:2,output:3"
+ovs-ofctl add-flow br-tun "hard_timeout=0 idle_timeout=0 priority=1 table=21 dl_vlan=2 actions=strip_vlan,set_tunnel:0x2,output:2,output:3"
+
+
+fast path的action和slow path的action不一样，是如何转换过来的呢？
+
+内核模式fast path的action有： do_execute_actions
+OVS_ACTION_ATTR_CHECK_PKT_LEN
+OVS_ACTION_ATTR_CLONE
+OVS_ACTION_ATTR_CT
+OVS_ACTION_ATTR_CT_CLEAR
+OVS_ACTION_ATTR_HASH
+OVS_ACTION_ATTR_METER
+OVS_ACTION_ATTR_OUTPUT
+OVS_ACTION_ATTR_POP_ETH
+OVS_ACTION_ATTR_POP_MPLS
+OVS_ACTION_ATTR_POP_NSH
+OVS_ACTION_ATTR_POP_VLAN
+OVS_ACTION_ATTR_PUSH_ETH
+OVS_ACTION_ATTR_PUSH_MPLS
+OVS_ACTION_ATTR_PUSH_NSH
+OVS_ACTION_ATTR_PUSH_VLAN
+OVS_ACTION_ATTR_RECIRC
+OVS_ACTION_ATTR_SAMPLE
+OVS_ACTION_ATTR_SET
+OVS_ACTION_ATTR_SET_MASKED
+OVS_ACTION_ATTR_SET_TO_MASKED
+OVS_ACTION_ATTR_TRUNC
+OVS_ACTION_ATTR_USERSPACE
+
+
+DPDK模式fast path的action有： odp_execute_actions
+OVS_ACTION_ATTR_CHECK_PKT_LEN
+OVS_ACTION_ATTR_CLONE
+OVS_ACTION_ATTR_CT
+OVS_ACTION_ATTR_CT_CLEAR
+OVS_ACTION_ATTR_DROP
+OVS_ACTION_ATTR_HASH
+OVS_ACTION_ATTR_LB_OUTPUT
+OVS_ACTION_ATTR_METER
+OVS_ACTION_ATTR_OUTPUT
+OVS_ACTION_ATTR_POP_ETH
+OVS_ACTION_ATTR_POP_MPLS
+OVS_ACTION_ATTR_POP_NSH
+OVS_ACTION_ATTR_POP_VLAN
+OVS_ACTION_ATTR_PUSH_ETH
+OVS_ACTION_ATTR_PUSH_MPLS
+OVS_ACTION_ATTR_PUSH_NSH
+OVS_ACTION_ATTR_PUSH_VLAN
+OVS_ACTION_ATTR_RECIRC
+OVS_ACTION_ATTR_SAMPLE
+OVS_ACTION_ATTR_SET
+OVS_ACTION_ATTR_SET_MASKED
+OVS_ACTION_ATTR_TRUNC
+OVS_ACTION_ATTR_TUNNEL_POP
+OVS_ACTION_ATTR_TUNNEL_PUSH
+OVS_ACTION_ATTR_UNSPEC
+OVS_ACTION_ATTR_USERSPACE
+__OVS_ACTION_ATTR_MAX
+
+slow path的openflow action有： do_xlate_actions
+OFPACT_CONTROLLER
+OFPACT_ENQUEUE
+OFPACT_GROUP
+OFPACT_OUTPUT
+OFPACT_POP_QUEUE
+OFPACT_PUSH_MPLS
+OFPACT_PUSH_VLAN
+OFPACT_REG_MOVE
+OFPACT_RESUBMIT
+OFPACT_SET_ETH_DST
+OFPACT_SET_ETH_SRC
+OFPACT_SET_FIELD
+OFPACT_SET_IP_DSCP
+OFPACT_SET_IP_ECN
+OFPACT_SET_IP_TTL
+OFPACT_SET_IPV4_DST
+OFPACT_SET_IPV4_SRC
+OFPACT_SET_L4_DST_PORT
+OFPACT_SET_L4_SRC_PORT
+OFPACT_SET_QUEUE
+OFPACT_SET_TUNNEL
+OFPACT_SET_VLAN_PCP
+OFPACT_SET_VLAN_VID
+OFPACT_STACK_POP
+OFPACT_STACK_PUSH
+OFPACT_STRIP_VLAN
+
+如何从openflow的action转换成为内核的action呢？
+
+我们解析以下几个
+OFPACT_RESUBMIT
+OFPACT_OUTPUT
+OFPACT_SET_ETH_DST
+OFPACT_SET_IPV4_DST
+
+------------------OFPACT_SET_ETH_DST
+
+do_xlate_actions(const struct ofpact *ofpacts, size_t ofpacts_len,
+                 struct xlate_ctx *ctx, bool is_last_action,
+                 bool group_bucket_action)
+    struct flow_wildcards *wc = ctx->wc;
+    struct flow *flow = &ctx->xin->flow;
+    const struct ofpact *a;
+        case OFPACT_SET_ETH_DST:
+            WC_MASK_FIELD(wc, dl_dst);
+            flow->dl_dst = ofpact_get_SET_ETH_DST(a)->mac;
+            break;
+这里修改了flow里面的值，但是这里的值是在转换函数里面设置的，真正执行action的时候，如何修改的真正包里面的值呢？
+
+compose_output_action__->
+        /* Commit accumulated flow updates before output. */
+        xlate_commit_actions(ctx);
+
+compose_conntrack_action->
+    /* Ensure that any prior actions are applied before composing the new
+     * conntrack action. */
+    xlate_commit_actions(ctx);
+
+static void
+xlate_commit_actions(struct xlate_ctx *ctx)
+{
+    bool use_masked = ctx->xbridge->support.masked_set_action;
+
+    ctx->xout->slow |= commit_odp_actions(&ctx->xin->flow, &ctx->base_flow,
+                                          ctx->odp_actions, ctx->wc,
+                                          use_masked, ctx->pending_encap,
+                                          ctx->pending_decap, ctx->encap_data);
+    ctx->pending_encap = false;
+    ctx->pending_decap = false;
+    ofpbuf_delete(ctx->encap_data);
+    ctx->encap_data = NULL;
+}
+
+/* If any of the flow key data that ODP actions can modify are different in
+ * 'base' and 'flow', appends ODP actions to 'odp_actions' that change the flow
+ * key from 'base' into 'flow', and then changes 'base' the same way.  Does not
+ * commit set_tunnel actions.  Users should call commit_odp_tunnel_action()
+ * in addition to this function if needed.  Sets fields in 'wc' that are
+ * used as part of the action.
+ *
+ * In the common case, this function returns 0.  If the flow key modification
+ * requires the flow's packets to be forced into the userspace slow path, this
+ * function returns SLOW_ACTION.  This only happens when there is no ODP action
+ * to modify some field that was actually modified.  For example, there is no
+ * ODP action to modify any ARP field, so such a modification triggers
+ * SLOW_ACTION.  (When this happens, packets that need such modification get
+ * flushed to userspace and handled there, which works OK but much more slowly
+ * than if the datapath handled it directly.) */
+enum slow_path_reason
+commit_odp_actions(const struct flow *flow, struct flow *base,
+                   struct ofpbuf *odp_actions, struct flow_wildcards *wc,
+                   bool use_masked, bool pending_encap, bool pending_decap,
+                   struct ofpbuf *encap_data)
+{
+    /* If you add a field that OpenFlow actions can change, and that is visible
+     * to the datapath (including all data fields), then you should also add
+     * code here to commit changes to the field. */
+    BUILD_ASSERT_DECL(FLOW_WC_SEQ == 42);
+
+    enum slow_path_reason slow1, slow2;
+    bool mpls_done = false;
+
+    commit_encap_decap_action(flow, base, odp_actions, wc,
+                              pending_encap, pending_decap, encap_data);
+    commit_set_ether_action(flow, base, odp_actions, wc, use_masked);
+    /* Make packet a non-MPLS packet before committing L3/4 actions,
+     * which would otherwise do nothing. */
+    if (eth_type_mpls(base->dl_type) && !eth_type_mpls(flow->dl_type)) {
+        commit_mpls_action(flow, base, odp_actions);
+        mpls_done = true;
+    }
+    commit_set_nsh_action(flow, base, odp_actions, wc, use_masked);
+    slow1 = commit_set_nw_action(flow, base, odp_actions, wc, use_masked);
+    commit_set_port_action(flow, base, odp_actions, wc, use_masked);
+    slow2 = commit_set_icmp_action(flow, base, odp_actions, wc);
+    if (!mpls_done) {
+        commit_mpls_action(flow, base, odp_actions);
+    }
+    commit_vlan_action(flow, base, odp_actions, wc);
+    commit_set_priority_action(flow, base, odp_actions, wc, use_masked);
+    commit_set_pkt_mark_action(flow, base, odp_actions, wc, use_masked);
+
+    return slow1 ? slow1 : slow2;
+}
+
+可以看出commit_odp_actions是将各种各样的action都提交，其实是提交给了netlink message.
+
+static void
+commit_set_ether_action(const struct flow *flow, struct flow *base_flow,
+                        struct ofpbuf *odp_actions,
+                        struct flow_wildcards *wc,
+                        bool use_masked)
+{
+    struct ovs_key_ethernet key, base, mask, orig_mask;
+    struct offsetof_sizeof ovs_key_ethernet_offsetof_sizeof_arr[] =
+        OVS_KEY_ETHERNET_OFFSETOF_SIZEOF_ARR;
+
+    if (flow->packet_type != htonl(PT_ETH)) {
+        return;
+    }
+
+    get_ethernet_key(flow, &key);
+    get_ethernet_key(base_flow, &base);
+    get_ethernet_key(&wc->masks, &mask);
+    memcpy(&orig_mask, &mask, sizeof mask);
+
+    if (commit(OVS_KEY_ATTR_ETHERNET, use_masked,
+               &key, &base, &mask, sizeof key,
+               ovs_key_ethernet_offsetof_sizeof_arr, odp_actions)) {
+        put_ethernet_key(&base, base_flow);
+        or_masks(&mask, &orig_mask, ovs_key_ethernet_offsetof_sizeof_arr);
+        put_ethernet_key(&mask, &wc->masks);
+    }
+}
+
+static bool
+commit(enum ovs_key_attr attr, bool use_masked_set,
+       const void *key, void *base, void *mask, size_t size,
+       struct offsetof_sizeof *offsetof_sizeof_arr,
+       struct ofpbuf *odp_actions)
+{
+    if (keycmp_mask(key, base, offsetof_sizeof_arr, mask)) {
+        bool fully_masked = odp_mask_is_exact(attr, mask, size);
+
+        if (use_masked_set && !fully_masked) {
+            commit_masked_set_action(odp_actions, attr, key, mask, size);
+        } else {
+            if (!fully_masked) {
+                memset(mask, 0xff, size);
+            }
+            commit_set_action(odp_actions, attr, key, size);
+        }
+        memcpy(base, key, size);
+        return true;
+    } else {
+        /* Mask bits are set when we have either read or set the corresponding
+         * values.  Masked bits will be exact-matched, no need to set them
+         * if the value did not actually change. */
+        return false;
+    }
+}
+
+static void
+commit_set_action(struct ofpbuf *odp_actions, enum ovs_key_attr key_type,
+                  const void *key, size_t key_size)
+{
+    size_t offset = nl_msg_start_nested(odp_actions, OVS_ACTION_ATTR_SET);
+    nl_msg_put_unspec(odp_actions, key_type, key, key_size);
+    nl_msg_end_nested(odp_actions, offset);
+}
+
+/* Masked set actions have a mask following the data within the netlink
+ * attribute.  The unmasked bits in the data will be cleared as the data
+ * is copied to the action. */
+void
+commit_masked_set_action(struct ofpbuf *odp_actions,
+                         enum ovs_key_attr key_type,
+                         const void *key_, const void *mask_, size_t key_size)
+{
+    size_t offset = nl_msg_start_nested(odp_actions,
+                                        OVS_ACTION_ATTR_SET_MASKED);
+    char *data = nl_msg_put_unspec_uninit(odp_actions, key_type, key_size * 2);
+    const char *key = key_, *mask = mask_;
+
+    memcpy(data + key_size, mask, key_size);
+    /* Clear unmasked bits while copying. */
+    while (key_size--) {
+        *data++ = *key++ & *mask++;
+    }
+    nl_msg_end_nested(odp_actions, offset);
+}
+
+在netlink message里面的action如何提交给内核中呢？
+
+handle_upcalls 将flow rule添加到内核中的fast path(如果should_install_flow为true，put_op_init里面设置op->dop.type = DPIF_OP_FLOW_PUT)，且在内核执行action(设置op->dop.type = DPIF_OP_EXECUTE) 
+-> dpif_operate -> dpif_netlink_operate -> dpif_netlink_operate_chunks -> dpif_netlink_operate__ (case DPIF_OP_FLOW_PUT: dpif_netlink_init_flow_put + dpif_netlink_flow_to_ofpbuf ; case DPIF_OP_EXECUTE: dpif_netlink_encode_execute)
++ nl_transact_multiple(通过netlink发送给内核)
+
+前面我们重点分析了case DPIF_OP_EXECUTE: dpif_netlink_encode_execute
+
+这里我们分析case DPIF_OP_FLOW_PUT: dpif_netlink_init_flow_put + dpif_netlink_flow_to_ofpbuf
+
+static void
+dpif_netlink_init_flow_put(struct dpif_netlink *dpif,
+                           const struct dpif_flow_put *put,
+                           struct dpif_netlink_flow *request)
+{
+    static const struct nlattr dummy_action;
+
+    dpif_netlink_flow_init(request);
+    request->cmd = (put->flags & DPIF_FP_CREATE
+                    ? OVS_FLOW_CMD_NEW : OVS_FLOW_CMD_SET);
+    request->dp_ifindex = dpif->dp_ifindex;
+    request->key = put->key;
+    request->key_len = put->key_len;
+    request->mask = put->mask;
+    request->mask_len = put->mask_len;
+    dpif_netlink_flow_init_ufid(request, put->ufid, false);
+
+    /* Ensure that OVS_FLOW_ATTR_ACTIONS will always be included. */
+    request->actions = (put->actions
+                        ? put->actions
+                        : CONST_CAST(struct nlattr *, &dummy_action));
+    request->actions_len = put->actions_len;
+    if (put->flags & DPIF_FP_ZERO_STATS) {
+        request->clear = true;
+    }
+    if (put->flags & DPIF_FP_PROBE) {
+        request->probe = true;
+    }
+    request->nlmsg_flags = put->flags & DPIF_FP_MODIFY ? 0 : NLM_F_CREATE;
+}
+
+/* Appends to 'buf' (which must initially be empty) a "struct ovs_header"
+ * followed by Netlink attributes corresponding to 'flow'. */
+static void
+dpif_netlink_flow_to_ofpbuf(const struct dpif_netlink_flow *flow,
+                            struct ofpbuf *buf)
+{
+    struct ovs_header *ovs_header;
+
+    nl_msg_put_genlmsghdr(buf, 0, ovs_flow_family,
+                          NLM_F_REQUEST | flow->nlmsg_flags,
+                          flow->cmd, OVS_FLOW_VERSION);
+
+    ovs_header = ofpbuf_put_uninit(buf, sizeof *ovs_header);
+    ovs_header->dp_ifindex = flow->dp_ifindex;
+
+    if (flow->ufid_present) {
+        nl_msg_put_u128(buf, OVS_FLOW_ATTR_UFID, flow->ufid);
+    }
+    if (flow->ufid_terse) {
+        nl_msg_put_u32(buf, OVS_FLOW_ATTR_UFID_FLAGS,
+                       OVS_UFID_F_OMIT_KEY | OVS_UFID_F_OMIT_MASK
+                       | OVS_UFID_F_OMIT_ACTIONS);
+    }
+    if (!flow->ufid_terse || !flow->ufid_present) {
+        if (flow->key_len) {
+            put_exclude_packet_type(buf, OVS_FLOW_ATTR_KEY, flow->key,
+                                           flow->key_len);
+        }
+        if (flow->mask_len) {
+            put_exclude_packet_type(buf, OVS_FLOW_ATTR_MASK, flow->mask,
+                                           flow->mask_len);
+        }
+        if (flow->actions || flow->actions_len) {
+            nl_msg_put_unspec(buf, OVS_FLOW_ATTR_ACTIONS,
+                              flow->actions, flow->actions_len);
+        }
+    }
+
+    /* We never need to send these to the kernel. */
+    ovs_assert(!flow->stats);
+    ovs_assert(!flow->tcp_flags);
+    ovs_assert(!flow->used);
+
+    if (flow->clear) {
+        nl_msg_put_flag(buf, OVS_FLOW_ATTR_CLEAR);
+    }
+    if (flow->probe) {
+        nl_msg_put_flag(buf, OVS_FLOW_ATTR_PROBE);
+    }
+}
+
+在内核中如何设置这个action到内核流表中呢？
+
+OVS_FLOW_CMD_NEW -> ovs_flow_cmd_new
+
+static int ovs_flow_cmd_new(struct sk_buff *skb, struct genl_info *info)
+{
+    struct net *net = sock_net(skb->sk);
+    struct nlattr **a = info->attrs;
+    struct ovs_header *ovs_header = info->userhdr;
+    struct sw_flow *flow = NULL, *new_flow;
+    struct sw_flow_mask mask;
+    struct sk_buff *reply;
+    struct datapath *dp;
+    struct sw_flow_actions *acts;
+    struct sw_flow_match match;
+    u32 ufid_flags = ovs_nla_get_ufid_flags(a[OVS_FLOW_ATTR_UFID_FLAGS]);
+    int error;
+    bool log = !a[OVS_FLOW_ATTR_PROBE];
+
+    /* Must have key and actions. */
+    error = -EINVAL;
+    if (!a[OVS_FLOW_ATTR_KEY]) {
+        OVS_NLERR(log, "Flow key attr not present in new flow.");
+        goto error;
+    }
+    if (!a[OVS_FLOW_ATTR_ACTIONS]) {
+        OVS_NLERR(log, "Flow actions attr not present in new flow.");
+        goto error;
+    }
+
+    /* Most of the time we need to allocate a new flow, do it before
+     * locking.
+     */
+    new_flow = ovs_flow_alloc();
+    if (IS_ERR(new_flow)) {
+        error = PTR_ERR(new_flow);
+        goto error;
+    }
+
+    /* Extract key. */
+    ovs_match_init(&match, &new_flow->key, false, &mask);
+    error = ovs_nla_get_match(net, &match, a[OVS_FLOW_ATTR_KEY],
+                  a[OVS_FLOW_ATTR_MASK], log);
+    if (error)
+        goto err_kfree_flow;
+
+    /* Extract flow identifier. */
+    error = ovs_nla_get_identifier(&new_flow->id, a[OVS_FLOW_ATTR_UFID],
+                       &new_flow->key, log);
+    if (error)
+        goto err_kfree_flow;
+
+    /* unmasked key is needed to match when ufid is not used. */
+    if (ovs_identifier_is_key(&new_flow->id))
+        match.key = new_flow->id.unmasked_key;
+
+    ovs_flow_mask_key(&new_flow->key, &new_flow->key, true, &mask);
+
+    /* Validate actions. */
+    error = ovs_nla_copy_actions(net, a[OVS_FLOW_ATTR_ACTIONS],
+                     &new_flow->key, &acts, log);
+    if (error) {
+        OVS_NLERR(log, "Flow actions may not be safe on all matching packets.");
+        goto err_kfree_flow;
+    }
+
+    reply = ovs_flow_cmd_alloc_info(acts, &new_flow->id, info, false,
+                    ufid_flags);
+    if (IS_ERR(reply)) {
+        error = PTR_ERR(reply);
+        goto err_kfree_acts;
+    }
+
+    ovs_lock();
+    dp = get_dp(net, ovs_header->dp_ifindex);
+    if (unlikely(!dp)) {
+        error = -ENODEV;
+        goto err_unlock_ovs;
+    }
+
+    /* Check if this is a duplicate flow */
+    if (ovs_identifier_is_ufid(&new_flow->id))
+        flow = ovs_flow_tbl_lookup_ufid(&dp->table, &new_flow->id);
+    if (!flow)
+        flow = ovs_flow_tbl_lookup(&dp->table, &new_flow->key);
+    if (likely(!flow)) {
+        rcu_assign_pointer(new_flow->sf_acts, acts);
+
+        /* Put flow in bucket. */
+        error = ovs_flow_tbl_insert(&dp->table, new_flow, &mask);
+        if (unlikely(error)) {
+            acts = NULL;
+            goto err_unlock_ovs;
+        }
+
+        if (unlikely(reply)) {
+            error = ovs_flow_cmd_fill_info(new_flow,
+                               ovs_header->dp_ifindex,
+                               reply, info->snd_portid,
+                               info->snd_seq, 0,
+                               OVS_FLOW_CMD_NEW,
+                               ufid_flags);
+            BUG_ON(error < 0);
+        }
+        ovs_unlock();
+    } else {
+        struct sw_flow_actions *old_acts;
+
+        /* Bail out if we're not allowed to modify an existing flow.
+         * We accept NLM_F_CREATE in place of the intended NLM_F_EXCL
+         * because Generic Netlink treats the latter as a dump
+         * request.  We also accept NLM_F_EXCL in case that bug ever
+         * gets fixed.
+         */
+        if (unlikely(info->nlhdr->nlmsg_flags & (NLM_F_CREATE
+                             | NLM_F_EXCL))) {
+            error = -EEXIST;
+            goto err_unlock_ovs;
+        }
+        /* The flow identifier has to be the same for flow updates.
+         * Look for any overlapping flow.
+         */
+        if (unlikely(!ovs_flow_cmp(flow, &match))) {
+            if (ovs_identifier_is_key(&flow->id))
+                flow = ovs_flow_tbl_lookup_exact(&dp->table,
+                                 &match);
+            else /* UFID matches but key is different */
+                flow = NULL;
+            if (!flow) {
+                error = -ENOENT;
+                goto err_unlock_ovs;
+            }
+        }
+        /* Update actions. */
+        old_acts = ovsl_dereference(flow->sf_acts);
+        rcu_assign_pointer(flow->sf_acts, acts);
+
+        if (unlikely(reply)) {
+            error = ovs_flow_cmd_fill_info(flow,
+                               ovs_header->dp_ifindex,
+                               reply, info->snd_portid,
+                               info->snd_seq, 0,
+                               OVS_FLOW_CMD_NEW,
+                               ufid_flags);
+            BUG_ON(error < 0);
+        }
+        ovs_unlock();
+
+        ovs_nla_free_flow_actions_rcu(old_acts);
+        ovs_flow_free(new_flow, false);
+    }
+
+    if (reply)
+        ovs_notify(&dp_flow_genl_family, &ovs_dp_flow_multicast_group, reply, info);
+    return 0;
+
+err_unlock_ovs:
+    ovs_unlock();
+    kfree_skb(reply);
+err_kfree_acts:
+    ovs_nla_free_flow_actions(acts);
+err_kfree_flow:
+    ovs_flow_free(new_flow, false);
+error:
+    return error;
+}
+
+/* 'key' must be the masked key. */
+int ovs_nla_copy_actions(struct net *net, const struct nlattr *attr,
+             const struct sw_flow_key *key,
+             struct sw_flow_actions **sfa, bool log)
+{
+    int err;
+    u32 mpls_label_count = 0;
+
+    *sfa = nla_alloc_flow_actions(min(nla_len(attr), MAX_ACTIONS_BUFSIZE));
+    if (IS_ERR(*sfa))
+        return PTR_ERR(*sfa);
+
+    if (eth_p_mpls(key->eth.type))
+        mpls_label_count = hweight_long(key->mpls.num_labels_mask);
+
+    (*sfa)->orig_len = nla_len(attr);
+    err = __ovs_nla_copy_actions(net, attr, key, sfa, key->eth.type,
+                     key->eth.vlan.tci, mpls_label_count, log);
+    if (err)
+        ovs_nla_free_flow_actions(*sfa);
+
+    return err;
+}
+
+
+static int __ovs_nla_copy_actions(struct net *net, const struct nlattr *attr,
+                  const struct sw_flow_key *key,
+                  struct sw_flow_actions **sfa,
+                  __be16 eth_type, __be16 vlan_tci,
+                  u32 mpls_label_count, bool log)
+{
+    u8 mac_proto = ovs_key_mac_proto(key);
+    const struct nlattr *a;
+    int rem, err;
+
+    nla_for_each_nested(a, attr, rem) {
+        /* Expected argument lengths, (u32)-1 for variable length. */
+        static const u32 action_lens[OVS_ACTION_ATTR_MAX + 1] = {
+            [OVS_ACTION_ATTR_OUTPUT] = sizeof(u32),
+            [OVS_ACTION_ATTR_RECIRC] = sizeof(u32),
+            [OVS_ACTION_ATTR_USERSPACE] = (u32)-1,
+            [OVS_ACTION_ATTR_PUSH_MPLS] = sizeof(struct ovs_action_push_mpls),
+            [OVS_ACTION_ATTR_POP_MPLS] = sizeof(__be16),
+            [OVS_ACTION_ATTR_PUSH_VLAN] = sizeof(struct ovs_action_push_vlan),
+            [OVS_ACTION_ATTR_POP_VLAN] = 0,
+            [OVS_ACTION_ATTR_SET] = (u32)-1,
+            [OVS_ACTION_ATTR_SET_MASKED] = (u32)-1,
+            [OVS_ACTION_ATTR_SAMPLE] = (u32)-1,
+            [OVS_ACTION_ATTR_HASH] = sizeof(struct ovs_action_hash),
+            [OVS_ACTION_ATTR_CT] = (u32)-1,
+            [OVS_ACTION_ATTR_CT_CLEAR] = 0,
+            [OVS_ACTION_ATTR_TRUNC] = sizeof(struct ovs_action_trunc),
+            [OVS_ACTION_ATTR_PUSH_ETH] = sizeof(struct ovs_action_push_eth),
+            [OVS_ACTION_ATTR_POP_ETH] = 0,
+            [OVS_ACTION_ATTR_PUSH_NSH] = (u32)-1,
+            [OVS_ACTION_ATTR_POP_NSH] = 0,
+            [OVS_ACTION_ATTR_METER] = sizeof(u32),
+            [OVS_ACTION_ATTR_CLONE] = (u32)-1,
+            [OVS_ACTION_ATTR_CHECK_PKT_LEN] = (u32)-1,
+        };
+        const struct ovs_action_push_vlan *vlan;
+        int type = nla_type(a);
+        bool skip_copy;
+
+        if (type > OVS_ACTION_ATTR_MAX ||
+            (action_lens[type] != nla_len(a) &&
+             action_lens[type] != (u32)-1))
+            return -EINVAL;
+
+        skip_copy = false;
+        switch (type) {
+        case OVS_ACTION_ATTR_UNSPEC:
+            return -EINVAL;
+
+        case OVS_ACTION_ATTR_USERSPACE:
+            err = validate_userspace(a);
+            if (err)
+                return err;
+            break;
+
+        case OVS_ACTION_ATTR_OUTPUT:
+            if (nla_get_u32(a) >= DP_MAX_PORTS)
+                return -EINVAL;
+            break;
+
+        case OVS_ACTION_ATTR_TRUNC: {
+            const struct ovs_action_trunc *trunc = nla_data(a);
+
+            if (trunc->max_len < ETH_HLEN)
+                return -EINVAL;
+            break;
+        }
+
+        case OVS_ACTION_ATTR_HASH: {
+            const struct ovs_action_hash *act_hash = nla_data(a);
+
+            switch (act_hash->hash_alg) {
+            case OVS_HASH_ALG_L4:
+                break;
+            default:
+                return  -EINVAL;
+            }
+
+            break;
+        }
+
+        case OVS_ACTION_ATTR_POP_VLAN:
+            if (mac_proto != MAC_PROTO_ETHERNET)
+                return -EINVAL;
+            vlan_tci = htons(0);
+            break;
+
+        case OVS_ACTION_ATTR_PUSH_VLAN:
+            if (mac_proto != MAC_PROTO_ETHERNET)
+                return -EINVAL;
+            vlan = nla_data(a);
+            if (!eth_type_vlan(vlan->vlan_tpid))
+                return -EINVAL;
+            if (!(vlan->vlan_tci & htons(VLAN_CFI_MASK)))
+                return -EINVAL;
+            vlan_tci = vlan->vlan_tci;
+            break;
+
+        case OVS_ACTION_ATTR_RECIRC:
+            break;
+
+        case OVS_ACTION_ATTR_PUSH_MPLS: {
+            const struct ovs_action_push_mpls *mpls = nla_data(a);
+
+            if (!eth_p_mpls(mpls->mpls_ethertype))
+                return -EINVAL;
+            /* Prohibit push MPLS other than to a white list
+             * for packets that have a known tag order.
+             */
+            if (vlan_tci & htons(VLAN_CFI_MASK) ||
+                (eth_type != htons(ETH_P_IP) &&
+                 eth_type != htons(ETH_P_IPV6) &&
+                 eth_type != htons(ETH_P_ARP) &&
+                 eth_type != htons(ETH_P_RARP) &&
+                 !eth_p_mpls(eth_type)))
+                return -EINVAL;
+            eth_type = mpls->mpls_ethertype;
+            mpls_label_count++;
+            break;
+        }
+
+        case OVS_ACTION_ATTR_POP_MPLS: {
+            __be16  proto;
+            if (vlan_tci & htons(VLAN_CFI_MASK) ||
+                !eth_p_mpls(eth_type))
+                return -EINVAL;
+
+            /* Disallow subsequent L2.5+ set actions and mpls_pop
+             * actions once the last MPLS label in the packet is
+             * popped as there is no check here to ensure that
+             * the new eth type is valid and thus set actions could
+             * write off the end of the packet or otherwise corrupt
+             * it.
+             *
+             * Support for these actions is planned using packet
+             * recirculation.
+             */
+            proto = nla_get_be16(a);
+            mpls_label_count--;
+
+            if (!eth_p_mpls(proto) || !mpls_label_count)
+                eth_type = htons(0);
+            else
+                eth_type =  proto;
+            break;
+        }
+        case OVS_ACTION_ATTR_SET:
+            err = validate_set(a, key, sfa,
+                       &skip_copy, mac_proto, eth_type,
+                       false, log);
+            if (err)
+                return err;
+            break;
+
+        case OVS_ACTION_ATTR_SET_MASKED:
+            err = validate_set(a, key, sfa,
+                       &skip_copy, mac_proto, eth_type,
+                       true, log);
+            if (err)
+                return err;
+            break;
+
+        case OVS_ACTION_ATTR_SAMPLE: {
+            bool last = nla_is_last(a, rem);
+
+            err = validate_and_copy_sample(net, a, key, sfa,
+                               eth_type, vlan_tci,
+                               mpls_label_count,
+                               log, last);
+            if (err)
+                return err;
+            skip_copy = true;
+            break;
+        }
+
+        case OVS_ACTION_ATTR_CT:
+            err = ovs_ct_copy_action(net, a, key, sfa, log);
+            if (err)
+                return err;
+            skip_copy = true;
+            break;
+
+        case OVS_ACTION_ATTR_CT_CLEAR:
+            break;
+
+        case OVS_ACTION_ATTR_PUSH_ETH:
+            /* Disallow pushing an Ethernet header if one
+             * is already present */
+            if (mac_proto != MAC_PROTO_NONE)
+                return -EINVAL;
+            mac_proto = MAC_PROTO_ETHERNET;
+            break;
+
+        case OVS_ACTION_ATTR_POP_ETH:
+            if (mac_proto != MAC_PROTO_ETHERNET)
+                return -EINVAL;
+            if (vlan_tci & htons(VLAN_CFI_MASK))
+                return -EINVAL;
+            mac_proto = MAC_PROTO_NONE;
+            break;
+
+        case OVS_ACTION_ATTR_PUSH_NSH:
+            if (mac_proto != MAC_PROTO_ETHERNET) {
+                u8 next_proto;
+
+                next_proto = tun_p_from_eth_p(eth_type);
+                if (!next_proto)
+                    return -EINVAL;
+            }
+            mac_proto = MAC_PROTO_NONE;
+            if (!validate_nsh(nla_data(a), false, true, true))
+                return -EINVAL;
+            break;
+
+        case OVS_ACTION_ATTR_POP_NSH: {
+            __be16 inner_proto;
+
+            if (eth_type != htons(ETH_P_NSH))
+                return -EINVAL;
+            inner_proto = tun_p_to_eth_p(key->nsh.base.np);
+            if (!inner_proto)
+                return -EINVAL;
+            if (key->nsh.base.np == TUN_P_ETHERNET)
+                mac_proto = MAC_PROTO_ETHERNET;
+            else
+                mac_proto = MAC_PROTO_NONE;
+            break;
+        }
+
+        case OVS_ACTION_ATTR_METER:
+            /* Non-existent meters are simply ignored.  */
+            break;
+
+        case OVS_ACTION_ATTR_CLONE: {
+            bool last = nla_is_last(a, rem);
+
+            err = validate_and_copy_clone(net, a, key, sfa,
+                              eth_type, vlan_tci,
+                              mpls_label_count,
+                              log, last);
+            if (err)
+                return err;
+            skip_copy = true;
+            break;
+        }
+
+        case OVS_ACTION_ATTR_CHECK_PKT_LEN: {
+                        bool last = nla_is_last(a, rem);
+
+                        err = validate_and_copy_check_pkt_len(net, a, key, sfa,
+                                                              eth_type,
+                                                              vlan_tci, log,
+                                  mpls_label_count,
+                                                              last);
+                        if (err)
+                                return err;
+                        skip_copy = true;
+                        break;
+                }
+
+        default:
+            OVS_NLERR(log, "Unknown Action type %d", type);
+            return -EINVAL;
+        }
+        if (!skip_copy) {
+            err = copy_action(a, sfa, log);
+            if (err)
+                return err;
+        }
+    }
+
+    if (rem > 0)
+        return -EINVAL;
+
+    return 0;
+}
+
+OFPACT_SET_ETH_DST在内核中对应的action其实是OVS_ACTION_ATTR_SET_MASKED，是设置一个attr，设置什么attr呢，OVS_KEY_ATTR_ETHERNET，同理可以设置ip，OVS_KEY_ATTR_IPV4
+
+在内核中执行action的时候 do_execute_actions
+        case OVS_ACTION_ATTR_SET:
+            err = execute_set_action(skb, key, nla_data(a));
+            break;
+        case OVS_ACTION_ATTR_SET_MASKED:
+        case OVS_ACTION_ATTR_SET_TO_MASKED:
+            err = execute_masked_set_action(skb, key, nla_data(a));
+            break;
+
+static int execute_set_action(struct sk_buff *skb,
+                  struct sw_flow_key *flow_key,
+                  const struct nlattr *a)
+{
+    /* Only tunnel set execution is supported without a mask. */
+    if (nla_type(a) == OVS_KEY_ATTR_TUNNEL_INFO) {
+        struct ovs_tunnel_info *tun = nla_data(a);
+
+        ovs_skb_dst_drop(skb);
+        ovs_dst_hold((struct dst_entry *)tun->tun_dst);
+        ovs_skb_dst_set(skb, (struct dst_entry *)tun->tun_dst);
+        return 0;
+    }
+
+    return -EINVAL;
+}
+
+/* Mask is at the midpoint of the data. */
+#define get_mask(a, type) ((const type)nla_data(a) + 1)
+
+static int execute_masked_set_action(struct sk_buff *skb,
+                     struct sw_flow_key *flow_key,
+                     const struct nlattr *a)
+{
+    int err = 0;
+
+    switch (nla_type(a)) {
+    case OVS_KEY_ATTR_PRIORITY:
+        OVS_SET_MASKED(skb->priority, nla_get_u32(a),
+                   *get_mask(a, u32 *));
+        flow_key->phy.priority = skb->priority;
+        break;
+
+    case OVS_KEY_ATTR_SKB_MARK:
+        OVS_SET_MASKED(skb->mark, nla_get_u32(a), *get_mask(a, u32 *));
+        flow_key->phy.skb_mark = skb->mark;
+        break;
+
+    case OVS_KEY_ATTR_TUNNEL_INFO:
+        /* Masked data not supported for tunnel. */
+        err = -EINVAL;
+        break;
+
+    case OVS_KEY_ATTR_ETHERNET:
+        err = set_eth_addr(skb, flow_key, nla_data(a),
+                   get_mask(a, struct ovs_key_ethernet *));
+        break;
+
+    case OVS_KEY_ATTR_NSH:
+        err = set_nsh(skb, flow_key, a);
+        break;
+
+    case OVS_KEY_ATTR_IPV4:
+        err = set_ipv4(skb, flow_key, nla_data(a),
+                   get_mask(a, struct ovs_key_ipv4 *));
+        break;
+
+    case OVS_KEY_ATTR_IPV6:
+        err = set_ipv6(skb, flow_key, nla_data(a),
+                   get_mask(a, struct ovs_key_ipv6 *));
+        break;
+
+    case OVS_KEY_ATTR_TCP:
+        err = set_tcp(skb, flow_key, nla_data(a),
+                  get_mask(a, struct ovs_key_tcp *));
+        break;
+
+    case OVS_KEY_ATTR_UDP:
+        err = set_udp(skb, flow_key, nla_data(a),
+                  get_mask(a, struct ovs_key_udp *));
+        break;
+
+    case OVS_KEY_ATTR_SCTP:
+        err = set_sctp(skb, flow_key, nla_data(a),
+                   get_mask(a, struct ovs_key_sctp *));
+        break;
+
+    case OVS_KEY_ATTR_MPLS:
+        err = set_mpls(skb, flow_key, nla_data(a), get_mask(a,
+                                    __be32 *));
+        break;
+
+    case OVS_KEY_ATTR_CT_STATE:
+    case OVS_KEY_ATTR_CT_ZONE:
+    case OVS_KEY_ATTR_CT_MARK:
+    case OVS_KEY_ATTR_CT_LABELS:
+    case OVS_KEY_ATTR_CT_ORIG_TUPLE_IPV4:
+    case OVS_KEY_ATTR_CT_ORIG_TUPLE_IPV6:
+        err = -EINVAL;
+        break;
+    }
+
+    return err;
+}
+
+-------------------------
 
 static void
 do_xlate_actions(const struct ofpact *ofpacts, size_t ofpacts_len,
