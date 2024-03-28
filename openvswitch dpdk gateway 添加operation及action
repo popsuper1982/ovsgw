@@ -2216,14 +2216,14 @@ handle_upcalls(struct udpif *udpif, struct upcall *upcalls,
     }
 }
 
-dpif_netlink_init_flow_put
+dpif_netlink_init_flow_put (struct dpif_netlink_flow *request)
 ->   request->cmd = (put->flags & DPIF_FP_CREATE
                     ? OVS_FLOW_CMD_NEW : OVS_FLOW_CMD_SET);
    + request->actions = (put->actions
                         ? put->actions
                         : CONST_CAST(struct nlattr *, &dummy_action));
 
-dpif_netlink_flow_to_ofpbuf
+dpif_netlink_flow_to_ofpbuf (struct dpif_netlink_flow *flow) flow就是上面的request
 ->   nl_msg_put_genlmsghdr(buf, 0, ovs_flow_family,
                           NLM_F_REQUEST | flow->nlmsg_flags,
                           flow->cmd, OVS_FLOW_VERSION);
@@ -4562,6 +4562,333 @@ xlate_output_action(struct xlate_ctx *ctx, ofp_port_t port,
     }
 }
 
+#define OFPP_MAX        OFP_PORT_C(0xff00) /* Max # of switch ports. */
+#define OFPP_FIRST_RESV OFP_PORT_C(0xfff7) /* First assigned reserved port. */
+#define OFPP_LAST_RESV  OFP_PORT_C(0xffff) /* Last assigned reserved port. */
+
+/* Reserved output "ports". */
+#define OFPP_UNSET      OFP_PORT_C(0xfff7) /* For OXM_OF_ACTSET_OUTPUT only. */
+#define OFPP_IN_PORT    OFP_PORT_C(0xfff8) /* Where the packet came in. */
+#define OFPP_TABLE      OFP_PORT_C(0xfff9) /* Perform actions in flow table. */
+#define OFPP_NORMAL     OFP_PORT_C(0xfffa) /* Process with normal L2/L3. */
+#define OFPP_FLOOD      OFP_PORT_C(0xfffb) /* All ports except input port and
+                                            * ports disabled by STP. */
+#define OFPP_ALL        OFP_PORT_C(0xfffc) /* All ports except input port. */
+#define OFPP_CONTROLLER OFP_PORT_C(0xfffd) /* Send to controller. */
+#define OFPP_LOCAL      OFP_PORT_C(0xfffe) /* Local openflow "port". */
+#define OFPP_NONE       OFP_PORT_C(0xffff) /* Not associated with any port. */
+
+
+static void
+xlate_normal(struct xlate_ctx *ctx)
+{
+    struct flow_wildcards *wc = ctx->wc;
+    struct flow *flow = &ctx->xin->flow;
+    struct xbundle *in_xbundle;
+    struct xport *in_port;
+    struct mac_entry *mac;
+    void *mac_port;
+    struct xvlan in_xvlan;
+    struct xvlan xvlan;
+    uint16_t vlan;
+
+    memset(&wc->masks.dl_src, 0xff, sizeof wc->masks.dl_src);
+    memset(&wc->masks.dl_dst, 0xff, sizeof wc->masks.dl_dst);
+    wc->masks.vlans[0].tci |= htons(VLAN_VID_MASK | VLAN_CFI);
+
+    in_xbundle = lookup_input_bundle(ctx, flow->in_port.ofp_port, &in_port);
+    if (!in_xbundle) {
+        xlate_report(ctx, OFT_WARN, "no input bundle, dropping");
+        return;
+    }
+
+    /* Drop malformed frames. */
+    if (eth_type_vlan(flow->dl_type) &&
+        !(flow->vlans[0].tci & htons(VLAN_CFI))) {
+        if (ctx->xin->packet != NULL) {
+            xlate_report_error(ctx, "dropping packet with partial "
+                               "VLAN tag received on port %s",
+                               in_xbundle->name);
+        }
+        xlate_report(ctx, OFT_WARN, "partial VLAN tag, dropping");
+        return;
+    }
+
+    /* Drop frames on bundles reserved for mirroring. */
+    if (xbundle_mirror_out(ctx->xbridge, in_xbundle)) {
+        if (ctx->xin->packet != NULL) {
+            xlate_report_error(ctx, "dropping packet received on port %s, "
+                               "which is reserved exclusively for mirroring",
+                               in_xbundle->name);
+        }
+        xlate_report(ctx, OFT_WARN,
+                     "input port is mirror output port, dropping");
+        return;
+    }
+
+    /* Check VLAN. */
+    xvlan_extract(flow, &in_xvlan);
+    if (!input_vid_is_valid(ctx, in_xvlan.v[0].vid, in_xbundle)) {
+        xlate_report(ctx, OFT_WARN,
+                     "disallowed VLAN VID for this input port, dropping");
+        return;
+    }
+    xvlan_input_translate(in_xbundle, &in_xvlan, &xvlan);
+    vlan = xvlan.v[0].vid;
+
+    /* Check other admissibility requirements. */
+    if (in_port && !is_admissible(ctx, in_port, vlan)) {
+        return;
+    }
+
+    /* Learn source MAC. */
+    bool is_grat_arp = is_gratuitous_arp(flow, wc);
+    if (ctx->xin->allow_side_effects
+        && flow->packet_type == htonl(PT_ETH)
+        && in_port->pt_mode != NETDEV_PT_LEGACY_L3
+    ) {
+        update_learning_table(ctx, in_xbundle, flow->dl_src, vlan,
+                              is_grat_arp);
+    }
+    if (ctx->xin->xcache && in_xbundle != &ofpp_none_bundle) {
+        struct xc_entry *entry;
+
+        /* Save just enough info to update mac learning table later. */
+        entry = xlate_cache_add_entry(ctx->xin->xcache, XC_NORMAL);
+        entry->normal.ofproto = ctx->xbridge->ofproto;
+        entry->normal.in_port = flow->in_port.ofp_port;
+        entry->normal.dl_src = flow->dl_src;
+        entry->normal.vlan = vlan;
+        entry->normal.is_gratuitous_arp = is_grat_arp;
+    }
+
+    /* Determine output bundle. */
+    if (mcast_snooping_enabled(ctx->xbridge->ms)
+        && !eth_addr_is_broadcast(flow->dl_dst)
+        && eth_addr_is_multicast(flow->dl_dst)
+        && is_ip_any(flow)) {
+        struct mcast_snooping *ms = ctx->xbridge->ms;
+        struct mcast_group *grp = NULL;
+
+        if (is_igmp(flow, wc)) {
+            /*
+             * IGMP packets need to take the slow path, in order to be
+             * processed for mdb updates. That will prevent expires
+             * firing off even after hosts have sent reports.
+             */
+            ctx->xout->slow |= SLOW_ACTION;
+
+            memset(&wc->masks.tp_src, 0xff, sizeof wc->masks.tp_src);
+            if (mcast_snooping_is_membership(flow->tp_src) ||
+                mcast_snooping_is_query(flow->tp_src)) {
+                if (ctx->xin->allow_side_effects && ctx->xin->packet) {
+                    update_mcast_snooping_table(ctx, flow, vlan,
+                                                in_xbundle, ctx->xin->packet);
+                }
+            }
+
+            if (mcast_snooping_is_membership(flow->tp_src)) {
+                struct mcast_output out = MCAST_OUTPUT_INIT;
+
+                ovs_rwlock_rdlock(&ms->rwlock);
+                xlate_normal_mcast_send_mrouters(ctx, ms, in_xbundle, &xvlan,
+                                                 &out);
+                /* RFC4541: section 2.1.1, item 1: A snooping switch should
+                 * forward IGMP Membership Reports only to those ports where
+                 * multicast routers are attached.  Alternatively stated: a
+                 * snooping switch should not forward IGMP Membership Reports
+                 * to ports on which only hosts are attached.
+                 * An administrative control may be provided to override this
+                 * restriction, allowing the report messages to be flooded to
+                 * other ports. */
+                xlate_normal_mcast_send_rports(ctx, ms, in_xbundle, &out);
+                ovs_rwlock_unlock(&ms->rwlock);
+
+                mcast_output_finish(ctx, &out, in_xbundle, &xvlan);
+            } else {
+                xlate_report(ctx, OFT_DETAIL, "multicast traffic, flooding");
+                xlate_normal_flood(ctx, in_xbundle, &xvlan);
+            }
+            return;
+        } else if (is_mld(flow, wc)) {
+            ctx->xout->slow |= SLOW_ACTION;
+            if (ctx->xin->allow_side_effects && ctx->xin->packet) {
+                update_mcast_snooping_table(ctx, flow, vlan,
+                                            in_xbundle, ctx->xin->packet);
+            }
+            if (is_mld_report(flow, wc)) {
+                struct mcast_output out = MCAST_OUTPUT_INIT;
+
+                ovs_rwlock_rdlock(&ms->rwlock);
+                xlate_normal_mcast_send_mrouters(ctx, ms, in_xbundle, &xvlan,
+                                                 &out);
+                xlate_normal_mcast_send_rports(ctx, ms, in_xbundle, &out);
+                ovs_rwlock_unlock(&ms->rwlock);
+
+                mcast_output_finish(ctx, &out, in_xbundle, &xvlan);
+            } else {
+                xlate_report(ctx, OFT_DETAIL, "MLD query, flooding");
+                xlate_normal_flood(ctx, in_xbundle, &xvlan);
+            }
+            return;
+        } else {
+            if (is_ip_local_multicast(flow, wc)) {
+                /* RFC4541: section 2.1.2, item 2: Packets with a dst IP
+                 * address in the 224.0.0.x range which are not IGMP must
+                 * be forwarded on all ports */
+                xlate_report(ctx, OFT_DETAIL,
+                             "RFC4541: section 2.1.2, item 2, flooding");
+                xlate_normal_flood(ctx, in_xbundle, &xvlan);
+                return;
+            }
+        }
+
+        /* forwarding to group base ports */
+        struct mcast_output out = MCAST_OUTPUT_INIT;
+
+        ovs_rwlock_rdlock(&ms->rwlock);
+        if (flow->dl_type == htons(ETH_TYPE_IP)) {
+            grp = mcast_snooping_lookup4(ms, flow->nw_dst, vlan);
+        } else if (flow->dl_type == htons(ETH_TYPE_IPV6)) {
+            grp = mcast_snooping_lookup(ms, &flow->ipv6_dst, vlan);
+        }
+        if (grp) {
+            xlate_normal_mcast_send_group(ctx, ms, grp, in_xbundle, &out);
+            xlate_normal_mcast_send_fports(ctx, ms, in_xbundle, &out);
+            xlate_normal_mcast_send_mrouters(ctx, ms, in_xbundle, &xvlan,
+                                             &out);
+        } else {
+            if (mcast_snooping_flood_unreg(ms)) {
+                xlate_report(ctx, OFT_DETAIL,
+                             "unregistered multicast, flooding");
+                out.flood = true;
+            } else {
+                xlate_normal_mcast_send_mrouters(ctx, ms, in_xbundle, &xvlan,
+                                                 &out);
+                xlate_normal_mcast_send_fports(ctx, ms, in_xbundle, &out);
+            }
+        }
+        ovs_rwlock_unlock(&ms->rwlock);
+
+        mcast_output_finish(ctx, &out, in_xbundle, &xvlan);
+    } else {
+        ovs_rwlock_rdlock(&ctx->xbridge->ml->rwlock);
+        mac = mac_learning_lookup(ctx->xbridge->ml, flow->dl_dst, vlan);
+        mac_port = mac ? mac_entry_get_port(ctx->xbridge->ml, mac) : NULL;
+        ovs_rwlock_unlock(&ctx->xbridge->ml->rwlock);
+
+        if (mac_port) {
+            struct xbundle *mac_xbundle = xbundle_lookup(ctx->xcfg, mac_port);
+
+            if (mac_xbundle && xbundle_mirror_out(ctx->xbridge, mac_xbundle)) {
+                xlate_report(ctx, OFT_WARN,
+                             "learned port is a mirror port, dropping");
+                return;
+            }
+
+            if (mac_xbundle
+                && mac_xbundle != in_xbundle
+                && mac_xbundle->ofbundle != in_xbundle->ofbundle) {
+                xlate_report(ctx, OFT_DETAIL, "forwarding to learned port");
+                output_normal(ctx, mac_xbundle, &xvlan);
+            } else if (!mac_xbundle) {
+                xlate_report(ctx, OFT_WARN,
+                             "learned port is unknown, dropping");
+            } else {
+                xlate_report(ctx, OFT_DETAIL,
+                             "learned port is input port, dropping");
+            }
+        } else {
+            xlate_report(ctx, OFT_DETAIL,
+                         "no learned MAC for destination, flooding");
+            xlate_normal_flood(ctx, in_xbundle, &xvlan);
+        }
+    }
+}
+
+static void
+output_normal(struct xlate_ctx *ctx, const struct xbundle *out_xbundle,
+              const struct xvlan *xvlan)
+{
+    uint16_t vid;
+    union flow_vlan_hdr old_vlans[FLOW_MAX_VLAN_HEADERS];
+    struct xport *xport;
+    struct xlate_bond_recirc xr;
+    bool use_recirc = false;
+    struct xvlan out_xvlan;
+
+    check_and_set_cvlan_mask(ctx->wc, out_xbundle);
+
+    xvlan_output_translate(out_xbundle, xvlan, &out_xvlan);
+    if (out_xbundle->use_priority_tags) {
+        out_xvlan.v[0].pcp = ntohs(ctx->xin->flow.vlans[0].tci) &
+                             VLAN_PCP_MASK;
+    }
+    vid = out_xvlan.v[0].vid;
+    if (ovs_list_is_empty(&out_xbundle->xports)) {
+        /* Partially configured bundle with no slaves.  Drop the packet. */
+        return;
+    } else if (!out_xbundle->bond) {
+        xport = CONTAINER_OF(ovs_list_front(&out_xbundle->xports), struct xport,
+                             bundle_node);
+    } else {
+        struct flow_wildcards *wc = ctx->wc;
+        struct ofport_dpif *ofport;
+
+        if (ctx->xbridge->support.odp.recirc) {
+            /* In case recirculation is not actually in use, 'xr.recirc_id'
+             * will be set to '0', since a valid 'recirc_id' can
+             * not be zero.  */
+            bond_update_post_recirc_rules(out_xbundle->bond,
+                                          &xr.recirc_id,
+                                          &xr.hash_basis);
+            if (xr.recirc_id) {
+                /* Use recirculation instead of output. */
+                use_recirc = true;
+                xr.hash_alg = OVS_HASH_ALG_L4;
+                /* Recirculation does not require unmasking hash fields. */
+                wc = NULL;
+            }
+        }
+
+        ofport = bond_choose_output_slave(out_xbundle->bond,
+                                          &ctx->xin->flow, wc, vid);
+        xport = xport_lookup(ctx->xcfg, ofport);
+
+        if (!xport) {
+            /* No slaves enabled, so drop packet. */
+            return;
+        }
+
+        /* If use_recirc is set, the main thread will handle stats
+         * accounting for this bond. */
+        if (!use_recirc) {
+            if (ctx->xin->resubmit_stats) {
+                bond_account(out_xbundle->bond, &ctx->xin->flow, vid,
+                             ctx->xin->resubmit_stats->n_bytes);
+            }
+            if (ctx->xin->xcache) {
+                struct xc_entry *entry;
+                struct flow *flow;
+
+                flow = &ctx->xin->flow;
+                entry = xlate_cache_add_entry(ctx->xin->xcache, XC_BOND);
+                entry->bond.bond = bond_ref(out_xbundle->bond);
+                entry->bond.flow = xmemdup(flow, sizeof *flow);
+                entry->bond.vid = vid;
+            }
+        }
+    }
+
+    memcpy(&old_vlans, &ctx->xin->flow.vlans, sizeof(old_vlans));
+    xvlan_put(&ctx->xin->flow, &out_xvlan, out_xbundle->use_priority_tags);
+
+    compose_output_action(ctx, xport->ofp_port, use_recirc ? &xr : NULL,
+                          false, false);
+    memcpy(&ctx->xin->flow.vlans, &old_vlans, sizeof(old_vlans));
+}
+
+
 static void
 compose_output_action(struct xlate_ctx *ctx, ofp_port_t ofp_port,
                       const struct xlate_bond_recirc *xr,
@@ -4705,7 +5032,7 @@ compose_output_action__(struct xlate_ctx *ctx, ofp_port_t ofp_port,
             nl_msg_put_u32(ctx->odp_actions, OVS_ACTION_ATTR_RECIRC,
                            xr->recirc_id);
         } else if (is_native_tunnel) {
-            /* Output to native tunnel port. */  
+            /* Output to native tunnel port. */
             native_tunnel_output(ctx, xport, flow, odp_port, truncate);
             flow->tunnel = flow_tnl; /* Restore tunnel metadata */
 
@@ -4759,6 +5086,75 @@ compose_output_action__(struct xlate_ctx *ctx, ofp_port_t ofp_port,
     flow->packet_type = flow_packet_type;
     flow->dl_type = flow_dl_type;
 }
+
+static void
+xlate_commit_actions(struct xlate_ctx *ctx)
+{
+    bool use_masked = ctx->xbridge->support.masked_set_action;
+
+    ctx->xout->slow |= commit_odp_actions(&ctx->xin->flow, &ctx->base_flow,
+                                          ctx->odp_actions, ctx->wc,
+                                          use_masked, ctx->pending_encap,
+                                          ctx->pending_decap, ctx->encap_data);
+    ctx->pending_encap = false;
+    ctx->pending_decap = false;
+    ofpbuf_delete(ctx->encap_data);
+    ctx->encap_data = NULL;
+}
+
+/* If any of the flow key data that ODP actions can modify are different in
+ * 'base' and 'flow', appends ODP actions to 'odp_actions' that change the flow
+ * key from 'base' into 'flow', and then changes 'base' the same way.  Does not
+ * commit set_tunnel actions.  Users should call commit_odp_tunnel_action()
+ * in addition to this function if needed.  Sets fields in 'wc' that are
+ * used as part of the action.
+ *
+ * In the common case, this function returns 0.  If the flow key modification
+ * requires the flow's packets to be forced into the userspace slow path, this
+ * function returns SLOW_ACTION.  This only happens when there is no ODP action
+ * to modify some field that was actually modified.  For example, there is no
+ * ODP action to modify any ARP field, so such a modification triggers
+ * SLOW_ACTION.  (When this happens, packets that need such modification get
+ * flushed to userspace and handled there, which works OK but much more slowly
+ * than if the datapath handled it directly.) */
+enum slow_path_reason
+commit_odp_actions(const struct flow *flow, struct flow *base,
+                   struct ofpbuf *odp_actions, struct flow_wildcards *wc,
+                   bool use_masked, bool pending_encap, bool pending_decap,
+                   struct ofpbuf *encap_data)
+{
+    /* If you add a field that OpenFlow actions can change, and that is visible
+     * to the datapath (including all data fields), then you should also add
+     * code here to commit changes to the field. */
+    BUILD_ASSERT_DECL(FLOW_WC_SEQ == 42);
+
+    enum slow_path_reason slow1, slow2;
+    bool mpls_done = false;
+
+    commit_encap_decap_action(flow, base, odp_actions, wc,
+                              pending_encap, pending_decap, encap_data);
+    commit_set_ether_action(flow, base, odp_actions, wc, use_masked);
+    /* Make packet a non-MPLS packet before committing L3/4 actions,
+     * which would otherwise do nothing. */
+    if (eth_type_mpls(base->dl_type) && !eth_type_mpls(flow->dl_type)) {
+        commit_mpls_action(flow, base, odp_actions);
+        mpls_done = true;
+    }
+    commit_set_nsh_action(flow, base, odp_actions, wc, use_masked);
+    slow1 = commit_set_nw_action(flow, base, odp_actions, wc, use_masked);
+    commit_set_port_action(flow, base, odp_actions, wc, use_masked);
+    slow2 = commit_set_icmp_action(flow, base, odp_actions, wc);
+    if (!mpls_done) {
+        commit_mpls_action(flow, base, odp_actions);
+    }
+    commit_vlan_action(flow, base, odp_actions, wc);
+    commit_set_priority_action(flow, base, odp_actions, wc, use_masked);
+    commit_set_pkt_mark_action(flow, base, odp_actions, wc, use_masked);
+
+    return slow1 ? slow1 : slow2;
+}
+
+
 
 
 ////////////////////9. 命令行ovs-ofctl修改
