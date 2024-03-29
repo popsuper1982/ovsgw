@@ -1,0 +1,858 @@
+openvswitch add action details
+
+6.添加一个operation和action
+
+https://www.cnblogs.com/ssyfj/p/12290789.html
+
+https://www.cnblogs.com/popsuper1982/p/5906722.html
+
+https://zhuanlan.zhihu.com/p/27802666
+
+1.定义openflow action
+所有action定义在lib/ofp-actions.c
+
+在enum ofp_raw_action_type {中添加
+
+    /* OF1.0+(29): uint32_t. */
+OFPAT_RAW_PROBDROP,
+
+注释非常重要，说明了协议版本，序号，构造openflow消息所需参数
+有些函数头是根据协议版本、代码和操作所需的参数类型自动生成的。 后面的序号是独一无二的，不能在同一协议版本中出现两个一样的序号
+
+配置了上述后，编译过程会自动生成函数
+
+put_OFPAT_PROBDROP: 根据 uint32_t构造出openflow消息
+
+对于gateway的操作，我们新增两个action
+
+    /* OF1.0+(28): struct ofp_action_config_gw. */
+    OFPAT_RAW_CONFIG_GW,
+
+    /* OF1.0+(29): struct ofp_action_handle_gw. */
+    OFPAT_RAW_HANDLE_GW,
+
+所以上述我们的两个定义也会生成两个函数
+put_OFPAT_CONFIG_GW 根据ofp_action_config_gw构造出openflow消息
+put_OFPAT_HANDLE_GW 根据ofp_action_handle_gw构造出openflow消息
+
+接下来定义struct ofp_action_config_gw和struct ofp_action_handle_gw
+
+我们添加两个struct的定义，并且设置cache对齐
+
+struct ofp_action_config_gw {
+    ovs_be16 type;
+    ovs_be16 len;
+    uint32_t param1;
+    ovs_be32 param2;
+    struct eth_addr param3;
+    uint32_t param4;
+    ovs_be32 param5;
+    struct eth_addr param6;
+    uint32_t param7;
+    ovs_be32 param8;
+    struct eth_addr param9;
+    uint8_t pad[2];
+};
+OFP_ASSERT(sizeof(struct ofp_action_config_gw) == 48);
+
+struct ofp_action_handle_gw {
+    ovs_be16 type;
+    ovs_be16 len;
+    uint32_t pipeline1;
+    uint32_t pipeline2;
+    uint32_t pipeline3;
+    uint32_t pipeline4;
+    uint32_t pipeline5;
+};
+OFP_ASSERT(sizeof(struct ofp_action_handle_gw) == 24);
+
+2.定义openvswitch action
+所有action定义在include/openvswitch/ofp-actions.h中
+
+OFPACT(PROBDROP,        ofpact_probdrop,    ofpact, "probdrop")
+
+还需要定义两个参数的结构
+
+/* ..., after "struct ofpact_decap { ... }" */
+
+/* OFPACT_PROBDROP.
+ *
+ * Used for OFPAT_PROBDROP */
+struct ofpact_probdrop {
+    OFPACT_PADDED_MEMBERS(
+        struct ofpact ofpact;
+        uint32_t prob;           /* Uint probability, "covers" 0->1 range. */
+    );
+    uint8_t data[];
+};
+
+定义openvswitch action会生成一些列函数
+
+ofpact_put_PROBDROP: 将ofpbuf转化为struct ofpact_probdrop: openflow消息转化openvswitch action
+
+ofpact_get_PROBDROP: 从ofpact获取为struct ofpact_probdrop: 获取openvswitch action
+
+
+对于我们来说，添加这两个
+
+    OFPACT(CONFIG_GW,       ofpact_config_gw,   ofpact, "config_gw")  \
+    OFPACT(HANDLE_GW,       ofpact_handle_gw,   ofpact, "handle_gw") \
+
+这里相当于定义两个openvswitch action
+OFPACT_CONFIG_GW
+OFPACT_HANDLE_GW
+
+还需要定义两个参数的结构
+
+struct ofpact_config_gw {
+    OFPACT_PADDED_MEMBERS(
+        struct ofpact ofpact;
+        uint32_t param1;
+        ovs_be32 param2;
+        struct eth_addr param3;
+        uint32_t param4;
+        ovs_be32 param5;
+        struct eth_addr param6;
+        uint32_t param7;
+        ovs_be32 param8;
+        struct eth_addr param9;
+    );
+};
+
+struct ofpact_handle_gw {
+    OFPACT_PADDED_MEMBERS(
+        struct ofpact ofpact;
+        uint32_t pipeline1;
+        uint32_t pipeline2;
+        uint32_t pipeline3;
+        uint32_t pipeline4;
+        uint32_t pipeline5;
+    );
+};
+
+定义openvswitch action会生成一些列函数
+
+ofpact_put_CONFIG_GW
+ofpact_get_CONFIG_GW
+ofpact_put_HANDLE_GW
+ofpact_get_HANDLE_GW
+
+3.openflow action与openvswitch action转化
+
+openflow action 与openvswitch action 有对应关系在ofpact_map中, 可以理解为多个版本openflow对应一个openvswitch action
+
+我们修改static const struct ofpact_map * get_ofpact_map(enum ofp_version version)
+
+做了一个映射OFPACT_CONFIG_GW是openvswitch的action，28是openflow的action
+
+static const struct ofpact_map *
+get_ofpact_map(enum ofp_version version)
+{
+    /* OpenFlow 1.0 actions. */
+    static const struct ofpact_map of10[] = {
+        { OFPACT_OUTPUT, 0 },
+        { OFPACT_SET_VLAN_VID, 1 },
+        { OFPACT_SET_VLAN_PCP, 2 },
+        { OFPACT_STRIP_VLAN, 3 },
+        { OFPACT_SET_ETH_SRC, 4 },
+        { OFPACT_SET_ETH_DST, 5 },
+        { OFPACT_SET_IPV4_SRC, 6 },
+        { OFPACT_SET_IPV4_DST, 7 },
+        { OFPACT_SET_IP_DSCP, 8 },
+        { OFPACT_SET_L4_SRC_PORT, 9 },
+        { OFPACT_SET_L4_DST_PORT, 10 },
+        { OFPACT_ENQUEUE, 11 },
+        { OFPACT_CONFIG_GW, 28},
+        { OFPACT_HANDLE_GW, 29},
+        { 0, -1 },
+    };
+
+    /* OpenFlow 1.1 actions. */
+    static const struct ofpact_map of11[] = {
+        { OFPACT_OUTPUT, 0 },
+        { OFPACT_SET_VLAN_VID, 1 },
+        { OFPACT_SET_VLAN_PCP, 2 },
+        { OFPACT_SET_ETH_SRC, 3 },
+        { OFPACT_SET_ETH_DST, 4 },
+        { OFPACT_SET_IPV4_SRC, 5 },
+        { OFPACT_SET_IPV4_DST, 6 },
+        { OFPACT_SET_IP_DSCP, 7 },
+        { OFPACT_SET_IP_ECN, 8 },
+        { OFPACT_SET_L4_SRC_PORT, 9 },
+        { OFPACT_SET_L4_DST_PORT, 10 },
+        /* OFPAT_COPY_TTL_OUT (11) not supported. */
+        /* OFPAT_COPY_TTL_IN (12) not supported. */
+        { OFPACT_SET_MPLS_LABEL, 13 },
+        { OFPACT_SET_MPLS_TC, 14 },
+        { OFPACT_SET_MPLS_TTL, 15 },
+        { OFPACT_DEC_MPLS_TTL, 16 },
+        { OFPACT_PUSH_VLAN, 17 },
+        { OFPACT_STRIP_VLAN, 18 },
+        { OFPACT_PUSH_MPLS, 19 },
+        { OFPACT_POP_MPLS, 20 },
+        { OFPACT_SET_QUEUE, 21 },
+        { OFPACT_GROUP, 22 },
+        { OFPACT_SET_IP_TTL, 23 },
+        { OFPACT_DEC_TTL, 24 },
+        { OFPACT_CONFIG_GW, 28},
+        { OFPACT_HANDLE_GW, 29},
+        { 0, -1 },
+    };
+
+    /* OpenFlow 1.2, 1.3, and 1.4 actions. */
+    static const struct ofpact_map of12[] = {
+        { OFPACT_OUTPUT, 0 },
+        /* OFPAT_COPY_TTL_OUT (11) not supported. */
+        /* OFPAT_COPY_TTL_IN (12) not supported. */
+        { OFPACT_SET_MPLS_TTL, 15 },
+        { OFPACT_DEC_MPLS_TTL, 16 },
+        { OFPACT_PUSH_VLAN, 17 },
+        { OFPACT_STRIP_VLAN, 18 },
+        { OFPACT_PUSH_MPLS, 19 },
+        { OFPACT_POP_MPLS, 20 },
+        { OFPACT_SET_QUEUE, 21 },
+        { OFPACT_GROUP, 22 },
+        { OFPACT_SET_IP_TTL, 23 },
+        { OFPACT_DEC_TTL, 24 },
+        { OFPACT_SET_FIELD, 25 },
+        /* OF1.3+ OFPAT_PUSH_PBB (26) not supported. */
+        /* OF1.3+ OFPAT_POP_PBB (27) not supported. */
+        { OFPACT_CONFIG_GW, 28},
+        { OFPACT_HANDLE_GW, 29},
+        { 0, -1 },
+    };
+
+    switch (version) {
+    case OFP10_VERSION:
+        return of10;
+
+    case OFP11_VERSION:
+        return of11;
+
+    case OFP12_VERSION:
+    case OFP13_VERSION:
+    case OFP14_VERSION:
+    case OFP15_VERSION:
+    default:
+        return of12;
+    }
+}
+
+openflow action与openvswitch action转化需要实现以下几个函数
+
+ofpact_decode---->decode_OFPAT_RAW_PROBDROP: 解openflow消息生成openvswitch action
+ofpact_encode---->encode_PROBDROP: 从ofpact_type构造openflow消息
+ofpact_parse---->parse_PROBDROP: 从字符串解析构造openvswitch action
+ofpact_format---->format_PROBDROP: 将openvswitch action转化为string
+ofpact_format---->check_PROBDROP:校验openvswitch action
+
+/* 在 check_PROBDROP 函数后面添加*/
+
+/* Okay, the new stuff! */
+
+/* Encoding the action packet to put on the wire. */
+static void
+encode_PROBDROP(const struct ofpact_probdrop *prob,
+                    enum ofp_version ofp_version OVS_UNUSED,
+                    struct ofpbuf *out)
+{
+    uint32_t p = prob->prob;
+
+    put_OFPAT_PROBDROP(out, p);
+}
+
+/* Reversing the process. */
+static enum ofperr
+decode_OFPAT_RAW_PROBDROP(uint32_t prob,
+                            enum ofp_version ofp_version OVS_UNUSED,
+                            struct ofpbuf *out)
+{
+    struct ofpact_probdrop *op;
+    op = ofpact_put_PROBDROP(out);
+    op->prob = prob;
+
+    return 0;
+}
+
+/* Helper for below. */
+static char * OVS_WARN_UNUSED_RESULT
+parse_prob(char *arg, struct ofpbuf *ofpacts)
+{
+    struct ofpact_probdrop *probdrop;
+    uint32_t prob;
+    char *error;
+
+    error = str_to_u32(arg, &prob);
+    if (error) return error;
+
+    probdrop = ofpact_put_PROBDROP(ofpacts);
+    probdrop->prob = prob;
+    return NULL;
+}
+
+/* Go from string-formatted args into an action struct.
+e.g. ovs-ofctl add-flow ... actions=probdrop:3000000000,output:"s2-eth0"
+*/
+static char * OVS_WARN_UNUSED_RESULT
+parse_PROBDROP(char *arg, const struct ofpact_parse_params *pp)
+{
+    return parse_prob(arg, pp->ofpacts);
+}
+
+/* Used when printing info to console. */
+static void
+format_PROBDROP(const struct ofpact_probdrop *a,
+                const struct ofpact_format_params *fp)
+{
+    /* Feel free to use e.g. colors.param,
+    colors.end around parameter names */
+    ds_put_format(fp->s, "probdrop:%"PRIu32, a->prob);
+}
+
+/* ... */
+
+static enum ofperr
+check_PROBDROP(const struct ofpact_probdrop *a OVS_UNUSED,
+                const struct ofpact_check_params *cp OVS_UNUSED)
+{
+    /* My method needs no checking. Probably. */
+    return 0;
+}
+
+s表示短、l表示长；
+ntohs =net to host short int 16位
+htons=host to net short int 16位
+ntohl =net to host long int 32位
+htonl=host to net long int 32位
+
+我们写 /* OF1.0+(28): struct ofp_action_config_gw. */ OFPAT_RAW_CONFIG_GW 对应的decode, encode, parse, format
+
+static enum ofperr
+decode_OFPAT_RAW_CONFIG_GW(const struct ofp_action_config_gw *a,
+                            enum ofp_version ofp_version OVS_UNUSED,
+                            struct ofpbuf *out)
+{
+    struct ofpact_config_gw *config_gw;
+
+    config_gw = ofpact_put_CONFIG_GW(out);
+
+    //may do ntohs htons ntohl htonl
+    config_gw->param1 = a->param1;
+    config_gw->param2 = a->param2;
+    config_gw->param3 = a->param3;
+    config_gw->param4 = a->param4;
+    config_gw->param5 = a->param5;
+    config_gw->param6 = a->param6;
+    config_gw->param7 = a->param7;
+    config_gw->param8 = a->param8;
+    config_gw->param9 = a->param9;
+}
+
+
+static void
+encode_CONFIG_GW(const struct ofpact_config_gw *config_gw,
+                  enum ofp_version ofp_version, struct ofpbuf *out)
+{
+
+    struct ofp_action_config_gw *ofp_config_gw;
+
+    ofp_config_gw = put_OFPAT_CONFIG_GW(out);
+
+    //may do ntohs htons ntohl htonl
+    ofp_config_gw->param1 = config_gw->param1;
+    ofp_config_gw->param2 = config_gw->param2;
+    ofp_config_gw->param3 = config_gw->param3;
+    ofp_config_gw->param4 = config_gw->param4;
+    ofp_config_gw->param5 = config_gw->param5;
+    ofp_config_gw->param6 = config_gw->param6;
+    ofp_config_gw->param7 = config_gw->param7;
+    ofp_config_gw->param8 = config_gw->param8;
+    ofp_config_gw->param9 = config_gw->param9;
+}
+
+static char * OVS_WARN_UNUSED_RESULT
+parse_CONFIG_GW(const char *arg, const struct ofpact_parse_params *pp)
+{
+    struct ofpbuf *ofpacts;
+    struct ofpact_config_gw *config_gw;
+    char *name, *value;
+    struct eth_addr ethaddr;
+    char *error;
+
+    ofpacts = pp->ofpacts;
+    config_gw = ofpact_put_CONFIG_GW(ofpacts);
+
+    while (ofputil_parse_key_value(&arg, &name, &value)) {
+        if (!strcmp(name, "param1")) {
+            config_gw->param1 = atoi(value);
+        } else if (!strcmp(name, "param2")) {
+            config_gw->param2 = atoi(value);
+        } else if (!strcmp(name, "param3")) {
+            error = str_to_mac(value, &ethaddr);
+            if (error) {
+                return error;
+            }
+            config_gw->param3 = ethaddr;
+        } else if (!strcmp(name, "param4")) {
+            config_gw->param4 = atoi(value);
+        } else if (!strcmp(name, "param5")) {
+            config_gw->param5 = atoi(value);
+        } else if (!strcmp(name, "param6")) {
+            error = str_to_mac(value, &ethaddr);
+            if (error) {
+                return error;
+            }
+            config_gw->param6 = ethaddr;
+        } else if (!strcmp(name, "param7")) {
+            config_gw->param7 = atoi(value);
+        } else if (!strcmp(name, "param8")) {
+            config_gw->param8 = atoi(value);
+        } else if (!strcmp(name, "param9")) {
+            error = str_to_mac(value, &ethaddr);
+            if (error) {
+                return error;
+            }
+            config_gw->param9 = ethaddr;
+        } 
+    }
+
+    return NULL;
+}
+
+static void
+format_CONFIG_GW(const struct ofpact_config_gw *a, const struct ofpact_format_params *fp)
+{
+    struct ds *s;
+
+    s = fp->s;
+
+    ds_put_format(s, "config_gw(");
+    if (a->param1 != 0) {
+        ds_put_format(s, "param1=%"PRIu32, a->param1);
+    }
+    if (a->param2 != 0) {
+        ds_put_format(s, ",param2=%"PRIx32, ntohl(a->param2));
+    }
+    if (a->param3 != 0) {
+        ds_put_format(s, ",param3=%"ETH_ADDR_FMT, ETH_ADDR_ARGS(a->param3));
+    }
+    if (a->param4 != 0) {
+        ds_put_format(s, "param1=%"PRIu32, a->param1);
+    }
+    if (a->param5 != 0) {
+        ds_put_format(s, ",param2=%"PRIx32, ntohl(a->param2));
+    }
+    if (a->param6 != 0) {
+        ds_put_format(s, ",param3=%"ETH_ADDR_FMT, ETH_ADDR_ARGS(a->param3));
+    }
+    if (a->param7 != 0) {
+        ds_put_format(s, "param1=%"PRIu32, a->param1);
+    }
+    if (a->param8 != 0) {
+        ds_put_format(s, ",param2=%"PRIx32, ntohl(a->param2));
+    }
+    if (a->param9 != 0) {
+        ds_put_format(s, ",param3=%"ETH_ADDR_FMT, ETH_ADDR_ARGS(a->param3));
+    }
+
+    ds_put_format(s, ")");
+}
+
+4.数据面action的定义
+
+action是实现在这里datapath\linux\compat\include\linux\openvswitch.h
+
+enum ovs_action_attr {
+    OVS_ACTION_ATTR_UNSPEC,
+    OVS_ACTION_ATTR_OUTPUT,       /* u32 port number. */
+    OVS_ACTION_ATTR_USERSPACE,    /* Nested OVS_USERSPACE_ATTR_*. */
+    OVS_ACTION_ATTR_SET,          /* One nested OVS_KEY_ATTR_*. */
+    OVS_ACTION_ATTR_PUSH_VLAN,    /* struct ovs_action_push_vlan. */
+    OVS_ACTION_ATTR_POP_VLAN,     /* No argument. */
+    OVS_ACTION_ATTR_SAMPLE,       /* Nested OVS_SAMPLE_ATTR_*. */
+    OVS_ACTION_ATTR_RECIRC,       /* u32 recirc_id. */
+    OVS_ACTION_ATTR_HASH,         /* struct ovs_action_hash. */
+    OVS_ACTION_ATTR_PUSH_MPLS,    /* struct ovs_action_push_mpls. */
+    OVS_ACTION_ATTR_POP_MPLS,     /* __be16 ethertype. */
+    OVS_ACTION_ATTR_SET_MASKED,   /* One nested OVS_KEY_ATTR_* including
+                       * data immediately followed by a mask.
+                       * The data must be zero for the unmasked
+                       * bits. */
+    OVS_ACTION_ATTR_CT,           /* Nested OVS_CT_ATTR_* . */
+    OVS_ACTION_ATTR_TRUNC,        /* u32 struct ovs_action_trunc. */
+    OVS_ACTION_ATTR_PUSH_ETH,     /* struct ovs_action_push_eth. */
+    OVS_ACTION_ATTR_POP_ETH,      /* No argument. */
+    OVS_ACTION_ATTR_CT_CLEAR,     /* No argument. */
+    OVS_ACTION_ATTR_PUSH_NSH,     /* Nested OVS_NSH_KEY_ATTR_*. */
+    OVS_ACTION_ATTR_POP_NSH,      /* No argument. */
+    OVS_ACTION_ATTR_METER,        /* u32 meter number. */
+    OVS_ACTION_ATTR_CLONE,        /* Nested OVS_CLONE_ATTR_*.  */
+    OVS_ACTION_ATTR_CHECK_PKT_LEN, /* Nested OVS_CHECK_PKT_LEN_ATTR_*. */
+
+#ifndef __KERNEL__
+    OVS_ACTION_ATTR_TUNNEL_PUSH,   /* struct ovs_action_push_tnl*/
+    OVS_ACTION_ATTR_TUNNEL_POP,    /* u32 port number. */
+    OVS_ACTION_ATTR_DROP,          /* u32 xlate_error. */
+    OVS_ACTION_ATTR_LB_OUTPUT,     /* u32 bond-id. */
+#endif
+    __OVS_ACTION_ATTR_MAX,        /* Nothing past this will be accepted
+                       * from userspace. */
+
+#ifdef __KERNEL__
+    OVS_ACTION_ATTR_SET_TO_MASKED, /* Kernel module internal masked
+                    * set action converted from
+                    * OVS_ACTION_ATTR_SET. */
+#endif
+};
+
+在datapath/linux/compat/include/linux/openvswitch.h:中添加：
+
+enum ovs_action_attr {
+    /* ... */
+
+    /*
+    * after #ifndef __KERNEL__ ... #endif.
+    * the equals is thus ABSOLUTELY NECESSARY
+    */
+
+    OVS_ACTION_ATTR_PROBDROP = 23, /* unit32_t, prob in [0,2^32 -1] */
+
+    __OVS_ACTION_ATTR_MAX, /* Nothing past this will be accepted
+                            * from userspace. */
+
+    /* ... */
+
+}
+
+OVS_ACTION_ATTR_PROBDROP = 23 如果我们不为该枚举条目指定显式值，则内核和用户区部分 ovs-vswitchd将对新操作使用不同的代码（这里不加会出错）
+
+5.内核模式datapath的action的执行的实现
+
+在内核模块中实现action函数，并调用执行，datapath/actions.c
+
+/* Ask for a random number.
+   "p" is the amount we should let through, here true means drop,
+   false means let it pass on */
+static bool prob_drop(uint32_t prob)
+{
+    /* since we can't use rand() in the kernel */
+    return prandom_u32() > prob;　　
+}
+
+static int do_execute_actions(/* ... */)
+{
+    /* ... */
+    switch (nla_type(a)) {
+    /* ... */
+    case OVS_ACTION_ATTR_PROBDROP:
+        /* No need to free, taken care of for us
+           This function just reads the attribute to
+           know if we should drop. */
+        if(prob_drop(nla_get_u32(a)))
+        {
+            while (rem) {
+                a = nla_next(a, &rem);
+            }
+        }
+        break;
+    }
+    /* ... */
+}
+
+6.DPDK模式的action的执行的实现
+
+lib/packets.h：
+
+/* ... */
+
+bool prob_drop(uint32_t prob);
+
+#endif /* packets.h */
+
+lib/packets.c:
+
+/* Ask for a random number.
+   "p" is the amount we should let through, here true means drop,
+   false means let it pass on */
+bool
+prob_drop(uint32_t prob)
+{
+    unsigned int roll_i;
+    random_bytes(&roll_i, sizeof(roll_i));
+    return roll_i > prob;
+}
+
+lib/dpif-netdev.c:
+
+static void
+dp_execute_cb( /* ... */ )
+{
+    /* ... */
+    switch ((enum ovs_action_attr)type) {
+    /* ... */
+    case OVS_ACTION_ATTR_PROBDROP:
+        OVS_NOT_REACHED();
+    }
+}
+
+static bool
+requires_datapath_assistance(const struct nlattr *a)
+{
+    enum ovs_action_attr type = nl_attr_type(a);
+
+    switch (type) {
+    /* ... */
+    case OVS_ACTION_ATTR_PROBDROP:
+        return false;
+    /* ... */
+    }
+}
+
+odp_execute_actions(&aux, packets, should_steal, actions,
+                        actions_len, dp_execute_cb);
+在这个函数里面，只有requires_datapath_assistance为true，才会调用dp_execute_cb
+
+lib/odp-execute.c
+
+void
+odp_execute_actions( /* ... */ )
+{
+    /* ... */
+    switch ((enum ovs_action_attr)type) {
+    /* ... */
+    case OVS_ACTION_ATTR_PROBDROP: {　　　　
+        size_t i;
+        const size_t num = dp_packet_batch_size(batch);
+
+        DP_PACKET_BATCH_REFILL_FOR_EACH (i, num, packet, batch) {
+            if (!prob_drop(nl_attr_get_u32(a))) {
+                dp_packet_batch_refill(batch, packet, i);
+            } else {
+                dp_packet_delete(packet);
+            }
+        }
+        break;
+    }
+
+    }
+}
+
+
+lib/dpif.c:
+
+static void
+dpif_execute_helper_cb( /* ... */ )
+{
+    /* ... */
+    switch ((enum ovs_action_attr)type) {
+    /* ... */
+    case OVS_ACTION_ATTR_PROBDROP:
+        OVS_NOT_REACHED();
+    }
+}
+
+ofproto/ofproto-dpif-ipfix.c:
+
+void
+dpif_ipfix_read_actions( /* ... */ )
+{
+    /* ... */
+    switch (type) {
+    /* ... */
+    case OVS_ACTION_ATTR_PROBDROP:
+        /* Again, ignore for now. Not needed. */
+        break;
+    }
+}
+
+ofproto/ofproto-dpif-sflow.c:
+
+void
+dpif_sflow_read_actions( /* ... */ )
+{
+    switch (type) {
+    /* ... */
+    case OVS_ACTION_ATTR_PROBDROP:
+        /* Ignore sFlow for now, unless needed. */
+        break;
+    }
+}
+
+7.upcall的处理过程中从openvswitch action到数据面action的转换
+
+/* Put this with the other "compose" functions. */
+static void
+compose_probdrop_action(struct xlate_ctx *ctx, struct ofpact_probdrop *op)
+{
+    uint32_t prob = op->prob;
+
+    nl_msg_put_u32(ctx->odp_actions, OVS_ACTION_ATTR_PROBDROP, prob);
+}
+
+/* ... */
+
+static void
+do_xlate_actions( /* ... */ )
+{
+    switch (a->type) {
+    /* ... */
+
+    case OFPACT_PROBDROP:
+        compose_probdrop_action(ctx, ofpact_get_PROBDROP(a));
+        break;
+    }
+}
+/* ... */
+
+/* No action can undo the packet drop: reflect this. */
+static bool
+reversible_actions(const struct ofpact *ofpacts, size_t ofpacts_len)
+{
+    const struct ofpact *a;
+
+    OFPACT_FOR_EACH (a, ofpacts, ofpacts_len) {
+        switch (a->type) {
+        /*... */
+        case OFPACT_PROBDROP:
+            return false;
+        }
+    }
+    return true;
+}
+
+/* ... */
+
+/* PROBDROP likely doesn't require explicit thawing. */
+static void
+freeze_unroll_actions( /* ... */ )
+{
+    /* ... */
+    switch (a->type) {
+        case OFPACT_PROBDROP:
+            /* These may not generate PACKET INs. */
+            break;
+    }
+}
+
+/* ... */
+
+/* Naturally, don't need to recirculate since we don't change packets. */
+static void
+recirc_for_mpls(const struct ofpact *a, struct xlate_ctx *ctx)
+{
+    /* ... */
+
+    switch (a->type) {
+    case OFPACT_PROBDROP:
+    default:
+        break;
+    }
+}
+
+在内核中
+static int __ovs_nla_copy_actions( /*...*/ )
+{
+    /* ... */
+    static const u32 action_lens[OVS_ACTION_ATTR_MAX + 1] = {
+        /* ... */
+        [OVS_ACTION_ATTR_PROBDROP] = sizeof(u32),
+    };
+    /* ... */
+
+    /* Be careful here, your compiler may not catch this one
+    * even with -Werror */
+    switch (type) {
+    /* ... */
+    case OVS_ACTION_ATTR_PROBDROP:
+        /* Finalest sanity checks in the kernel. */
+        break;
+    /* ... */
+    }
+    /* ... */
+}
+
+8.命令行ovs-ofctl修改
+
+这里需要添加新的OFPACT_的action
+
+struct ofpact *
+ofpact_next_flattened(const struct ofpact *ofpact)
+{
+    switch (ofpact->type) {
+        /* ... */
+        case OFPACT_PROBDROP:
+            return ofpact_next(ofpact);
+    }
+    /* ... */
+}
+
+/* ... */
+
+enum ovs_instruction_type
+ovs_instruction_type_from_ofpact_type(enum ofpact_type type)
+{
+    switch (type) {
+    /* ... */
+    case OFPACT_PROBDROP:
+    default:
+        return OVSINST_OFPIT11_APPLY_ACTIONS;
+    /* ... */
+    }
+}
+
+/* ... */
+
+static bool
+ofpact_outputs_to_port(const struct ofpact *ofpact, ofp_port_t port)
+{
+    switch (ofpact->type) {
+    /* ... */
+    case OFPACT_PROBDROP:
+    default:
+        return false;
+    }
+}
+
+static enum action_set_class
+action_set_classify(const struct ofpact a*)
+{
+    switch (a->type) {
+    /* ... */
+
+
+    /* NEVER */
+    /* ... */
+    case OFPACT_PROBDROP:
+        return ACTION_SLOT_INVALID;
+
+    /* ... */
+    }
+}
+
+9.命令行dpctl修改
+
+static void
+format_odp_action( /* ... */ )
+{
+    /* ... */
+    switch (type) {
+    /* ... */
+
+    case OVS_ACTION_ATTR_PROBDROP: 
+        ds_put_format(ds, "pdrop(%"PRIu32")", nl_attr_get_u32(a));
+        break;
+
+    /* ... */
+    }
+}
+
+static int
+odp_action_len(uint16_t type)
+{
+    /* ... */
+
+    switch ((enum ovs_action_attr) type) {
+    /* ... */
+    case OVS_ACTION_ATTR_PROBDROP: return sizeof(uint32_t);
+    }
+}
