@@ -2,12 +2,6 @@ openvswitch add action details
 
 6.添加一个operation和action
 
-https://www.cnblogs.com/ssyfj/p/12290789.html
-
-https://www.cnblogs.com/popsuper1982/p/5906722.html
-
-https://zhuanlan.zhihu.com/p/27802666
-
 1.定义openflow action
 所有action定义在lib/ofp-actions.c
 
@@ -357,6 +351,135 @@ encode_CONFIG_GW(const struct ofpact_config_gw *config_gw,
     struct ofp_action_config_gw *ofp_config_gw;
 
     ofp_config_gw = put_OFPAT_CONFIG_GW(out);
+
+    //may do ntohs htons ntohl htonl
+    ofp_config_gw->param1 = config_gw->param1;
+    ofp_config_gw->param2 = config_gw->param2;
+    ofp_config_gw->param3 = config_gw->param3;
+    ofp_config_gw->param4 = config_gw->param4;
+    ofp_config_gw->param5 = config_gw->param5;
+    ofp_config_gw->param6 = config_gw->param6;
+    ofp_config_gw->param7 = config_gw->param7;
+    ofp_config_gw->param8 = config_gw->param8;
+    ofp_config_gw->param9 = config_gw->param9;
+}
+
+static char * OVS_WARN_UNUSED_RESULT
+parse_CONFIG_GW(const char *arg, const struct ofpact_parse_params *pp)
+{
+    struct ofpbuf *ofpacts;
+    struct ofpact_config_gw *config_gw;
+    char *name, *value;
+    struct eth_addr ethaddr;
+    char *error;
+
+    ofpacts = pp->ofpacts;
+    config_gw = ofpact_put_CONFIG_GW(ofpacts);
+
+    while (ofputil_parse_key_value(&arg, &name, &value)) {
+        if (!strcmp(name, "param1")) {
+            config_gw->param1 = atoi(value);
+        } else if (!strcmp(name, "param2")) {
+            config_gw->param2 = atoi(value);
+        } else if (!strcmp(name, "param3")) {
+            error = str_to_mac(value, &ethaddr);
+            if (error) {
+                return error;
+            }
+            config_gw->param3 = ethaddr;
+        } else if (!strcmp(name, "param4")) {
+            config_gw->param4 = atoi(value);
+        } else if (!strcmp(name, "param5")) {
+            config_gw->param5 = atoi(value);
+        } else if (!strcmp(name, "param6")) {
+            error = str_to_mac(value, &ethaddr);
+            if (error) {
+                return error;
+            }
+            config_gw->param6 = ethaddr;
+        } else if (!strcmp(name, "param7")) {
+            config_gw->param7 = atoi(value);
+        } else if (!strcmp(name, "param8")) {
+            config_gw->param8 = atoi(value);
+        } else if (!strcmp(name, "param9")) {
+            error = str_to_mac(value, &ethaddr);
+            if (error) {
+                return error;
+            }
+            config_gw->param9 = ethaddr;
+        } 
+    }
+
+    return NULL;
+}
+
+static void
+format_CONFIG_GW(const struct ofpact_config_gw *a, const struct ofpact_format_params *fp)
+{
+    struct ds *s;
+
+    s = fp->s;
+
+    ds_put_format(s, "config_gw(");
+    if (a->param1 != 0) {
+        ds_put_format(s, "param1=%"PRIu32, a->param1);
+    }
+    if (a->param2 != 0) {
+        ds_put_format(s, ",param2=%"PRIx32, ntohl(a->param2));
+    }
+    if (a->param3 != 0) {
+        ds_put_format(s, ",param3=%"ETH_ADDR_FMT, ETH_ADDR_ARGS(a->param3));
+    }
+    if (a->param4 != 0) {
+        ds_put_format(s, "param1=%"PRIu32, a->param1);
+    }
+    if (a->param5 != 0) {
+        ds_put_format(s, ",param2=%"PRIx32, ntohl(a->param2));
+    }
+    if (a->param6 != 0) {
+        ds_put_format(s, ",param3=%"ETH_ADDR_FMT, ETH_ADDR_ARGS(a->param3));
+    }
+    if (a->param7 != 0) {
+        ds_put_format(s, "param1=%"PRIu32, a->param1);
+    }
+    if (a->param8 != 0) {
+        ds_put_format(s, ",param2=%"PRIx32, ntohl(a->param2));
+    }
+    if (a->param9 != 0) {
+        ds_put_format(s, ",param3=%"ETH_ADDR_FMT, ETH_ADDR_ARGS(a->param3));
+    }
+
+    ds_put_format(s, ")");
+}
+
+我们写 /* OF1.0+(29): struct ofp_action_handle_gw. */ OFPAT_RAW_HANDLE_GW 对应的decode, encode, parse, format
+
+static enum ofperr
+decode_OFPAT_RAW_HANDLE_GW(const struct ofp_action_handle_gw *a,
+                            enum ofp_version ofp_version OVS_UNUSED,
+                            struct ofpbuf *out)
+{
+    struct ofpact_handle_gw *handle_gw;
+
+    handle_gw = ofpact_put_CONFIG_GW(out);
+
+    //may do ntohs htons ntohl htonl
+    handle_gw->pipeline1 = a->pipeline1;
+    handle_gw->pipeline2 = a->pipeline2;
+    handle_gw->pipeline3 = a->pipeline3;
+    handle_gw->pipeline4 = a->pipeline4;
+    handle_gw->pipeline5 = a->pipeline5;
+}
+
+
+static void
+encode_CONFIG_GW(const struct ofpact_handle_gw *handle_gw,
+                  enum ofp_version ofp_version, struct ofpbuf *out)
+{
+
+    struct ofp_action_handle_gw *ofp_handle_gw;
+
+    ofp_handle_gw = put_OFPAT_HANDLE_GW(out);
 
     //may do ntohs htons ntohl htonl
     ofp_config_gw->param1 = config_gw->param1;
