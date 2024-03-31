@@ -473,7 +473,7 @@ decode_OFPAT_RAW_HANDLE_GW(const struct ofp_action_handle_gw *a,
 
 
 static void
-encode_CONFIG_GW(const struct ofpact_handle_gw *handle_gw,
+encode_HANDLE_GW(const struct ofpact_handle_gw *handle_gw,
                   enum ofp_version ofp_version, struct ofpbuf *out)
 {
 
@@ -482,102 +482,65 @@ encode_CONFIG_GW(const struct ofpact_handle_gw *handle_gw,
     ofp_handle_gw = put_OFPAT_HANDLE_GW(out);
 
     //may do ntohs htons ntohl htonl
-    ofp_config_gw->param1 = config_gw->param1;
-    ofp_config_gw->param2 = config_gw->param2;
-    ofp_config_gw->param3 = config_gw->param3;
-    ofp_config_gw->param4 = config_gw->param4;
-    ofp_config_gw->param5 = config_gw->param5;
-    ofp_config_gw->param6 = config_gw->param6;
-    ofp_config_gw->param7 = config_gw->param7;
-    ofp_config_gw->param8 = config_gw->param8;
-    ofp_config_gw->param9 = config_gw->param9;
+    ofp_handle_gw->pipeline1 = handle_gw->pipeline1;
+    ofp_handle_gw->pipeline2 = handle_gw->pipeline2;
+    ofp_handle_gw->pipeline3 = handle_gw->pipeline3;
+    ofp_handle_gw->pipeline4 = handle_gw->pipeline4;
+    ofp_handle_gw->pipeline5 = handle_gw->pipeline5;
 }
 
 static char * OVS_WARN_UNUSED_RESULT
-parse_CONFIG_GW(const char *arg, const struct ofpact_parse_params *pp)
+parse_HANDLE_GW(const char *arg, const struct ofpact_parse_params *pp)
 {
     struct ofpbuf *ofpacts;
-    struct ofpact_config_gw *config_gw;
+    struct ofpact_handle_gw *handle_gw;
     char *name, *value;
     struct eth_addr ethaddr;
     char *error;
 
     ofpacts = pp->ofpacts;
-    config_gw = ofpact_put_CONFIG_GW(ofpacts);
+    handle_gw = ofpact_put_HANDLE_GW(ofpacts);
 
     while (ofputil_parse_key_value(&arg, &name, &value)) {
-        if (!strcmp(name, "param1")) {
-            config_gw->param1 = atoi(value);
-        } else if (!strcmp(name, "param2")) {
-            config_gw->param2 = atoi(value);
-        } else if (!strcmp(name, "param3")) {
-            error = str_to_mac(value, &ethaddr);
-            if (error) {
-                return error;
-            }
-            config_gw->param3 = ethaddr;
-        } else if (!strcmp(name, "param4")) {
-            config_gw->param4 = atoi(value);
-        } else if (!strcmp(name, "param5")) {
-            config_gw->param5 = atoi(value);
-        } else if (!strcmp(name, "param6")) {
-            error = str_to_mac(value, &ethaddr);
-            if (error) {
-                return error;
-            }
-            config_gw->param6 = ethaddr;
-        } else if (!strcmp(name, "param7")) {
-            config_gw->param7 = atoi(value);
-        } else if (!strcmp(name, "param8")) {
-            config_gw->param8 = atoi(value);
-        } else if (!strcmp(name, "param9")) {
-            error = str_to_mac(value, &ethaddr);
-            if (error) {
-                return error;
-            }
-            config_gw->param9 = ethaddr;
-        } 
+        if (!strcmp(name, "pipeline1")) {
+            handle_gw->pipeline1 = atoi(value);
+        } else if (!strcmp(name, "pipeline2")) {
+            handle_gw->pipeline2 = atoi(value);
+        } else if (!strcmp(name, "pipeline3")) {
+            handle_gw->pipeline3 = atoi(value);
+        } else if (!strcmp(name, "pipeline4")) {
+            handle_gw->pipeline4 = atoi(value);
+        } else if (!strcmp(name, "pipeline5")) {
+            handle_gw->pipeline5 = atoi(value);
+        }
     }
 
     return NULL;
 }
 
 static void
-format_CONFIG_GW(const struct ofpact_config_gw *a, const struct ofpact_format_params *fp)
+format_HANDLE_GW(const struct ofpact_handle_gw *a, const struct ofpact_format_params *fp)
 {
     struct ds *s;
 
     s = fp->s;
 
-    ds_put_format(s, "config_gw(");
-    if (a->param1 != 0) {
-        ds_put_format(s, "param1=%"PRIu32, a->param1);
+    ds_put_format(s, "handle_gw(");
+    if (a->pipeline1 != 0) {
+        ds_put_format(s, "pipeline1=%"PRIu32, a->pipeline1);
     }
-    if (a->param2 != 0) {
-        ds_put_format(s, ",param2=%"PRIx32, ntohl(a->param2));
+    if (a->pipeline2 != 0) {
+        ds_put_format(s, ",pipeline2=%"PRIx32, ntohl(a->pipeline2));
     }
-    if (a->param3 != 0) {
-        ds_put_format(s, ",param3=%"ETH_ADDR_FMT, ETH_ADDR_ARGS(a->param3));
+    if (a->pipeline3 != 0) {
+        ds_put_format(s, ",pipeline3=%"PRIx32, ETH_ADDR_ARGS(a->pipeline3));
     }
-    if (a->param4 != 0) {
-        ds_put_format(s, "param1=%"PRIu32, a->param1);
+    if (a->pipeline4 != 0) {
+        ds_put_format(s, "pipeline4=%"PRIu32, a->pipeline4);
     }
-    if (a->param5 != 0) {
-        ds_put_format(s, ",param2=%"PRIx32, ntohl(a->param2));
+    if (a->pipeline5 != 0) {
+        ds_put_format(s, ",pipeline5=%"PRIx32, ntohl(a->pipeline5));
     }
-    if (a->param6 != 0) {
-        ds_put_format(s, ",param3=%"ETH_ADDR_FMT, ETH_ADDR_ARGS(a->param3));
-    }
-    if (a->param7 != 0) {
-        ds_put_format(s, "param1=%"PRIu32, a->param1);
-    }
-    if (a->param8 != 0) {
-        ds_put_format(s, ",param2=%"PRIx32, ntohl(a->param2));
-    }
-    if (a->param9 != 0) {
-        ds_put_format(s, ",param3=%"ETH_ADDR_FMT, ETH_ADDR_ARGS(a->param3));
-    }
-
     ds_put_format(s, ")");
 }
 
@@ -611,6 +574,8 @@ enum ovs_action_attr {
     OVS_ACTION_ATTR_METER,        /* u32 meter number. */
     OVS_ACTION_ATTR_CLONE,        /* Nested OVS_CLONE_ATTR_*.  */
     OVS_ACTION_ATTR_CHECK_PKT_LEN, /* Nested OVS_CHECK_PKT_LEN_ATTR_*. */
+    OVS_ACTION_ATTR_CONFIG_GW = 28,
+    OVS_ACTION_ATTR_HANDLE_GW = 29,
 
 #ifndef __KERNEL__
     OVS_ACTION_ATTR_TUNNEL_PUSH,   /* struct ovs_action_push_tnl*/
@@ -649,7 +614,508 @@ enum ovs_action_attr {
 
 OVS_ACTION_ATTR_PROBDROP = 23 如果我们不为该枚举条目指定显式值，则内核和用户区部分 ovs-vswitchd将对新操作使用不同的代码（这里不加会出错）
 
-5.内核模式datapath的action的执行的实现
+5.upcall的处理过程中从openvswitch action到数据面action的转换
+
+/* Put this with the other "compose" functions. */
+static void
+compose_probdrop_action(struct xlate_ctx *ctx, struct ofpact_probdrop *op)
+{
+    uint32_t prob = op->prob;
+
+    nl_msg_put_u32(ctx->odp_actions, OVS_ACTION_ATTR_PROBDROP, prob);
+}
+
+/* ... */
+
+static void
+do_xlate_actions( /* ... */ )
+{
+    switch (a->type) {
+    /* ... */
+
+    case OFPACT_PROBDROP:
+        compose_probdrop_action(ctx, ofpact_get_PROBDROP(a));
+        break;
+    }
+}
+/* ... */
+
+/* No action can undo the packet drop: reflect this. */
+static bool
+reversible_actions(const struct ofpact *ofpacts, size_t ofpacts_len)
+{
+    const struct ofpact *a;
+
+    OFPACT_FOR_EACH (a, ofpacts, ofpacts_len) {
+        switch (a->type) {
+        /*... */
+        case OFPACT_PROBDROP:
+            return false;
+        }
+    }
+    return true;
+}
+
+/* ... */
+
+/* PROBDROP likely doesn't require explicit thawing. */
+static void
+freeze_unroll_actions( /* ... */ )
+{
+    /* ... */
+    switch (a->type) {
+        case OFPACT_PROBDROP:
+            /* These may not generate PACKET INs. */
+            break;
+    }
+}
+
+/* ... */
+
+/* Naturally, don't need to recirculate since we don't change packets. */
+static void
+recirc_for_mpls(const struct ofpact *a, struct xlate_ctx *ctx)
+{
+    /* ... */
+
+    switch (a->type) {
+    case OFPACT_PROBDROP:
+    default:
+        break;
+    }
+}
+
+在内核中
+static int __ovs_nla_copy_actions( /*...*/ )
+{
+    /* ... */
+    static const u32 action_lens[OVS_ACTION_ATTR_MAX + 1] = {
+        /* ... */
+        [OVS_ACTION_ATTR_PROBDROP] = sizeof(u32),
+    };
+    /* ... */
+
+    /* Be careful here, your compiler may not catch this one
+    * even with -Werror */
+    switch (type) {
+    /* ... */
+    case OVS_ACTION_ATTR_PROBDROP:
+        /* Finalest sanity checks in the kernel. */
+        break;
+    /* ... */
+    }
+    /* ... */
+}
+
+我们再参考do_xlate_actions中
+        case OFPACT_PUSH_MPLS:
+            compose_mpls_push_action(ctx, ofpact_get_PUSH_MPLS(a));
+            break;
+
+static void
+compose_mpls_push_action(struct xlate_ctx *ctx, struct ofpact_push_mpls *mpls)
+{
+    struct flow *flow = &ctx->xin->flow;
+    int n;
+
+    ovs_assert(eth_type_mpls(mpls->ethertype));
+
+    n = flow_count_mpls_labels(flow, ctx->wc);
+    if (!n) {
+        xlate_commit_actions(ctx);
+    } else if (n >= FLOW_MAX_MPLS_LABELS) {
+        if (ctx->xin->packet != NULL) {
+            xlate_report_error(ctx, "dropping packet on which an MPLS push "
+                               "action can't be performed as it would have "
+                               "more MPLS LSEs than the %d supported.",
+                               FLOW_MAX_MPLS_LABELS);
+        }
+        ctx->error = XLATE_TOO_MANY_MPLS_LABELS;
+        return;
+    }
+
+    /* Update flow's MPLS stack, and clear L3/4 fields to mark them invalid. */
+    flow_push_mpls(flow, n, mpls->ethertype, ctx->wc, true);
+}
+
+xlate_commit_actions->commit_mpls_action
+
+/* Wildcarding already done at action translation time. */
+static void
+commit_mpls_action(const struct flow *flow, struct flow *base,
+                   struct ofpbuf *odp_actions)
+{
+    int base_n = flow_count_mpls_labels(base, NULL);
+    int flow_n = flow_count_mpls_labels(flow, NULL);
+    int common_n = flow_count_common_mpls_labels(flow, flow_n, base, base_n,
+                                                 NULL);
+
+    while (base_n > common_n) {
+        if (base_n - 1 == common_n && flow_n > common_n) {
+            /* If there is only one more LSE in base than there are common
+             * between base and flow; and flow has at least one more LSE than
+             * is common then the topmost LSE of base may be updated using
+             * set */
+            struct ovs_key_mpls mpls_key;
+
+            mpls_key.mpls_lse = flow->mpls_lse[flow_n - base_n];
+            commit_set_action(odp_actions, OVS_KEY_ATTR_MPLS,
+                              &mpls_key, sizeof mpls_key);
+            flow_set_mpls_lse(base, 0, mpls_key.mpls_lse);
+            common_n++;
+        } else {
+            /* Otherwise, if there more LSEs in base than are common between
+             * base and flow then pop the topmost one. */
+            ovs_be16 dl_type;
+            /* If all the LSEs are to be popped and this is not the outermost
+             * LSE then use ETH_TYPE_MPLS as the ethertype parameter of the
+             * POP_MPLS action instead of flow->dl_type.
+             *
+             * This is because the POP_MPLS action requires its ethertype
+             * argument to be an MPLS ethernet type but in this case
+             * flow->dl_type will be a non-MPLS ethernet type.
+             *
+             * When the final POP_MPLS action occurs it use flow->dl_type and
+             * the and the resulting packet will have the desired dl_type. */
+            if ((!eth_type_mpls(flow->dl_type)) && base_n > 1) {
+                dl_type = htons(ETH_TYPE_MPLS);
+            } else {
+                dl_type = flow->dl_type;
+            }
+            nl_msg_put_be16(odp_actions, OVS_ACTION_ATTR_POP_MPLS, dl_type);
+            ovs_assert(flow_pop_mpls(base, base_n, flow->dl_type, NULL));
+            base_n--;
+        }
+    }
+
+    /* If, after the above popping and setting, there are more LSEs in flow
+     * than base then some LSEs need to be pushed. */
+    while (base_n < flow_n) {
+        struct ovs_action_push_mpls *mpls;
+
+        mpls = nl_msg_put_unspec_zero(odp_actions,
+                                      OVS_ACTION_ATTR_PUSH_MPLS,
+                                      sizeof *mpls);
+        mpls->mpls_ethertype = flow->dl_type;
+        mpls->mpls_lse = flow->mpls_lse[flow_n - base_n - 1];
+        /* Update base flow's MPLS stack, but do not clear L3.  We need the L3
+         * headers if the flow is restored later due to returning from a patch
+         * port or group bucket. */
+        flow_push_mpls(base, base_n, mpls->mpls_ethertype, NULL, false);
+        flow_set_mpls_lse(base, 0, mpls->mpls_lse);
+        base_n++;
+    }
+}
+
+static void
+compose_config_gw_action(struct xlate_ctx *ctx, struct ofpact_probdrop *op)
+{
+    uint32_t prob = op->prob;
+
+    nl_msg_put_u32(ctx->odp_actions, OVS_ACTION_ATTR_CONFIG_GW, prob);
+}
+
+static int __ovs_nla_copy_actions(struct net *net, const struct nlattr *attr,
+                  const struct sw_flow_key *key,
+                  struct sw_flow_actions **sfa,
+                  __be16 eth_type, __be16 vlan_tci,
+                  u32 mpls_label_count, bool log)
+{
+    u8 mac_proto = ovs_key_mac_proto(key);
+    const struct nlattr *a;
+    int rem, err;
+
+    nla_for_each_nested(a, attr, rem) {
+        /* Expected argument lengths, (u32)-1 for variable length. */
+        static const u32 action_lens[OVS_ACTION_ATTR_MAX + 1] = {
+            [OVS_ACTION_ATTR_OUTPUT] = sizeof(u32),
+            [OVS_ACTION_ATTR_RECIRC] = sizeof(u32),
+            [OVS_ACTION_ATTR_USERSPACE] = (u32)-1,
+            [OVS_ACTION_ATTR_PUSH_MPLS] = sizeof(struct ovs_action_push_mpls),
+            [OVS_ACTION_ATTR_POP_MPLS] = sizeof(__be16),
+            [OVS_ACTION_ATTR_PUSH_VLAN] = sizeof(struct ovs_action_push_vlan),
+            [OVS_ACTION_ATTR_POP_VLAN] = 0,
+            [OVS_ACTION_ATTR_SET] = (u32)-1,
+            [OVS_ACTION_ATTR_SET_MASKED] = (u32)-1,
+            [OVS_ACTION_ATTR_SAMPLE] = (u32)-1,
+            [OVS_ACTION_ATTR_HASH] = sizeof(struct ovs_action_hash),
+            [OVS_ACTION_ATTR_CT] = (u32)-1,
+            [OVS_ACTION_ATTR_CT_CLEAR] = 0,
+            [OVS_ACTION_ATTR_TRUNC] = sizeof(struct ovs_action_trunc),
+            [OVS_ACTION_ATTR_PUSH_ETH] = sizeof(struct ovs_action_push_eth),
+            [OVS_ACTION_ATTR_POP_ETH] = 0,
+            [OVS_ACTION_ATTR_PUSH_NSH] = (u32)-1,
+            [OVS_ACTION_ATTR_POP_NSH] = 0,
+            [OVS_ACTION_ATTR_METER] = sizeof(u32),
+            [OVS_ACTION_ATTR_CLONE] = (u32)-1,
+            [OVS_ACTION_ATTR_CHECK_PKT_LEN] = (u32)-1,
+        };
+        const struct ovs_action_push_vlan *vlan;
+        int type = nla_type(a);
+        bool skip_copy;
+
+        if (type > OVS_ACTION_ATTR_MAX ||
+            (action_lens[type] != nla_len(a) &&
+             action_lens[type] != (u32)-1))
+            return -EINVAL;
+
+        skip_copy = false;
+        switch (type) {
+        case OVS_ACTION_ATTR_UNSPEC:
+            return -EINVAL;
+
+        case OVS_ACTION_ATTR_USERSPACE:
+            err = validate_userspace(a);
+            if (err)
+                return err;
+            break;
+
+        case OVS_ACTION_ATTR_OUTPUT:
+            if (nla_get_u32(a) >= DP_MAX_PORTS)
+                return -EINVAL;
+            break;
+
+        case OVS_ACTION_ATTR_TRUNC: {
+            const struct ovs_action_trunc *trunc = nla_data(a);
+
+            if (trunc->max_len < ETH_HLEN)
+                return -EINVAL;
+            break;
+        }
+
+        case OVS_ACTION_ATTR_HASH: {
+            const struct ovs_action_hash *act_hash = nla_data(a);
+
+            switch (act_hash->hash_alg) {
+            case OVS_HASH_ALG_L4:
+                break;
+            default:
+                return  -EINVAL;
+            }
+
+            break;
+        }
+
+        case OVS_ACTION_ATTR_POP_VLAN:
+            if (mac_proto != MAC_PROTO_ETHERNET)
+                return -EINVAL;
+            vlan_tci = htons(0);
+            break;
+
+        case OVS_ACTION_ATTR_PUSH_VLAN:
+            if (mac_proto != MAC_PROTO_ETHERNET)
+                return -EINVAL;
+            vlan = nla_data(a);
+            if (!eth_type_vlan(vlan->vlan_tpid))
+                return -EINVAL;
+            if (!(vlan->vlan_tci & htons(VLAN_CFI_MASK)))
+                return -EINVAL;
+            vlan_tci = vlan->vlan_tci;
+            break;
+
+        case OVS_ACTION_ATTR_RECIRC:
+            break;
+
+        case OVS_ACTION_ATTR_PUSH_MPLS: {
+            const struct ovs_action_push_mpls *mpls = nla_data(a);
+
+            if (!eth_p_mpls(mpls->mpls_ethertype))
+                return -EINVAL;
+            /* Prohibit push MPLS other than to a white list
+             * for packets that have a known tag order.
+             */
+            if (vlan_tci & htons(VLAN_CFI_MASK) ||
+                (eth_type != htons(ETH_P_IP) &&
+                 eth_type != htons(ETH_P_IPV6) &&
+                 eth_type != htons(ETH_P_ARP) &&
+                 eth_type != htons(ETH_P_RARP) &&
+                 !eth_p_mpls(eth_type)))
+                return -EINVAL;
+            eth_type = mpls->mpls_ethertype;
+            mpls_label_count++;
+            break;
+        }
+
+        case OVS_ACTION_ATTR_POP_MPLS: {
+            __be16  proto;
+            if (vlan_tci & htons(VLAN_CFI_MASK) ||
+                !eth_p_mpls(eth_type))
+                return -EINVAL;
+
+            /* Disallow subsequent L2.5+ set actions and mpls_pop
+             * actions once the last MPLS label in the packet is
+             * popped as there is no check here to ensure that
+             * the new eth type is valid and thus set actions could
+             * write off the end of the packet or otherwise corrupt
+             * it.
+             *
+             * Support for these actions is planned using packet
+             * recirculation.
+             */
+            proto = nla_get_be16(a);
+            mpls_label_count--;
+
+            if (!eth_p_mpls(proto) || !mpls_label_count)
+                eth_type = htons(0);
+            else
+                eth_type =  proto;
+            break;
+        }
+        case OVS_ACTION_ATTR_SET:
+            err = validate_set(a, key, sfa,
+                       &skip_copy, mac_proto, eth_type,
+                       false, log);
+            if (err)
+                return err;
+            break;
+
+        case OVS_ACTION_ATTR_SET_MASKED:
+            err = validate_set(a, key, sfa,
+                       &skip_copy, mac_proto, eth_type,
+                       true, log);
+            if (err)
+                return err;
+            break;
+
+        case OVS_ACTION_ATTR_SAMPLE: {
+            bool last = nla_is_last(a, rem);
+
+            err = validate_and_copy_sample(net, a, key, sfa,
+                               eth_type, vlan_tci,
+                               mpls_label_count,
+                               log, last);
+            if (err)
+                return err;
+            skip_copy = true;
+            break;
+        }
+
+        case OVS_ACTION_ATTR_CT:
+            err = ovs_ct_copy_action(net, a, key, sfa, log);
+            if (err)
+                return err;
+            skip_copy = true;
+            break;
+
+        case OVS_ACTION_ATTR_CT_CLEAR:
+            break;
+
+        case OVS_ACTION_ATTR_PUSH_ETH:
+            /* Disallow pushing an Ethernet header if one
+             * is already present */
+            if (mac_proto != MAC_PROTO_NONE)
+                return -EINVAL;
+            mac_proto = MAC_PROTO_ETHERNET;
+            break;
+
+        case OVS_ACTION_ATTR_POP_ETH:
+            if (mac_proto != MAC_PROTO_ETHERNET)
+                return -EINVAL;
+            if (vlan_tci & htons(VLAN_CFI_MASK))
+                return -EINVAL;
+            mac_proto = MAC_PROTO_NONE;
+            break;
+
+        case OVS_ACTION_ATTR_PUSH_NSH:
+            if (mac_proto != MAC_PROTO_ETHERNET) {
+                u8 next_proto;
+
+                next_proto = tun_p_from_eth_p(eth_type);
+                if (!next_proto)
+                    return -EINVAL;
+            }
+            mac_proto = MAC_PROTO_NONE;
+            if (!validate_nsh(nla_data(a), false, true, true))
+                return -EINVAL;
+            break;
+
+        case OVS_ACTION_ATTR_POP_NSH: {
+            __be16 inner_proto;
+
+            if (eth_type != htons(ETH_P_NSH))
+                return -EINVAL;
+            inner_proto = tun_p_to_eth_p(key->nsh.base.np);
+            if (!inner_proto)
+                return -EINVAL;
+            if (key->nsh.base.np == TUN_P_ETHERNET)
+                mac_proto = MAC_PROTO_ETHERNET;
+            else
+                mac_proto = MAC_PROTO_NONE;
+            break;
+        }
+
+        case OVS_ACTION_ATTR_METER:
+            /* Non-existent meters are simply ignored.  */
+            break;
+
+        case OVS_ACTION_ATTR_CLONE: {
+            bool last = nla_is_last(a, rem);
+
+            err = validate_and_copy_clone(net, a, key, sfa,
+                              eth_type, vlan_tci,
+                              mpls_label_count,
+                              log, last);
+            if (err)
+                return err;
+            skip_copy = true;
+            break;
+        }
+
+        case OVS_ACTION_ATTR_CHECK_PKT_LEN: {
+                        bool last = nla_is_last(a, rem);
+
+                        err = validate_and_copy_check_pkt_len(net, a, key, sfa,
+                                                              eth_type,
+                                                              vlan_tci, log,
+                                  mpls_label_count,
+                                                              last);
+                        if (err)
+                                return err;
+                        skip_copy = true;
+                        break;
+                }
+
+        default:
+            OVS_NLERR(log, "Unknown Action type %d", type);
+            return -EINVAL;
+        }
+        if (!skip_copy) {
+            err = copy_action(a, sfa, log);
+            if (err)
+                return err;
+        }
+    }
+
+    if (rem > 0)
+        return -EINVAL;
+
+    return 0;
+}
+
+/*
+ * struct ovs_action_push_eth - %OVS_ACTION_ATTR_PUSH_ETH action argument.
+ * @addresses: Source and destination MAC addresses.
+ */
+struct ovs_action_push_eth {
+    struct ovs_key_ethernet addresses;
+};
+
+/**
+ * struct ovs_action_push_vlan - %OVS_ACTION_ATTR_PUSH_VLAN action argument.
+ * @vlan_tpid: Tag protocol identifier (TPID) to push.
+ * @vlan_tci: Tag control identifier (TCI) to push.  The CFI bit must be set
+ * (but it will not be set in the 802.1Q header that is pushed).
+ *
+ * The @vlan_tpid value is typically %ETH_P_8021Q or %ETH_P_8021AD.
+ * The only acceptable TPID values are those that the kernel module also parses
+ * as 802.1Q or 802.1AD headers, to prevent %OVS_ACTION_ATTR_PUSH_VLAN followed
+ * by %OVS_ACTION_ATTR_POP_VLAN from having surprising results.
+ */
+struct ovs_action_push_vlan {
+    __be16 vlan_tpid;   /* 802.1Q or 802.1ad TPID. */
+    __be16 vlan_tci;    /* 802.1Q TCI (VLAN ID and priority). */
+};
+6.内核模式datapath的action的执行的实现
 
 在内核模块中实现action函数，并调用执行，datapath/actions.c
 
@@ -682,7 +1148,7 @@ static int do_execute_actions(/* ... */)
     /* ... */
 }
 
-6.DPDK模式的action的执行的实现
+7.DPDK模式的action的执行的实现
 
 lib/packets.h：
 
@@ -799,99 +1265,6 @@ dpif_sflow_read_actions( /* ... */ )
         /* Ignore sFlow for now, unless needed. */
         break;
     }
-}
-
-7.upcall的处理过程中从openvswitch action到数据面action的转换
-
-/* Put this with the other "compose" functions. */
-static void
-compose_probdrop_action(struct xlate_ctx *ctx, struct ofpact_probdrop *op)
-{
-    uint32_t prob = op->prob;
-
-    nl_msg_put_u32(ctx->odp_actions, OVS_ACTION_ATTR_PROBDROP, prob);
-}
-
-/* ... */
-
-static void
-do_xlate_actions( /* ... */ )
-{
-    switch (a->type) {
-    /* ... */
-
-    case OFPACT_PROBDROP:
-        compose_probdrop_action(ctx, ofpact_get_PROBDROP(a));
-        break;
-    }
-}
-/* ... */
-
-/* No action can undo the packet drop: reflect this. */
-static bool
-reversible_actions(const struct ofpact *ofpacts, size_t ofpacts_len)
-{
-    const struct ofpact *a;
-
-    OFPACT_FOR_EACH (a, ofpacts, ofpacts_len) {
-        switch (a->type) {
-        /*... */
-        case OFPACT_PROBDROP:
-            return false;
-        }
-    }
-    return true;
-}
-
-/* ... */
-
-/* PROBDROP likely doesn't require explicit thawing. */
-static void
-freeze_unroll_actions( /* ... */ )
-{
-    /* ... */
-    switch (a->type) {
-        case OFPACT_PROBDROP:
-            /* These may not generate PACKET INs. */
-            break;
-    }
-}
-
-/* ... */
-
-/* Naturally, don't need to recirculate since we don't change packets. */
-static void
-recirc_for_mpls(const struct ofpact *a, struct xlate_ctx *ctx)
-{
-    /* ... */
-
-    switch (a->type) {
-    case OFPACT_PROBDROP:
-    default:
-        break;
-    }
-}
-
-在内核中
-static int __ovs_nla_copy_actions( /*...*/ )
-{
-    /* ... */
-    static const u32 action_lens[OVS_ACTION_ATTR_MAX + 1] = {
-        /* ... */
-        [OVS_ACTION_ATTR_PROBDROP] = sizeof(u32),
-    };
-    /* ... */
-
-    /* Be careful here, your compiler may not catch this one
-    * even with -Werror */
-    switch (type) {
-    /* ... */
-    case OVS_ACTION_ATTR_PROBDROP:
-        /* Finalest sanity checks in the kernel. */
-        break;
-    /* ... */
-    }
-    /* ... */
 }
 
 8.命令行ovs-ofctl修改
