@@ -937,13 +937,13 @@ struct check_pkt_len_arg {
 
 struct ovs_action_config_gw {
     uint32_t param1;
-    ovs_be32 param2;
+    __be32 param2;
     struct eth_addr param3;
     uint32_t param4;
-    ovs_be32 param5;
+    __be32 param5;
     struct eth_addr param6;
     uint32_t param7;
-    ovs_be32 param8;
+    __be32 param8;
     struct eth_addr param9;
 };
 
