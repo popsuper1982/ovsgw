@@ -67,6 +67,9 @@ struct vl_mff_map;
     OFPACT(ENQUEUE,         ofpact_enqueue,     ofpact, "enqueue")      \
     OFPACT(OUTPUT_REG,      ofpact_output_reg,  ofpact, "output_reg")   \
     OFPACT(BUNDLE,          ofpact_bundle,      slaves, "bundle")       \
+    /*XXXXXX 2.define openvswitch action*/                              \
+    OFPACT(CONFIG_GW,       ofpact_config_gw,   ofpact, "config_gw")    \
+    OFPACT(HANDLE_GW,       ofpact_handle_gw,   ofpact, "handle_gw")    \
                                                                         \
     /* Header changes. */                                               \
     OFPACT(SET_FIELD,       ofpact_set_field,   ofpact, "set_field")    \
@@ -95,9 +98,6 @@ struct vl_mff_map;
     OFPACT(POP_MPLS,        ofpact_pop_mpls,    ofpact, "pop_mpls")     \
     OFPACT(DEC_NSH_TTL,     ofpact_null,        ofpact, "dec_nsh_ttl")  \
     OFPACT(DELETE_FIELD,    ofpact_delete_field, ofpact, "delete_field") \
-    //XXXXXX 2.define openvswitch action                                \
-    OFPACT(CONFIG_GW,       ofpact_config_gw,   ofpact, "config_gw")  \
-    OFPACT(HANDLE_GW,       ofpact_handle_gw,   ofpact, "handle_gw") \
                                                                         \
     /* Generic encap & decap */                                         \
     OFPACT(ENCAP,           ofpact_encap,       props, "encap")         \
