@@ -820,7 +820,7 @@ requires_datapath_assistance(const struct nlattr *a)
     case OVS_ACTION_ATTR_CT_CLEAR:
     case OVS_ACTION_ATTR_CHECK_PKT_LEN:
     case OVS_ACTION_ATTR_DROP:
-    case OVS_ACTION_ATTR_CONDIG_GW:
+    case OVS_ACTION_ATTR_CONFIG_GW:
     case OVS_ACTION_ATTR_HANDLE_GW:
         return false;
 

@@ -488,13 +488,13 @@ pop_nsh(struct dp_packet *packet)
 
 //XXXXXX 7.DPDK mode action execution
 void
-dp_config_gw_action(struct dp_packet *packet, struct ovs_action_config_gw *config_gw)
+dp_config_gw_action(struct dp_packet *packet, const struct ovs_action_config_gw *config_gw)
 {
     
 }
 
 void
-dp_handle_gw_action(struct dp_packet *packet, struct ovs_action_handle_gw *handle_gw)
+dp_handle_gw_action(struct dp_packet *packet, const struct ovs_action_handle_gw *handle_gw)
 {
     
 }
