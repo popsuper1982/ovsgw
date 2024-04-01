@@ -366,8 +366,8 @@ ovs_be32 set_mpls_lse_values(uint8_t ttl, uint8_t tc, uint8_t bos,
                              ovs_be32 label);
 
 //XXXXXX 7.DPDK mode action execution
-void dp_config_gw_action(struct dp_packet *packet, struct ovs_action_config_gw *config_gw);
-void dp_handle_gw_action(struct dp_packet *packet, struct ovs_action_handle_gw *handle_gw);
+void dp_config_gw_action(struct dp_packet *packet, const struct ovs_action_config_gw *config_gw);
+void dp_handle_gw_action(struct dp_packet *packet, const struct ovs_action_handle_gw *handle_gw);
 
 /* Example:
  *
