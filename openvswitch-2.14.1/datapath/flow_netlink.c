@@ -3002,6 +3002,9 @@ static int __ovs_nla_copy_actions(struct net *net, const struct nlattr *attr,
 			[OVS_ACTION_ATTR_METER] = sizeof(u32),
 			[OVS_ACTION_ATTR_CLONE] = (u32)-1,
 			[OVS_ACTION_ATTR_CHECK_PKT_LEN] = (u32)-1,
+			//XXXXXX 5.handle upcall, translate openvswitch action to datapath action
+            [OVS_ACTION_ATTR_CONFIG_GW] = sizeof(struct ovs_action_config_gw),
+            [OVS_ACTION_ATTR_HANDLE_GW] = sizeof(struct ovs_action_handle_gw),
 		};
 		const struct ovs_action_push_vlan *vlan;
 		int type = nla_type(a);
@@ -3228,6 +3231,11 @@ static int __ovs_nla_copy_actions(struct net *net, const struct nlattr *attr,
                         break;
                 }
 
+        case OVS_ACTION_ATTR_CONFIG_GW:
+            break;
+        case OVS_ACTION_ATTR_HANDLE_GW:
+            break;
+        
 		default:
 			OVS_NLERR(log, "Unknown Action type %d", type);
 			return -EINVAL;

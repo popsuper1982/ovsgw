@@ -5170,6 +5170,40 @@ compose_dec_mpls_ttl_action(struct xlate_ctx *ctx)
     return true;
 }
 
+//XXXXXX 5.handle upcall, translate openvswitch action to datapath action
+
+static void
+compose_config_gw_action(struct xlate_ctx *ctx, struct ofpact_config_gw *config_gw)
+{
+    struct ovs_action_config_gw *ovs_config_gw;
+    ovs_config_gw = nl_msg_put_unspec_zero(ctx->odp_actions,
+                                  OVS_ACTION_ATTR_CONFIG_GW,
+                                  sizeof *ovs_config_gw);
+    ovs_config_gw->param1 = config_gw->param1;
+    ovs_config_gw->param2 = config_gw->param2;
+    ovs_config_gw->param3 = config_gw->param3;
+    ovs_config_gw->param4 = config_gw->param4;
+    ovs_config_gw->param5 = config_gw->param5;
+    ovs_config_gw->param6 = config_gw->param6;
+    ovs_config_gw->param7 = config_gw->param7;
+    ovs_config_gw->param8 = config_gw->param8;
+    ovs_config_gw->param9 = config_gw->param9;
+}
+
+static void
+compose_handle_gw_action(struct xlate_ctx *ctx, struct ofpact_handle_gw *handle_gw)
+{
+    struct ovs_action_handle_gw *ovs_handle_gw;
+    ovs_handle_gw = nl_msg_put_unspec_zero(ctx->odp_actions,
+                                  OVS_ACTION_ATTR_HANDLE_GW,
+                                  sizeof *ovs_handle_gw);
+    ovs_handle_gw->pipeline1 = handle_gw->pipeline1;
+    ovs_handle_gw->pipeline2 = handle_gw->pipeline2;
+    ovs_handle_gw->pipeline3 = handle_gw->pipeline3;
+    ovs_handle_gw->pipeline4 = handle_gw->pipeline4;
+    ovs_handle_gw->pipeline5 = handle_gw->pipeline5;
+}
+
 static void
 xlate_delete_field(struct xlate_ctx *ctx,
                    struct flow *flow,
@@ -5720,6 +5754,9 @@ reversible_actions(const struct ofpact *ofpacts, size_t ofpacts_len)
         case OFPACT_ENCAP:
         case OFPACT_DECAP:
         case OFPACT_DEC_NSH_TTL:
+        //XXXXXX 5.handle upcall, translate openvswitch action to datapath action
+        case OFPACT_CONFIG_GW:
+        case OFPACT_HANDLE_GW:
             return false;
         }
     }
@@ -6021,6 +6058,9 @@ freeze_unroll_actions(const struct ofpact *a, const struct ofpact *end,
         case OFPACT_NAT:
         case OFPACT_CHECK_PKT_LARGER:
         case OFPACT_DELETE_FIELD:
+        //XXXXXX 5.handle upcall, translate openvswitch action to datapath action
+        case OFPACT_CONFIG_GW:
+        case OFPACT_HANDLE_GW:
             /* These may not generate PACKET INs. */
             break;
 
@@ -6683,6 +6723,9 @@ recirc_for_mpls(const struct ofpact *a, struct xlate_ctx *ctx)
     case OFPACT_GOTO_TABLE:
     case OFPACT_CHECK_PKT_LARGER:
     case OFPACT_DELETE_FIELD:
+    //XXXXXX 5.handle upcall, translate openvswitch action to datapath action
+    case OFPACT_CONFIG_GW:
+    case OFPACT_HANDLE_GW:
     default:
         break;
     }
@@ -6997,6 +7040,15 @@ do_xlate_actions(const struct ofpact *ofpacts, size_t ofpacts_len,
             }
             break;
 
+        //XXXXXX 5.handle upcall, translate openvswitch action to datapath action
+        case OFPACT_CONFIG_GW:
+            compose_config_gw_action(ctx, ofpact_get_CONFIG_GW(a));
+            break;
+
+        case OFPACT_HANDLE_GW:
+            compose_handle_gw_action(ctx, ofpact_get_HANDLE_GW(a));
+            break;
+            
         case OFPACT_DEC_NSH_TTL:
             if (compose_dec_nsh_ttl_action(ctx)) {
                 return;

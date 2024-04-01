@@ -143,6 +143,9 @@ odp_action_len(uint16_t type)
     case OVS_ACTION_ATTR_POP_NSH: return 0;
     case OVS_ACTION_ATTR_CHECK_PKT_LEN: return ATTR_LEN_VARIABLE;
     case OVS_ACTION_ATTR_DROP: return sizeof(uint32_t);
+    //XXXXXX 9.cmd dpctl implementation
+    case OVS_ACTION_ATTR_CONFIG_GW: return sizeof(struct ovs_action_config_gw);
+    case OVS_ACTION_ATTR_HANDLE_GW: return sizeof(struct ovs_action_handle_gw);
 
     case OVS_ACTION_ATTR_UNSPEC:
     case __OVS_ACTION_ATTR_MAX:
@@ -1109,6 +1112,69 @@ format_odp_check_pkt_len_action(struct ds *ds, const struct nlattr *attr,
     ds_put_cstr(ds, "))");
 }
 
+//XXXXXX 9.cmd dpctl implementation
+
+static void
+format_odp_config_gw_action(struct ds *ds, const struct nlattr *attr)
+{
+    const struct ovs_action_config_gw *config_gw = nl_attr_get(attr);
+
+    ds_put_format(ds, "config_gw(");
+    if (config_gw->param1 != 0) {
+        ds_put_format(ds, "param1=%"PRIu32, config_gw->param1);
+    }
+    if (config_gw->param2 != 0) {
+        ds_put_format(ds, ",param2=%"PRIx32, ntohl(config_gw->param2));
+    }
+    if (config_gw->param3 != 0) {
+        ds_put_format(ds, ",param3=%"ETH_ADDR_FMT, ETH_ADDR_ARGS(config_gw->param3));
+    }
+    if (config_gw->param4 != 0) {
+        ds_put_format(ds, "param1=%"PRIu32, config_gw->param1);
+    }
+    if (config_gw->param5 != 0) {
+        ds_put_format(ds, ",param2=%"PRIx32, ntohl(config_gw->param2));
+    }
+    if (config_gw->param6 != 0) {
+        ds_put_format(ds, ",param3=%"ETH_ADDR_FMT, ETH_ADDR_ARGS(config_gw->param3));
+    }
+    if (config_gw->param7 != 0) {
+        ds_put_format(ds, "param1=%"PRIu32, config_gw->param1);
+    }
+    if (config_gw->param8 != 0) {
+        ds_put_format(ds, ",param2=%"PRIx32, ntohl(config_gw->param2));
+    }
+    if (config_gw->param9 != 0) {
+        ds_put_format(ds, ",param3=%"ETH_ADDR_FMT, ETH_ADDR_ARGS(config_gw->param3));
+    }
+
+    ds_put_format(ds, ")");
+}
+
+static void
+format_odp_handle_gw_action(struct ds *ds, const struct nlattr *attr)
+{
+    const struct ovs_action_handle_gw *handle_gw = nl_attr_get(attr);
+
+    ds_put_format(ds, "handle_gw(");
+    if (handle_gw->pipeline1 != 0) {
+        ds_put_format(ds, "pipeline1=%"PRIu32, handle_gw->pipeline1);
+    }
+    if (handle_gw->pipeline2 != 0) {
+        ds_put_format(ds, ",pipeline2=%"PRIx32, ntohl(handle_gw->pipeline2));
+    }
+    if (handle_gw->pipeline3 != 0) {
+        ds_put_format(ds, ",pipeline3=%"PRIx32, ETH_ADDR_ARGS(handle_gw->pipeline3));
+    }
+    if (handle_gw->pipeline4 != 0) {
+        ds_put_format(ds, "pipeline4=%"PRIu32, handle_gw->pipeline4);
+    }
+    if (handle_gw->pipeline5 != 0) {
+        ds_put_format(ds, ",pipeline5=%"PRIx32, ntohl(handle_gw->pipeline5));
+    }
+    ds_put_format(ds, ")");
+}
+
 static void
 format_odp_action(struct ds *ds, const struct nlattr *a,
                   const struct hmap *portno_names)
@@ -1256,6 +1322,12 @@ format_odp_action(struct ds *ds, const struct nlattr *a,
     case OVS_ACTION_ATTR_DROP:
         ds_put_cstr(ds, "drop");
         break;
+    //XXXXXX 9.cmd dpctl implementation
+    case OVS_ACTION_ATTR_CONFIG_GW:
+        format_odp_config_gw_action(ds, a);
+        break;
+    case OVS_ACTION_ATTR_HANDLE_GW:
+        format_odp_handle_gw_action(ds, a);
     case OVS_ACTION_ATTR_UNSPEC:
     case __OVS_ACTION_ATTR_MAX:
     default:

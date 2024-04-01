@@ -813,6 +813,20 @@ static int set_sctp(struct sk_buff *skb, struct sw_flow_key *flow_key,
 	return 0;
 }
 
+//XXXXXX 6.kernel datapath action execution
+
+static int do_config_gw_action(struct sk_buff *skb, struct sw_flow_key *key,
+             const struct ovs_action_config_gw *config_gw)
+{
+    return 0;
+}
+
+static int do_handle_gw_action(struct sk_buff *skb, struct sw_flow_key *key,
+             const struct ovs_action_handle_gw *handle_gw)
+{
+    return 0;
+}
+
 static int ovs_vport_output(OVS_VPORT_OUTPUT_PARAMS)
 {
 	struct ovs_frag_data *data = this_cpu_ptr(&ovs_frag_data_storage);
@@ -1320,6 +1334,15 @@ static int do_execute_actions(struct datapath *dp, struct sk_buff *skb,
 		case OVS_ACTION_ATTR_PUSH_VLAN:
 			err = push_vlan(skb, key, nla_data(a));
 			break;
+
+        //XXXXXX 6.kernel datapath action exeution
+        case OVS_ACTION_ATTR_CONFIG_GW:
+            err = do_config_gw_action(skb, key, nla_data(a));
+            break;
+
+        case OVS_ACTION_ATTR_HANDLE_GW:
+            err = do_handle_gw_action(skb, key, nla_data(a));
+            break;
 
 		case OVS_ACTION_ATTR_POP_VLAN:
 			err = pop_vlan(skb, key);

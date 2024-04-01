@@ -911,7 +911,7 @@ compose_config_gw_action(struct xlate_ctx *ctx, struct ofpact_config_gw *config_
 }
 
 static void
-compose_hanlde_gw_action(struct xlate_ctx *ctx, struct ofpact_handle_gw *handle_gw)
+compose_handle_gw_action(struct xlate_ctx *ctx, struct ofpact_handle_gw *handle_gw)
 {
     struct ovs_action_handle_gw *ovs_handle_gw;
     ovs_handle_gw = nl_msg_put_unspec_zero(ctx->odp_actions,
@@ -922,7 +922,6 @@ compose_hanlde_gw_action(struct xlate_ctx *ctx, struct ofpact_handle_gw *handle_
     ovs_handle_gw->pipeline3 = handle_gw->pipeline3;
     ovs_handle_gw->pipeline4 = handle_gw->pipeline4;
     ovs_handle_gw->pipeline5 = handle_gw->pipeline5;
-
 }
 
 static void
@@ -935,7 +934,7 @@ do_xlate_actions( /* ... */ )
         compose_config_gw_action(ctx, ofpact_get_CONFIG_GW(a));
         break;
     case OFPACT_HANDLE_GW:
-        compose_hanlde_gw_action(ctx, ofpact_get_HANDLE_GW(a));
+        compose_handle_gw_action(ctx, ofpact_get_HANDLE_GW(a));
         break;
     }
 }

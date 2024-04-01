@@ -820,6 +820,8 @@ requires_datapath_assistance(const struct nlattr *a)
     case OVS_ACTION_ATTR_CT_CLEAR:
     case OVS_ACTION_ATTR_CHECK_PKT_LEN:
     case OVS_ACTION_ATTR_DROP:
+    case OVS_ACTION_ATTR_CONDIG_GW:
+    case OVS_ACTION_ATTR_HANDLE_GW:
         return false;
 
     case OVS_ACTION_ATTR_UNSPEC:
@@ -947,6 +949,25 @@ odp_execute_actions(void *dp, struct dp_packet_batch *batch, bool steal,
             }
             break;
          }
+
+        //XXXXXX 7.DPDK mode action execution
+        case OVS_ACTION_ATTR_CONFIG_GW: {
+            const struct ovs_action_config_gw *config_gw = nl_attr_get(a);
+
+            DP_PACKET_BATCH_FOR_EACH (i, packet, batch) {
+                dp_config_gw_action(packet, config_gw);
+            }
+            break;
+         }
+
+        case OVS_ACTION_ATTR_HANDLE_GW: {
+            const struct ovs_action_handle_gw *handle_gw = nl_attr_get(a);
+
+            DP_PACKET_BATCH_FOR_EACH (i, packet, batch) {
+                dp_handle_gw_action(packet, handle_gw);
+            }
+            break;
+        }
 
         case OVS_ACTION_ATTR_POP_MPLS:
             DP_PACKET_BATCH_FOR_EACH (i, packet, batch) {

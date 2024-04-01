@@ -95,6 +95,7 @@ struct vl_mff_map;
     OFPACT(POP_MPLS,        ofpact_pop_mpls,    ofpact, "pop_mpls")     \
     OFPACT(DEC_NSH_TTL,     ofpact_null,        ofpact, "dec_nsh_ttl")  \
     OFPACT(DELETE_FIELD,    ofpact_delete_field, ofpact, "delete_field") \
+    //XXXXXX 2.define openvswitch action
     OFPACT(CONFIG_GW,       ofpact_config_gw,   ofpact, "config_gw")  \
     OFPACT(HANDLE_GW,       ofpact_handle_gw,   ofpact, "handle_gw") \
                                                                         \
@@ -586,6 +587,40 @@ struct ofpact_delete_field {
     OFPACT_PADDED_MEMBERS(
         struct ofpact ofpact;
         const struct mf_field *field;
+    );
+};
+
+//XXXXXX 2.define openvswitch action: define action struct
+
+/* OFPACT_CONFIG_GW.
+ *
+ * Used for OFPAT10_CONFIG_GW, OFPAT11_CONFIG_GW, OFPAT12_CONFIG_GW. */
+struct ofpact_config_gw {
+    OFPACT_PADDED_MEMBERS(
+        struct ofpact ofpact;
+        uint32_t param1;
+        ovs_be32 param2;
+        struct eth_addr param3;
+        uint32_t param4;
+        ovs_be32 param5;
+        struct eth_addr param6;
+        uint32_t param7;
+        ovs_be32 param8;
+        struct eth_addr param9;
+    );
+};
+
+/* OFPACT_HANDLE_GW.
+ *
+ * Used for OFPAT10_HANDLE_GW, OFPAT11_HANDLE_GW, OFPAT12_HANDLE_GW. */
+struct ofpact_handle_gw {
+    OFPACT_PADDED_MEMBERS(
+        struct ofpact ofpact;
+        uint32_t pipeline1;
+        uint32_t pipeline2;
+        uint32_t pipeline3;
+        uint32_t pipeline4;
+        uint32_t pipeline5;
     );
 };
 

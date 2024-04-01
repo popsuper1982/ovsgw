@@ -262,6 +262,8 @@ enum ofp_raw_action_type {
     /* OF1.5+(29): uint32_t. */
     OFPAT_RAW15_METER,
 
+    //XXXXXX 1.define openflow action: add openflow action type
+
     /* OF1.0+(28): struct ofp_action_config_gw. */
     OFPAT_RAW_CONFIG_GW,
 
@@ -510,6 +512,9 @@ ofpact_next_flattened(const struct ofpact *ofpact)
     case OFPACT_DEC_NSH_TTL:
     case OFPACT_CHECK_PKT_LARGER:
     case OFPACT_DELETE_FIELD:
+    //XXXXXX 8.cmd ovs-ofctl implementation
+    case OFPACT_CONFIG_GW:
+    case OFPACT_HANDLE_GW:
         return ofpact_next(ofpact);
 
     case OFPACT_CLONE:
@@ -2734,6 +2739,8 @@ check_REG_MOVE(const struct ofpact_reg_move *a,
     return nxm_reg_move_check(a, cp->match);
 }
 
+//XXXXXX 1.define openflow action: define openflow action struct
+
 struct ofp_action_config_gw {
     ovs_be16 type;
     ovs_be16 len;
@@ -4336,6 +4343,243 @@ check_POP_QUEUE(const struct ofpact_null *a OVS_UNUSED,
 {
     return 0;
 }
+
+//XXXXXX 3.translate between openflow action and openvswitch action: decode, encode, parse, format, check
+
+static enum ofperr
+decode_OFPAT_RAW_CONFIG_GW(const struct ofp_action_config_gw *a,
+                            enum ofp_version ofp_version OVS_UNUSED,
+                            struct ofpbuf *out)
+{
+    struct ofpact_config_gw *config_gw;
+
+    config_gw = ofpact_put_CONFIG_GW(out);
+
+    //may do ntohs htons ntohl htonl
+    config_gw->param1 = a->param1;
+    config_gw->param2 = a->param2;
+    config_gw->param3 = a->param3;
+    config_gw->param4 = a->param4;
+    config_gw->param5 = a->param5;
+    config_gw->param6 = a->param6;
+    config_gw->param7 = a->param7;
+    config_gw->param8 = a->param8;
+    config_gw->param9 = a->param9;
+}
+
+
+static void
+encode_CONFIG_GW(const struct ofpact_config_gw *config_gw,
+                  enum ofp_version ofp_version, struct ofpbuf *out)
+{
+    struct ofp_action_config_gw *ofp_config_gw;
+
+    ofp_config_gw = put_OFPAT_CONFIG_GW(out);
+
+    //may do ntohs htons ntohl htonl
+    ofp_config_gw->param1 = config_gw->param1;
+    ofp_config_gw->param2 = config_gw->param2;
+    ofp_config_gw->param3 = config_gw->param3;
+    ofp_config_gw->param4 = config_gw->param4;
+    ofp_config_gw->param5 = config_gw->param5;
+    ofp_config_gw->param6 = config_gw->param6;
+    ofp_config_gw->param7 = config_gw->param7;
+    ofp_config_gw->param8 = config_gw->param8;
+    ofp_config_gw->param9 = config_gw->param9;
+}
+
+static char * OVS_WARN_UNUSED_RESULT
+parse_CONFIG_GW(const char *arg, const struct ofpact_parse_params *pp)
+{
+    struct ofpbuf *ofpacts;
+    struct ofpact_config_gw *config_gw;
+    char *name, *value;
+    struct eth_addr ethaddr;
+    char *error;
+
+    ofpacts = pp->ofpacts;
+    config_gw = ofpact_put_CONFIG_GW(ofpacts);
+
+    while (ofputil_parse_key_value(&arg, &name, &value)) {
+        if (!strcmp(name, "param1")) {
+            config_gw->param1 = atoi(value);
+        } else if (!strcmp(name, "param2")) {
+            config_gw->param2 = atoi(value);
+        } else if (!strcmp(name, "param3")) {
+            error = str_to_mac(value, &ethaddr);
+            if (error) {
+                return error;
+            }
+            config_gw->param3 = ethaddr;
+        } else if (!strcmp(name, "param4")) {
+            config_gw->param4 = atoi(value);
+        } else if (!strcmp(name, "param5")) {
+            config_gw->param5 = atoi(value);
+        } else if (!strcmp(name, "param6")) {
+            error = str_to_mac(value, &ethaddr);
+            if (error) {
+                return error;
+            }
+            config_gw->param6 = ethaddr;
+        } else if (!strcmp(name, "param7")) {
+            config_gw->param7 = atoi(value);
+        } else if (!strcmp(name, "param8")) {
+            config_gw->param8 = atoi(value);
+        } else if (!strcmp(name, "param9")) {
+            error = str_to_mac(value, &ethaddr);
+            if (error) {
+                return error;
+            }
+            config_gw->param9 = ethaddr;
+        } 
+    }
+
+    return NULL;
+}
+
+static void
+format_CONFIG_GW(const struct ofpact_config_gw *a, const struct ofpact_format_params *fp)
+{
+    struct ds *s;
+
+    s = fp->s;
+
+    ds_put_format(s, "config_gw(");
+    if (a->param1 != 0) {
+        ds_put_format(s, "param1=%"PRIu32, a->param1);
+    }
+    if (a->param2 != 0) {
+        ds_put_format(s, ",param2=%"PRIx32, ntohl(a->param2));
+    }
+    if (a->param3 != 0) {
+        ds_put_format(s, ",param3=%"ETH_ADDR_FMT, ETH_ADDR_ARGS(a->param3));
+    }
+    if (a->param4 != 0) {
+        ds_put_format(s, "param1=%"PRIu32, a->param1);
+    }
+    if (a->param5 != 0) {
+        ds_put_format(s, ",param2=%"PRIx32, ntohl(a->param2));
+    }
+    if (a->param6 != 0) {
+        ds_put_format(s, ",param3=%"ETH_ADDR_FMT, ETH_ADDR_ARGS(a->param3));
+    }
+    if (a->param7 != 0) {
+        ds_put_format(s, "param1=%"PRIu32, a->param1);
+    }
+    if (a->param8 != 0) {
+        ds_put_format(s, ",param2=%"PRIx32, ntohl(a->param2));
+    }
+    if (a->param9 != 0) {
+        ds_put_format(s, ",param3=%"ETH_ADDR_FMT, ETH_ADDR_ARGS(a->param3));
+    }
+
+    ds_put_format(s, ")");
+}
+
+static enum ofperr
+check_CONFIG_GW(const struct ofpact_config_gw *a OVS_UNUSED,
+                const struct ofpact_check_params *cp OVS_UNUSED)
+{
+    return 0;
+}
+
+static enum ofperr
+decode_OFPAT_RAW_HANDLE_GW(const struct ofp_action_handle_gw *a,
+                            enum ofp_version ofp_version OVS_UNUSED,
+                            struct ofpbuf *out)
+{
+    struct ofpact_handle_gw *handle_gw;
+
+    handle_gw = ofpact_put_CONFIG_GW(out);
+
+    //may do ntohs htons ntohl htonl
+    handle_gw->pipeline1 = a->pipeline1;
+    handle_gw->pipeline2 = a->pipeline2;
+    handle_gw->pipeline3 = a->pipeline3;
+    handle_gw->pipeline4 = a->pipeline4;
+    handle_gw->pipeline5 = a->pipeline5;
+}
+
+
+static void
+encode_HANDLE_GW(const struct ofpact_handle_gw *handle_gw,
+                  enum ofp_version ofp_version, struct ofpbuf *out)
+{
+
+    struct ofp_action_handle_gw *ofp_handle_gw;
+
+    ofp_handle_gw = put_OFPAT_HANDLE_GW(out);
+
+    //may do ntohs htons ntohl htonl
+    ofp_handle_gw->pipeline1 = handle_gw->pipeline1;
+    ofp_handle_gw->pipeline2 = handle_gw->pipeline2;
+    ofp_handle_gw->pipeline3 = handle_gw->pipeline3;
+    ofp_handle_gw->pipeline4 = handle_gw->pipeline4;
+    ofp_handle_gw->pipeline5 = handle_gw->pipeline5;
+}
+
+static char * OVS_WARN_UNUSED_RESULT
+parse_HANDLE_GW(const char *arg, const struct ofpact_parse_params *pp)
+{
+    struct ofpbuf *ofpacts;
+    struct ofpact_handle_gw *handle_gw;
+    char *name, *value;
+    struct eth_addr ethaddr;
+    char *error;
+
+    ofpacts = pp->ofpacts;
+    handle_gw = ofpact_put_HANDLE_GW(ofpacts);
+
+    while (ofputil_parse_key_value(&arg, &name, &value)) {
+        if (!strcmp(name, "pipeline1")) {
+            handle_gw->pipeline1 = atoi(value);
+        } else if (!strcmp(name, "pipeline2")) {
+            handle_gw->pipeline2 = atoi(value);
+        } else if (!strcmp(name, "pipeline3")) {
+            handle_gw->pipeline3 = atoi(value);
+        } else if (!strcmp(name, "pipeline4")) {
+            handle_gw->pipeline4 = atoi(value);
+        } else if (!strcmp(name, "pipeline5")) {
+            handle_gw->pipeline5 = atoi(value);
+        }
+    }
+
+    return NULL;
+}
+
+static void
+format_HANDLE_GW(const struct ofpact_handle_gw *a, const struct ofpact_format_params *fp)
+{
+    struct ds *s;
+
+    s = fp->s;
+
+    ds_put_format(s, "handle_gw(");
+    if (a->pipeline1 != 0) {
+        ds_put_format(s, "pipeline1=%"PRIu32, a->pipeline1);
+    }
+    if (a->pipeline2 != 0) {
+        ds_put_format(s, ",pipeline2=%"PRIx32, ntohl(a->pipeline2));
+    }
+    if (a->pipeline3 != 0) {
+        ds_put_format(s, ",pipeline3=%"PRIx32, ETH_ADDR_ARGS(a->pipeline3));
+    }
+    if (a->pipeline4 != 0) {
+        ds_put_format(s, "pipeline4=%"PRIu32, a->pipeline4);
+    }
+    if (a->pipeline5 != 0) {
+        ds_put_format(s, ",pipeline5=%"PRIx32, ntohl(a->pipeline5));
+    }
+    ds_put_format(s, ")");
+}
+
+static enum ofperr
+check_HANDLE_GW(const struct ofpact_handle_gw *a OVS_UNUSED,
+                const struct ofpact_check_params *cp OVS_UNUSED)
+{
+    return 0;
+}
+
 
 /* Action structure for NXAST_FIN_TIMEOUT.
  *
@@ -7991,6 +8235,9 @@ action_set_classify(const struct ofpact *a)
     case OFPACT_DEBUG_SLOW:
     case OFPACT_CHECK_PKT_LARGER:
     case OFPACT_DELETE_FIELD:
+    //XXXXXX 8.cmd ovs-ofctl implementation
+    case OFPACT_CONFIG_GW:
+    case OFPACT_HANDLE_GW:
         return ACTION_SLOT_INVALID;
 
     default:
@@ -8195,6 +8442,9 @@ ovs_instruction_type_from_ofpact_type(enum ofpact_type type,
     case OFPACT_DEC_NSH_TTL:
     case OFPACT_CHECK_PKT_LARGER:
     case OFPACT_DELETE_FIELD:
+    //XXXXXX 8.cmd ovs-ofctl implementation
+    case OFPACT_CONFIG_GW:
+    case OFPACT_HANDLE_GW:
     default:
         return OVSINST_OFPIT11_APPLY_ACTIONS;
     }
@@ -8901,6 +9151,8 @@ struct ofpact_map {
     int ofpat;                  /* OFPAT_* number from OpenFlow spec. */
 };
 
+//XXXXXX 3.translate between openflow action and openvswitch action: add mapping
+
 static const struct ofpact_map *
 get_ofpact_map(enum ofp_version version)
 {
@@ -9113,6 +9365,9 @@ ofpact_outputs_to_port(const struct ofpact *ofpact, ofp_port_t port)
     case OFPACT_DEC_NSH_TTL:
     case OFPACT_CHECK_PKT_LARGER:
     case OFPACT_DELETE_FIELD:
+    //XXXXXX 8.cmd ovs-ofctl implementation
+    case OFPACT_CONFIG_GW:
+    case OFPACT_HANDLE_GW:
     default:
         return false;
     }

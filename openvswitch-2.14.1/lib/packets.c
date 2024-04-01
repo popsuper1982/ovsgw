@@ -486,6 +486,19 @@ pop_nsh(struct dp_packet *packet)
     return true;
 }
 
+//XXXXXX 7.DPDK mode action execution
+void
+dp_config_gw_action(struct dp_packet *packet, struct ovs_action_config_gw *config_gw)
+{
+    
+}
+
+void
+dp_handle_gw_action(struct dp_packet *packet, struct ovs_action_handle_gw *handle_gw)
+{
+    
+}
+
 /* Converts hex digits in 'hex' to an Ethernet packet in '*packetp'.  The
  * caller must free '*packetp'.  On success, returns NULL.  On failure, returns
  * an error message and stores NULL in '*packetp'.
