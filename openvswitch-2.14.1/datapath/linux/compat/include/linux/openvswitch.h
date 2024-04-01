@@ -936,9 +936,7 @@ struct check_pkt_len_arg {
 //XXXXXX 4.define datapath action: define data path action struct
 
 struct ovs_eth_addr {
-    union {
-        uint8_t ea[6];
-    };
+    __u8     eth[ETH_ALEN];
 };
 
 struct ovs_action_config_gw {
@@ -960,6 +958,8 @@ struct ovs_action_handle_gw {
     uint32_t pipeline4;
     uint32_t pipeline5;
 };
+
+//XXXXXX 4.define datapath action
 
 /**
  * enum ovs_action_attr - Action types.
@@ -1049,9 +1049,8 @@ enum ovs_action_attr {
 	OVS_ACTION_ATTR_METER,        /* u32 meter number. */
 	OVS_ACTION_ATTR_CLONE,        /* Nested OVS_CLONE_ATTR_*.  */
 	OVS_ACTION_ATTR_CHECK_PKT_LEN, /* Nested OVS_CHECK_PKT_LEN_ATTR_*. */
-	//XXXXXX 4.define datapath action
-	OVS_ACTION_ATTR_CONFIG_GW = 28,
-	OVS_ACTION_ATTR_HANDLE_GW = 29,
+	OVS_ACTION_ATTR_CONFIG_GW = 51,
+	OVS_ACTION_ATTR_HANDLE_GW = 52,
 
 #ifndef __KERNEL__
 	OVS_ACTION_ATTR_TUNNEL_PUSH,   /* struct ovs_action_push_tnl*/

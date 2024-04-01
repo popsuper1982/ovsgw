@@ -68,6 +68,8 @@ struct ext_action_header {
 };
 OFP_ASSERT(sizeof(struct ext_action_header) == 16);
 
+/*XXXXXX 1.define openflow action: add openflow action type*/
+
 /* Raw identifiers for OpenFlow actions.
  *
  * Decoding and encoding OpenFlow actions across multiple versions is difficult
@@ -262,12 +264,10 @@ enum ofp_raw_action_type {
     /* OF1.5+(29): uint32_t. */
     OFPAT_RAW15_METER,
 
-    //XXXXXX 1.define openflow action: add openflow action type
-
-    /* OF1.0+(28): struct ofp_action_config_gw. */
+    /* OF1.0+(51): struct ofp_action_config_gw. */
     OFPAT_RAW_CONFIG_GW,
 
-    /* OF1.0+(29): struct ofp_action_handle_gw. */
+    /* OF1.0+(52): struct ofp_action_handle_gw. */
     OFPAT_RAW_HANDLE_GW,
 
 /* ## ------------------------- ## */
@@ -551,7 +551,7 @@ ofpacts_pull(struct ofpbuf *ofpacts)
 }
 
 #include "ofp-actions.inc1"
-
+
 /* Output actions. */
 
 /* Action structure for OFPAT10_OUTPUT, which sends packets out 'port'.
@@ -764,7 +764,7 @@ check_GROUP(const struct ofpact_group *a OVS_UNUSED,
 {
     return 0;
 }
-
+
 /* Action structure for NXAST_CONTROLLER.
  *
  * This generalizes using OFPAT_OUTPUT to send a packet to OFPP_CONTROLLER.  In
@@ -1090,7 +1090,7 @@ check_CONTROLLER(const struct ofpact_controller *a OVS_UNUSED,
 {
     return 0;
 }
-
+
 /* Enqueue action. */
 struct ofp10_action_enqueue {
     ovs_be16 type;            /* OFPAT10_ENQUEUE. */
@@ -1182,7 +1182,7 @@ check_ENQUEUE(const struct ofpact_enqueue *a,
     }
     return 0;
 }
-
+
 /* Action structure for NXAST_OUTPUT_REG.
  *
  * Outputs to the OpenFlow port number written to src[ofs:ofs+nbits].
@@ -1342,7 +1342,7 @@ check_OUTPUT_REG(const struct ofpact_output_reg *a,
 {
     return mf_check_src(&a->src, cp->match);
 }
-
+
 /* Action structure for NXAST_BUNDLE and NXAST_BUNDLE_LOAD.
  *
  * The bundle actions choose a slave from a supplied list of options.
@@ -1918,7 +1918,7 @@ check_PUSH_VLAN(const struct ofpact_push_vlan *a OVS_UNUSED,
     flow->vlans[0].tci |= htons(VLAN_CFI);
     return 0;
 }
-
+
 /* Action structure for OFPAT10_SET_DL_SRC/DST and OFPAT11_SET_DL_SRC/DST. */
 struct ofp_action_dl_addr {
     ovs_be16 type;                  /* Type. */
@@ -2433,7 +2433,7 @@ check_SET_L4_DST_PORT(struct ofpact_l4_port *a, struct ofpact_check_params *cp)
 {
     return check_set_l4_port(a, cp);
 }
-
+
 /* Action structure for OFPAT_COPY_FIELD. */
 struct ofp15_action_copy_field {
     ovs_be16 type;              /* OFPAT_COPY_FIELD. */
@@ -2739,24 +2739,28 @@ check_REG_MOVE(const struct ofpact_reg_move *a,
     return nxm_reg_move_check(a, cp->match);
 }
 
-//XXXXXX 1.define openflow action: define openflow action struct
+/*XXXXXX 1.define openflow action: define openflow action struct*/
 
+/* Action structure for OFPAT10_CONFIG_GW. */
 struct ofp_action_config_gw {
     ovs_be16 type;
     ovs_be16 len;
     uint32_t param1;
     ovs_be32 param2;
     struct eth_addr param3;
+    uint8_t pad1[2];
     uint32_t param4;
     ovs_be32 param5;
     struct eth_addr param6;
+    uint8_t pad2[2];
     uint32_t param7;
     ovs_be32 param8;
     struct eth_addr param9;
-    uint8_t pad[2];
+    uint8_t pad3[6];
 };
-OFP_ASSERT(sizeof(struct ofp_action_config_gw) == 48);
+OFP_ASSERT(sizeof(struct ofp_action_config_gw) == 56);
 
+/* Action structure for OFPAT10_HANDLE_GW. */
 struct ofp_action_handle_gw {
     ovs_be16 type;
     ovs_be16 len;
@@ -2768,8 +2772,6 @@ struct ofp_action_handle_gw {
 };
 OFP_ASSERT(sizeof(struct ofp_action_handle_gw) == 24);
 
-
-
 /* Action structure for OFPAT12_SET_FIELD. */
 struct ofp12_action_set_field {
     ovs_be16 type;                  /* OFPAT12_SET_FIELD. */
@@ -3475,7 +3477,6 @@ ofpact_put_reg_load2(struct ofpbuf *ofpacts, const struct mf_field *field,
     return sf;
 }
 
-
 /* Action structure for NXAST_STACK_PUSH and NXAST_STACK_POP.
  *
  * Pushes (or pops) field[offset: offset + n_bits] to (or from)
@@ -4185,7 +4186,7 @@ check_SET_TUNNEL(const struct ofpact_tunnel *a OVS_UNUSED,
 {
     return 0;
 }
-
+
 /* Delete field action. */
 
 /* Action structure for DELETE_FIELD */
@@ -4365,8 +4366,9 @@ decode_OFPAT_RAW_CONFIG_GW(const struct ofp_action_config_gw *a,
     config_gw->param7 = a->param7;
     config_gw->param8 = a->param8;
     config_gw->param9 = a->param9;
-}
 
+    return 0;
+}
 
 static void
 encode_CONFIG_GW(const struct ofpact_config_gw *config_gw,
@@ -4391,6 +4393,7 @@ encode_CONFIG_GW(const struct ofpact_config_gw *config_gw,
 static char * OVS_WARN_UNUSED_RESULT
 parse_CONFIG_GW(const char *arg, const struct ofpact_parse_params *pp)
 {
+    char* args;
     struct ofpbuf *ofpacts;
     struct ofpact_config_gw *config_gw;
     char *name, *value;
@@ -4399,8 +4402,9 @@ parse_CONFIG_GW(const char *arg, const struct ofpact_parse_params *pp)
 
     ofpacts = pp->ofpacts;
     config_gw = ofpact_put_CONFIG_GW(ofpacts);
+    args = arg;
 
-    while (ofputil_parse_key_value(&arg, &name, &value)) {
+    while (ofputil_parse_key_value(&args, &name, &value)) {
         if (!strcmp(name, "param1")) {
             config_gw->param1 = atoi(value);
         } else if (!strcmp(name, "param2")) {
@@ -4451,26 +4455,26 @@ format_CONFIG_GW(const struct ofpact_config_gw *a, const struct ofpact_format_pa
     if (a->param2 != 0) {
         ds_put_format(s, ",param2=%"PRIx32, ntohl(a->param2));
     }
-    if (a->param3 != 0) {
-        ds_put_format(s, ",param3=%"ETH_ADDR_FMT, ETH_ADDR_ARGS(a->param3));
+    if (a->param3.ea != 0) {
+        ds_put_format(s, ",param3="ETH_ADDR_FMT, ETH_ADDR_ARGS(a->param3));
     }
     if (a->param4 != 0) {
-        ds_put_format(s, "param1=%"PRIu32, a->param1);
+        ds_put_format(s, ",param4=%"PRIu32, a->param4);
     }
     if (a->param5 != 0) {
-        ds_put_format(s, ",param2=%"PRIx32, ntohl(a->param2));
+        ds_put_format(s, ",param5=%"PRIx32, ntohl(a->param5));
     }
-    if (a->param6 != 0) {
-        ds_put_format(s, ",param3=%"ETH_ADDR_FMT, ETH_ADDR_ARGS(a->param3));
+    if (a->param6.ea != 0) {
+        ds_put_format(s, ",param6="ETH_ADDR_FMT, ETH_ADDR_ARGS(a->param6));
     }
     if (a->param7 != 0) {
-        ds_put_format(s, "param1=%"PRIu32, a->param1);
+        ds_put_format(s, ",param7=%"PRIu32, a->param7);
     }
     if (a->param8 != 0) {
-        ds_put_format(s, ",param2=%"PRIx32, ntohl(a->param2));
+        ds_put_format(s, ",param8=%"PRIx32, ntohl(a->param8));
     }
-    if (a->param9 != 0) {
-        ds_put_format(s, ",param3=%"ETH_ADDR_FMT, ETH_ADDR_ARGS(a->param3));
+    if (a->param9.ea != 0) {
+        ds_put_format(s, ",param9="ETH_ADDR_FMT, ETH_ADDR_ARGS(a->param9));
     }
 
     ds_put_format(s, ")");
@@ -4498,6 +4502,8 @@ decode_OFPAT_RAW_HANDLE_GW(const struct ofp_action_handle_gw *a,
     handle_gw->pipeline3 = a->pipeline3;
     handle_gw->pipeline4 = a->pipeline4;
     handle_gw->pipeline5 = a->pipeline5;
+
+    return 0;
 }
 
 
@@ -4524,8 +4530,6 @@ parse_HANDLE_GW(const char *arg, const struct ofpact_parse_params *pp)
     struct ofpbuf *ofpacts;
     struct ofpact_handle_gw *handle_gw;
     char *name, *value;
-    struct eth_addr ethaddr;
-    char *error;
 
     ofpacts = pp->ofpacts;
     handle_gw = ofpact_put_HANDLE_GW(ofpacts);
@@ -4556,16 +4560,16 @@ format_HANDLE_GW(const struct ofpact_handle_gw *a, const struct ofpact_format_pa
 
     ds_put_format(s, "handle_gw(");
     if (a->pipeline1 != 0) {
-        ds_put_format(s, "pipeline1=%"PRIu32, a->pipeline1);
+        ds_put_format(s, "pipeline1=%"PRIu32, ntohl(a->pipeline1));
     }
     if (a->pipeline2 != 0) {
         ds_put_format(s, ",pipeline2=%"PRIx32, ntohl(a->pipeline2));
     }
     if (a->pipeline3 != 0) {
-        ds_put_format(s, ",pipeline3=%"PRIx32, ETH_ADDR_ARGS(a->pipeline3));
+        ds_put_format(s, ",pipeline3=%"PRIx32, ntohl(a->pipeline3));
     }
     if (a->pipeline4 != 0) {
-        ds_put_format(s, "pipeline4=%"PRIu32, a->pipeline4);
+        ds_put_format(s, "pipeline4=%"PRIu32, ntohl(a->pipeline4));
     }
     if (a->pipeline5 != 0) {
         ds_put_format(s, ",pipeline5=%"PRIx32, ntohl(a->pipeline5));
@@ -4690,7 +4694,7 @@ check_FIN_TIMEOUT(const struct ofpact_fin_timeout *a OVS_UNUSED,
     }
     return 0;
 }
-
+
 /* Action structure for NXAST_ENCAP */
 struct nx_action_encap {
     ovs_be16 type;         /* OFPAT_VENDOR. */
@@ -4903,7 +4907,7 @@ check_ENCAP(const struct ofpact_encap *a, struct ofpact_check_params *cp)
     }
     return 0;
 }
-
+
 /* Action structure for NXAST_DECAP */
 struct nx_action_decap {
     ovs_be16 type;         /* OFPAT_VENDOR. */
@@ -5877,7 +5881,7 @@ check_LEARN(const struct ofpact_learn *a,
 {
     return learn_check(a, cp->match);
 }
-
+
 /* Action structure for NXAST_CONJUNCTION. */
 struct nx_action_conjunction {
     ovs_be16 type;                  /* OFPAT_VENDOR. */
@@ -6104,7 +6108,7 @@ check_MULTIPATH(const struct ofpact_multipath *a,
 {
     return multipath_check(a, cp->match);
 }
-
+
 /* Action structure for NXAST_NOTE.
  *
  * This action has no effect.  It is variable length.  The switch does not
@@ -6363,7 +6367,7 @@ check_CLONE(struct ofpact_nest *a, struct ofpact_check_params *cp)
 {
     return check_subactions(a->actions, ofpact_nest_get_action_len(a), cp);
 }
-
+
 /* Action structure for NXAST_SAMPLE.
  *
  * Samples matching packets with the given probability and sends them
@@ -7520,7 +7524,7 @@ check_NAT(const struct ofpact_nat *a, const struct ofpact_check_params *cp)
     }
     return 0;
 }
-
+
 /* Truncate output action. */
 struct nx_action_output_trunc {
     ovs_be16 type;              /* OFPAT_VENDOR. */
@@ -7735,7 +7739,7 @@ check_WRITE_ACTIONS(struct ofpact_nest *a,
     struct ofpact_check_params tmp = *cp;
     return ofpacts_check(a->actions, ofpact_nest_get_action_len(a), &tmp);
 }
-
+
 /* Action structure for NXAST_WRITE_METADATA.
  *
  * Modifies the 'mask' bits of the metadata value. */
@@ -7828,7 +7832,7 @@ check_WRITE_METADATA(const struct ofpact_metadata *a OVS_UNUSED,
 {
     return 0;
 }
-
+
 /* Check packet length action. */
 
 struct nx_action_check_pkt_larger {
@@ -9170,8 +9174,8 @@ get_ofpact_map(enum ofp_version version)
         { OFPACT_SET_L4_SRC_PORT, 9 },
         { OFPACT_SET_L4_DST_PORT, 10 },
         { OFPACT_ENQUEUE, 11 },
-        { OFPACT_CONFIG_GW, 28},
-        { OFPACT_HANDLE_GW, 29},
+        { OFPACT_CONFIG_GW, 51},
+        { OFPACT_HANDLE_GW, 52},
         { 0, -1 },
     };
 
@@ -9202,8 +9206,8 @@ get_ofpact_map(enum ofp_version version)
         { OFPACT_GROUP, 22 },
         { OFPACT_SET_IP_TTL, 23 },
         { OFPACT_DEC_TTL, 24 },
-        { OFPACT_CONFIG_GW, 28},
-        { OFPACT_HANDLE_GW, 29},
+        { OFPACT_CONFIG_GW, 51},
+        { OFPACT_HANDLE_GW, 52},
         { 0, -1 },
     };
 
@@ -9225,8 +9229,8 @@ get_ofpact_map(enum ofp_version version)
         { OFPACT_SET_FIELD, 25 },
         /* OF1.3+ OFPAT_PUSH_PBB (26) not supported. */
         /* OF1.3+ OFPAT_POP_PBB (27) not supported. */
-        { OFPACT_CONFIG_GW, 28},
-        { OFPACT_HANDLE_GW, 29},
+        { OFPACT_CONFIG_GW, 51},
+        { OFPACT_HANDLE_GW, 52},
         { 0, -1 },
     };
 
