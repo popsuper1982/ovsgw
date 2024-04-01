@@ -935,16 +935,20 @@ struct check_pkt_len_arg {
 
 //XXXXXX 4.define datapath action: define data path action struct
 
+struct ovs_eth_addr {
+    __u8     eth[ETH_ALEN];
+};
+
 struct ovs_action_config_gw {
     uint32_t param1;
     __be32 param2;
-    struct eth_addr param3;
+    struct ovs_eth_addr param3;
     uint32_t param4;
     __be32 param5;
-    struct eth_addr param6;
+    struct ovs_eth_addr param6;
     uint32_t param7;
     __be32 param8;
-    struct eth_addr param9;
+    struct ovs_eth_addr param9;
 };
 
 struct ovs_action_handle_gw {

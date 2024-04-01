@@ -874,13 +874,13 @@ struct ovs_action_push_mpls {
 我们也定义一个
 struct ovs_action_config_gw {
     uint32_t param1;
-    ovs_be32 param2;
+    __be32 param2;
     struct eth_addr param3;
     uint32_t param4;
-    ovs_be32 param5;
+    __be32 param5;
     struct eth_addr param6;
     uint32_t param7;
-    ovs_be32 param8;
+    __be32 param8;
     struct eth_addr param9;
 };
 
@@ -891,6 +891,50 @@ struct ovs_action_handle_gw {
     uint32_t pipeline4;
     uint32_t pipeline5;
 };
+
+openvswitch.h里面没有ovs_be32，我们改成__be32
+里面没有struct eth_addr，我们改成struct ovs_key_ethernet
+struct eth_addr {
+    union {
+        uint8_t ea[6];
+        ovs_be16 be16[3];
+    };
+};
+
+struct ovs_key_ethernet {
+    __u8     eth_src[ETH_ALEN];
+    __u8     eth_dst[ETH_ALEN];
+};
+
+我们参考
+/*
+ * struct ovs_action_push_eth - %OVS_ACTION_ATTR_PUSH_ETH action argument.
+ * @addresses: Source and destination MAC addresses.
+ */
+struct ovs_action_push_eth {
+    struct ovs_key_ethernet addresses;
+};
+
+/* OFPACT_SET_ETH_SRC, OFPACT_SET_ETH_DST.
+ *
+ * Used for OFPAT10_SET_DL_SRC, OFPAT10_SET_DL_DST. */
+struct ofpact_mac {
+    OFPACT_PADDED_MEMBERS(
+        struct ofpact ofpact;
+        struct eth_addr mac;
+    );
+};
+
+        case OVS_ACTION_ATTR_PUSH_ETH: {
+            const struct ovs_action_push_eth *eth = nl_attr_get(a);
+
+            DP_PACKET_BATCH_FOR_EACH (i, packet, batch) {
+                push_eth(packet, &eth->addresses.eth_dst,
+                         &eth->addresses.eth_src);
+            }
+            break;
+        }
+
 
 static void
 compose_config_gw_action(struct xlate_ctx *ctx, struct ofpact_config_gw *config_gw)
