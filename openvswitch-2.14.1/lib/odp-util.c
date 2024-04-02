@@ -1126,8 +1126,8 @@ format_odp_config_gw_action(struct ds *ds, const struct nlattr *attr)
     if (config_gw->param2 != 0) {
         ds_put_format(ds, ",param2=%"PRIx32, ntohl(config_gw->param2));
     }
-    if (config_gw->param3.ea != 0) {
-        ds_put_format(ds, ",param3="ETH_ADDR_FMT, ETH_ADDR_ARGS(config_gw->param3));
+    if (config_gw->param3.eth.ea != 0) {
+        ds_put_format(ds, ",param3="ETH_ADDR_FMT, ETH_ADDR_ARGS(config_gw->param3.eth));
     }
     if (config_gw->param4 != 0) {
         ds_put_format(ds, ",param4=%"PRIu32, config_gw->param4);
@@ -1135,8 +1135,8 @@ format_odp_config_gw_action(struct ds *ds, const struct nlattr *attr)
     if (config_gw->param5 != 0) {
         ds_put_format(ds, ",param5=%"PRIx32, ntohl(config_gw->param5));
     }
-    if (config_gw->param6.ea != 0) {
-        ds_put_format(ds, ",param6="ETH_ADDR_FMT, ETH_ADDR_ARGS(config_gw->param6));
+    if (config_gw->param6.eth.ea != 0) {
+        ds_put_format(ds, ",param6="ETH_ADDR_FMT, ETH_ADDR_ARGS(config_gw->param6.eth));
     }
     if (config_gw->param7 != 0) {
         ds_put_format(ds, ",param7=%"PRIu32, config_gw->param7);
@@ -1144,8 +1144,8 @@ format_odp_config_gw_action(struct ds *ds, const struct nlattr *attr)
     if (config_gw->param8 != 0) {
         ds_put_format(ds, ",param8=%"PRIx32, ntohl(config_gw->param8));
     }
-    if (config_gw->param9.ea != 0) {
-        ds_put_format(ds, ",param9="ETH_ADDR_FMT, ETH_ADDR_ARGS(config_gw->param9));
+    if (config_gw->param9.eth.ea != 0) {
+        ds_put_format(ds, ",param9="ETH_ADDR_FMT, ETH_ADDR_ARGS(config_gw->param9.eth));
     }
 
     ds_put_format(ds, ")");

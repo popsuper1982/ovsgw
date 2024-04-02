@@ -5181,13 +5181,13 @@ compose_config_gw_action(struct xlate_ctx *ctx, struct ofpact_config_gw *config_
                                   sizeof *ovs_config_gw);
     ovs_config_gw->param1 = config_gw->param1;
     ovs_config_gw->param2 = config_gw->param2;
-    ovs_config_gw->param3 = config_gw->param3;
+    ovs_config_gw->param3.eth = config_gw->param3;
     ovs_config_gw->param4 = config_gw->param4;
     ovs_config_gw->param5 = config_gw->param5;
-    ovs_config_gw->param6 = config_gw->param6;
+    ovs_config_gw->param6.eth = config_gw->param6;
     ovs_config_gw->param7 = config_gw->param7;
     ovs_config_gw->param8 = config_gw->param8;
-    ovs_config_gw->param9 = config_gw->param9;
+    ovs_config_gw->param9.eth = config_gw->param9;
 }
 
 static void

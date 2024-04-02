@@ -933,7 +933,7 @@ struct check_pkt_len_arg {
 };
 #endif
 
-//XXXXXX 4.define datapath action: define data path action struct
+//XXXXXX 4.XXX define datapath action: define data path action struct
 
 struct ovs_eth_addr {
     __u8     eth[ETH_ALEN];
