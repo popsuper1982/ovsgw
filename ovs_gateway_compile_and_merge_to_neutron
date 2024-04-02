@@ -147,7 +147,36 @@ make modules_install会使编译生成的openvswitch.ko等内核模块安装到�
 
 Linux系统中，模块默认安装在/lib/modules/$(KERNELRELEASE)/kernel/。
 
+////////
+[root@testovs ~]# cd /lib/modules/4.19.90-2102.2.0.0068.ctl2.x86_64/kernel/
+[root@testovs kernel]# ls
+arch  crypto  drivers  fs  kernel  lib  mm  net  sound  virt
+[root@testovs kernel]# cd net/openvswitch/
+[root@testovs openvswitch]# ls -l
+total 312
+-rw-r--r--. 1 root root 279171 Aug 22  2023 openvswitch.ko
+-rw-r--r--. 1 root root   9139 Aug 22  2023 vport-geneve.ko
+-rw-r--r--. 1 root root   8267 Aug 22  2023 vport-gre.ko
+-rw-r--r--. 1 root root  10555 Aug 22  2023 vport-vxlan.ko
+这里的ko是系统自带的，不是新编译的
+////////
+
 外部模块默认安装在/lib/modules/$(KERNELRELEASE)/extra/。
+
+///////
+[root@testovs openvswitch]# cd /lib/modules/4.19.90-2102.2.0.0068.ctl2.x86_64/extra/
+[root@testovs extra]# ls -l
+total 18828
+drwxr-xr-x. 2 root root       29 Dec  8 17:34 megaraid_sas
+drwxr-xr-x. 2 root root       24 Dec  8 17:34 mpt3sas
+-rw-r--r--  1 root root 16208277 Apr  2 17:23 openvswitch.ko
+-rw-r--r--  1 root root   608685 Apr  2 17:23 vport-geneve.ko
+-rw-r--r--  1 root root   616613 Apr  2 17:23 vport-gre.ko
+-rw-r--r--  1 root root   608645 Apr  2 17:23 vport-lisp.ko
+-rw-r--r--  1 root root   608493 Apr  2 17:23 vport-stt.ko
+-rw-r--r--  1 root root   617941 Apr  2 17:23 vport-vxlan.ko
+这里是刚编译好的
+///////
 
 改变默认安装目录的前置路径，编译时设置INSTALL_MOD_PATH即可，如下：
 
@@ -158,9 +187,46 @@ make INSTALL_MOD_PATH=/myown modules_install
 [root@localhost ~]# whereis openvswitch
 openvswitch: /etc/openvswitch /usr/local/etc/openvswitch /usr/include/openvswitch /usr/share/openvswitch
 一般而言，OvS可执行文件位于/usr/local/sbin目录下，数据库文件位于/usr/local/etc/openvswitch目录下。
+
+////////
+[root@testovs ~]# whereis openvswitch
+openvswitch: /usr/local/etc/openvswitch
+
+[root@testovs ~]# cd /usr/local/sbin
+[root@testovs sbin]# ls -l
+total 17660
+-rwxr-xr-x 1 root root    46649 Apr  2 16:56 ovs-bugtool
+-rwxr-xr-x 1 root root  3186776 Apr  2 16:56 ovsdb-server
+-rwxr-xr-x 1 root root 14843640 Apr  2 16:56 ovs-vswitchd
+////////
+
 openvswitch有几个脚本放在/usr/local/share/openvswitch/scripts下，为了方便使用，可以设置PATH路径。由于运行需要root权限，可以切换到root，再设置PATH。
 echo 'export PATH=$PATH:/usr/local/share/openvswitch/scripts' | tee -a /root/.bashrc
 进行上面设置后，则可无需带文件路径，直接使用位于/usr/local/share/openvswitch/scripts/目录下的ovs-ctl等可执行程序。
+
+////////
+[root@testovs sbin]# cd  /usr/local/share/openvswitch/scripts
+[root@testovs scripts]# ls -l
+total 180
+-rwxr-xr-x 1 root root   872 Apr  2 16:56 ovs-bugtool-daemons-ver
+-rwxr-xr-x 1 root root   852 Apr  2 16:56 ovs-bugtool-fdb-show
+-rwxr-xr-x 1 root root   977 Apr  2 16:56 ovs-bugtool-get-dpdk-nic-numa
+-rwxr-xr-x 1 root root   395 Apr  2 16:56 ovs-bugtool-get-port-stats
+-rwxr-xr-x 1 root root   919 Apr  2 16:56 ovs-bugtool-ovs-appctl-dpif
+-rwxr-xr-x 1 root root   834 Apr  2 16:56 ovs-bugtool-ovs-bridge-datapath-type
+-rwxr-xr-x 1 root root  1266 Apr  2 16:56 ovs-bugtool-ovs-ofctl-loop-over-bridges
+-rwxr-xr-x 1 root root   825 Apr  2 16:56 ovs-bugtool-ovs-vswitchd-threads-affinity
+-rwxr-xr-x 1 root root  1046 Apr  2 16:56 ovs-bugtool-qos-configs
+-rwxr-xr-x 1 root root   981 Apr  2 16:56 ovs-bugtool-tc-class-show
+-rwxr-xr-x 1 root root  2987 Apr  2 16:56 ovs-check-dead-ifs
+-rwxr-xr-x 1 root root 18138 Apr  2 16:56 ovs-ctl
+-rwxr-xr-x 1 root root  6154 Apr  2 16:56 ovs-kmod-ctl
+-rw-r--r-- 1 root root 21197 Apr  2 16:56 ovs-lib
+-rwxr-xr-x 1 root root 46013 Apr  2 16:56 ovs-monitor-ipsec
+-rwxr-xr-x 1 root root  5487 Apr  2 16:56 ovs-save
+-rwxr-xr-x 1 root root 27680 Apr  2 16:56 ovs-vtep
+////////
+
 五、载入内核openvswitch模块
 # 查看系统自带openvswitch.ko模块信息,未执行上述make modules_install命令前
 [root@localhost openvswitch-2.16.0]# modinfo openvswitch
@@ -238,6 +304,80 @@ sig_key:        2E:DC:FD:33:39:74:46:20:22:5A:63:C7:1F:0C:90:CD:90:25:50:01
 sig_hashalgo:   sha256
 ...
 
+////////
+
+[root@testovs scripts]# modinfo openvswitch
+filename:       /lib/modules/4.19.90-2102.2.0.0068.ctl2.x86_64/extra/openvswitch.ko
+alias:          net-pf-16-proto-16-family-ovs_ct_limit
+alias:          net-pf-16-proto-16-family-ovs_meter
+alias:          net-pf-16-proto-16-family-ovs_packet
+alias:          net-pf-16-proto-16-family-ovs_flow
+alias:          net-pf-16-proto-16-family-ovs_vport
+alias:          net-pf-16-proto-16-family-ovs_datapath
+version:        2.14.1
+license:        GPL
+description:    Open vSwitch switching datapath
+srcversion:     3D7F2C773250E8EFAE1DC9A
+depends:        nf_conntrack,nf_nat,udp_tunnel,libcrc32c,nf_nat_ipv6,nf_nat_ipv4,nf_defrag_ipv6
+retpoline:      Y
+name:           openvswitch
+vermagic:       4.19.90-2102.2.0.0068.ctl2.x86_64 SMP mod_unload modversions
+sig_id:         PKCS#7
+signer:         Modules
+sig_key:        77:59:90:FA:BE:02:C7:F0:63:47:1D:20:77:62:55:17:D3:EE:77:98
+sig_hashalgo:   sha256
+signature:      99:10:9D:66:8E:96:14:94:41:46:02:D4:C6:4F:87:75:63:71:D4:64:
+                16:AE:FC:0E:91:5A:A8:D4:60:06:C6:60:31:75:58:BD:62:73:B3:67:
+                6D:0A:37:46:A6:E5:62:CB:01:CB:91:61:4B:60:61:47:49:E6:61:72:
+                11:2D:04:52:4E:DF:5B:FA:79:99:A4:55:0B:2C:B2:6C:5C:10:E1:A2:
+                45:31:2C:93:A1:D3:DE:33:8D:4C:7A:D5:4D:51:78:34:D4:40:17:96:
+                5A:95:27:B4:EC:1F:D1:C5:8D:CB:58:49:8D:52:5E:8A:5E:4D:F4:72:
+                93:94:A8:4D:8E:8D:42:6B:6D:96:97:C5:A3:44:71:46:71:61:75:3E:
+                E0:F8:00:EF:D9:09:14:82:B5:56:87:AE:97:52:B1:75:B9:83:68:E8:
+                16:9B:D7:EB:9D:88:1C:F1:FF:84:49:4E:64:EB:6A:5D:A0:10:53:C0:
+                F0:29:DC:1E:19:21:97:3D:F9:65:7F:72:26:CF:3E:0C:E2:F1:C5:11:
+                01:1B:06:A0:57:0F:DF:5E:B6:07:6B:61:E3:88:EC:55:CC:3F:52:8D:
+                06:A1:B8:5A:9B:16:F1:3C:16:D7:0A:6D:D4:4F:7E:0F:DF:21:59:BB:
+                59:69:F6:ED:CF:8F:34:AB:96:F4:14:FA:E4:22:9B:37:97:19:1A:67:
+                3F:56:27:B7:BC:73:F4:37:79:5E:0A:A1:17:94:71:CC:3F:9E:AC:BE:
+                B5:25:24:38:A1:E1:35:C9:F3:8A:68:0A:FF:45:64:18:89:EB:92:10:
+                4B:A3:BA:59:C0:9D:B4:32:0F:06:0B:CD:65:09:77:41:A2:73:2A:65:
+                63:81:1C:A3:A6:92:6F:49:56:65:59:96:35:EE:58:0B:7E:B9:5A:6D:
+                73:1E:4B:87:0B:45:00:4D:EE:C8:D6:00:09:8C:8E:04:25:49:B8:21:
+                4F:6A:88:20:A9:03:B4:AB:0C:ED:31:11:32:75:CE:D1:53:A3:E0:18:
+                C2:C9:02:7E:B5:4D:6F:AA:70:CF:20:FF:D1:9D:CF:BB:0F:B2:8A:43:
+                A6:8A:72:E8:A9:0B:2D:3C:5B:C0:8C:65:4C:75:67:D7:24:C6:77:41:
+                CE:85:D5:82:18:7A:2E:AD:CE:8A:12:61:D0:55:41:B7:38:9D:0C:B6:
+                56:50:03:76:78:8E:5C:9D:F2:EF:AA:E2:E2:38:26:E9:21:D0:4A:DA:
+                87:05:57:7E:D0:B1:2A:BB:23:E3:90:18:D6:2F:CD:EF:B3:57:FB:E2:
+                E2:B4:51:38:C8:98:F0:FB:05:34:90:ED:5D:0A:1E:35:55:1A:F5:6E:
+                DB:71:6B:89:77:58:C1:28:C4:18:E5:C2
+
+[root@testovs scripts]# modprobe -D openvswitch
+insmod /lib/modules/4.19.90-2102.2.0.0068.ctl2.x86_64/kernel/arch/x86/crypto/crc32c-intel.ko
+insmod /lib/modules/4.19.90-2102.2.0.0068.ctl2.x86_64/kernel/lib/libcrc32c.ko
+insmod /lib/modules/4.19.90-2102.2.0.0068.ctl2.x86_64/kernel/net/ipv4/udp_tunnel.ko
+insmod /lib/modules/4.19.90-2102.2.0.0068.ctl2.x86_64/kernel/net/ipv4/netfilter/nf_defrag_ipv4.ko
+insmod /lib/modules/4.19.90-2102.2.0.0068.ctl2.x86_64/kernel/net/ipv6/netfilter/nf_defrag_ipv6.ko
+install /usr/sbin/modprobe --ignore-install nf_conntrack $CMDLINE_OPTS && /usr/sbin/sysctl --quiet --pattern 'net[.]netfilter[.]nf_conntrack.*' --system
+insmod /lib/modules/4.19.90-2102.2.0.0068.ctl2.x86_64/kernel/net/netfilter/nf_nat.ko
+insmod /lib/modules/4.19.90-2102.2.0.0068.ctl2.x86_64/kernel/net/ipv4/netfilter/nf_nat_ipv4.ko
+insmod /lib/modules/4.19.90-2102.2.0.0068.ctl2.x86_64/kernel/net/ipv6/netfilter/nf_nat_ipv6.ko
+insmod /lib/modules/4.19.90-2102.2.0.0068.ctl2.x86_64/extra/openvswitch.ko
+
+[root@testovs ~]# modprobe openvswitch
+[root@testovs ~]# lsmod | grep openvswitch
+openvswitch           180224  0
+nf_nat_ipv6            20480  1 openvswitch
+nf_nat_ipv4            16384  1 openvswitch
+nf_nat                 36864  3 nf_nat_ipv6,nf_nat_ipv4,openvswitch
+nf_conntrack          163840  4 nf_nat,nf_nat_ipv6,nf_nat_ipv4,openvswitch
+nf_defrag_ipv6         20480  2 nf_conntrack,openvswitch
+udp_tunnel             16384  1 openvswitch
+libcrc32c              16384  4 nf_conntrack,nf_nat,openvswitch,xfs
+
+////////
+
 [root@localhost openvswitch-2.16.0]# lsmod | grep openvswitch
 openvswitch           184320  0
 nf_conncount           16384  1 openvswitch
@@ -278,6 +418,16 @@ total 16
 -rw-r----- 1 root root 14800 Dec  5 10:26 conf.db
 [root@localhost openvswitch-2.16.0]#
 
+////////
+[root@testovs ~]# cd ovsgw/openvswitch-2.14.1/
+ovsdb-tool create /usr/local/etc/openvswitch/conf.db vswitchd/vswitch.ovsschema
+[root@testovs openvswitch-2.14.1]# ls -l vswitchd/vswitch.ovsschema
+-rw-r--r-- 1 root root 26457 Mar 13 15:26 vswitchd/vswitch.ovsschema
+[root@testovs openvswitch-2.14.1]# ls -l /usr/local/etc/openvswitch/
+total 16
+-rw-r----- 1 root root 14637 Apr  2 19:39 conf.db
+////////
+
 # 配置启动 ovsdb 数据库
 # 使用以下命令来启动 ovsdb-server 并加载刚才创建的数据库文件：
 [root@localhost openvswitch-2.16.0]# ovsdb-server --remote=punix:/usr/local/var/run/openvswitch/db.sock \
@@ -286,6 +436,24 @@ total 16
 >                  --certificate=db:Open_vSwitch,SSL,certificate \
 >                  --bootstrap-ca-cert=db:Open_vSwitch,SSL,ca_cert \
 >                  --pidfile --detach 
+
+////////
+[root@testovs openvswitch-2.14.1]# mkdir -p /usr/local/var/run/openvswitch
+[root@testovs openvswitch-2.14.1]# ovsdb-server --remote=punix:/usr/local/var/run/openvswitch/db.sock \
+> >                  --remote=db:Open_vSwitch,Open_vSwitch,manager_options \
+> >                  --private-key=db:Open_vSwitch,SSL,private_key \
+> >                  --certificate=db:Open_vSwitch,SSL,certificate \
+> >                  --bootstrap-ca-cert=db:Open_vSwitch,SSL,ca_cert \
+> >                  --pidfile --detach
+
+ovs-vsctl --no-wait init
+
+[root@testovs openvswitch-2.14.1]# ovs-vswitchd --pidfile --detach
+2024-04-02T11:44:59Z|00001|ovs_numa|INFO|Discovered 4 CPU cores on NUMA node 0
+2024-04-02T11:44:59Z|00002|ovs_numa|INFO|Discovered 1 NUMA nodes and 4 CPU cores
+2024-04-02T11:44:59Z|00003|reconnect|INFO|unix:/usr/local/var/run/openvswitch/db.sock: connecting...
+2024-04-02T11:44:59Z|00004|reconnect|INFO|unix:/usr/local/var/run/openvswitch/db.sock: connected
+////////
 
 # 初始化数据库  
 [root@localhost openvswitch-2.16.0]# ovs-vsctl --no-wait init 
@@ -359,6 +527,70 @@ Dec 06 04:21:51 localhost ovs-ctl[1766]: Starting ovs-vswitchd [  OK  ]
 Dec 06 04:21:51 localhost ovs-vsctl[2179]: ovs|00001|vsctl|INFO|Called as ovs-vsctl --no-wait add Open_vSwitch . external-ids hostname=localhost
 Dec 06 04:21:51 localhost ovs-ctl[1766]: Enabling remote OVSDB managers [  OK  ]
 Dec 06 04:21:51 localhost systemd[1]: Started Open vSwitch server daemon.
+
+/////////
+[root@testovs openvswitch-2.14.1]# vim /etc/systemd/system/ovs.service
+[root@testovs openvswitch-2.14.1]# cat /etc/systemd/system/ovs.service
+[Unit]
+Description=Open vSwitch server daemon
+After=network.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/share/openvswitch/scripts/ovs-ctl start
+ExecStop=/usr/local/share/openvswitch/scripts/ovs-ctl stop
+
+[Install]
+WantedBy=multi-user.target
+[root@testovs openvswitch-2.14.1]# systemctl daemon-reload
+[root@testovs openvswitch-2.14.1]# systemctl enable ovs
+Created symlink /etc/systemd/system/multi-user.target.wants/ovs.service → /etc/systemd/system/ovs.service.
+[root@testovs openvswitch-2.14.1]# systemctl status ovs
+● ovs.service - Open vSwitch server daemon
+   Loaded: loaded (/etc/systemd/system/ovs.service; enabled; vendor preset: disabled)
+   Active: inactive (dead)
+[root@testovs openvswitch-2.14.1]# systemctl stop ovs
+[root@testovs openvswitch-2.14.1]# systemctl status ovs
+● ovs.service - Open vSwitch server daemon
+   Loaded: loaded (/etc/systemd/system/ovs.service; enabled; vendor preset: disabled)
+   Active: inactive (dead)
+[root@testovs openvswitch-2.14.1]# ps aux | grep ovs
+root      824945  0.0  0.0   8612  5004 ?        Ss   19:43   0:00 ovsdb-server --remote=punix:/usr/local/var/run/openvswitch/db.sock --detach
+root      825043  0.0  0.0  10508  3840 ?        Ss   19:44   0:00 ovs-vswitchd --pidfile --detach
+root      825389 19.3  1.7 367120 136692 ?       R    19:49   0:00 /usr/local/clamav/bin/clamscan -i -r --bytecode=yes --max-filesize=50M --scan-pdf=no --disable-cache --database=/var/ctcss/clamav/database/1 /root/ovsgw/openvswitch-2.14.1/libtool
+root      825391  0.0  0.0 213128   812 pts/1    R+   19:49   0:00 grep --color=auto ovs
+[root@testovs openvswitch-2.14.1]# kill -9 824945 825043
+[root@testovs openvswitch-2.14.1]# ps aux | grep ovs
+root      825394 21.6  2.9 466792 231484 ?       R    19:49   0:01 /usr/local/clamav/bin/clamscan -i -r --bytecode=yes --max-filesize=50M --scan-pdf=no --disable-cache --database=/var/ctcss/clamav/database/2 /root/ovsgw/openvswitch-2.14.1/libtool
+root      825396  0.0  0.0 213128   824 pts/1    S+   19:49   0:00 grep --color=auto ovs
+[root@testovs openvswitch-2.14.1]# systemctl start ovs
+[root@testovs openvswitch-2.14.1]# systemctl status ovs
+● ovs.service - Open vSwitch server daemon
+   Loaded: loaded (/etc/systemd/system/ovs.service; enabled; vendor preset: disabled)
+   Active: active (exited) since Tue 2024-04-02 19:50:25 CST; 6s ago
+  Process: 825461 ExecStart=/usr/local/share/openvswitch/scripts/ovs-ctl start (code=exited, status=0/SUCCESS)
+ Main PID: 825461 (code=exited, status=0/SUCCESS)
+
+Apr 02 19:50:25 testovs systemd[1]: Starting Open vSwitch server daemon...
+Apr 02 19:50:25 testovs ovs-ctl[825461]: Starting ovsdb-server [  OK  ]
+Apr 02 19:50:25 testovs ovs-vsctl[825478]: ovs|00001|vsctl|INFO|Called as ovs-vsctl --no-wait -- init -- set Open>
+Apr 02 19:50:25 testovs ovs-ctl[825461]: system ID not configured, please use --system-id ... failed!
+Apr 02 19:50:25 testovs ovs-vsctl[825482]: ovs|00001|vsctl|INFO|Called as ovs-vsctl --no-wait set Open_vSwitch . >
+Apr 02 19:50:25 testovs ovs-ctl[825461]: Configuring Open vSwitch system IDs [  OK  ]
+Apr 02 19:50:25 testovs ovs-ctl[825461]: Starting ovs-vswitchd [  OK  ]
+Apr 02 19:50:25 testovs ovs-ctl[825461]: Enabling remote OVSDB managers [  OK  ]
+Apr 02 19:50:25 testovs systemd[1]: Started Open vSwitch server daemon.
+Apr 02 19:50:25 testovs ovs-vsctl[825502]: ovs|00001|vsctl|INFO|Called as ovs-vsctl --no-wait add Open_vSwitch . >
+
+[root@testovs openvswitch-2.14.1]# ps aux | grep ovs
+root      825476  0.0  0.0   8216   440 ?        S<s  19:50   0:00 ovsdb-server: monitoring pid 825477 (healthy)
+root      825477  0.0  0.0   8612  4880 ?        S<   19:50   0:00 ovsdb-server /usr/local/etc/openvswitch/conf.db -vconsole:emer -vsyslog:err -vfile:info --remote=punix:/usr/local/var/run/openvswitch/db.sock --private-key=db:Open_vSwitch,SSL,private_key --certificate=db:Open_vSwitch,SSL,certificate --bootstrap-ca-cert=db:Open_vSwitch,SSL,ca_cert --no-chdir --log-file=/usr/local/var/log/openvswitch/ovsdb-server.log --pidfile=/usr/local/var/run/openvswitch/ovsdb-server.pid --detach --monitor
+root      825493  0.0  0.0  10244  1984 ?        S<s  19:50   0:00 ovs-vswitchd: monitoring pid 825494 (healthy)
+root      825494  0.0  0.1  10684 10424 ?        S<L  19:50   0:00 ovs-vswitchd unix:/usr/local/var/run/openvswitch/db.sock -vconsole:emer -vsyslog:err -vfile:info --mlockall --no-chdir --log-file=/usr/local/var/log/openvswitch/ovs-vswitchd.log --pidfile=/usr/local/var/run/openvswitch/ovs-vswitchd.pid --detach --monitor
+root      825509 21.5  1.5 356124 123664 ?       RN   19:50   0:00 /usr/local/clamav/bin/clamscan -i -r --bytecode=yes --max-filesize=50M --scan-pdf=no --disable-cache --database=/var/ctcss/clamav/database/2 /root/ovsgw/openvswitch-2.14.1/utilities/.deps/ovs-appctl.Po
+root      825511  0.0  0.0 213128   948 pts/1    S+   19:50   0:00 grep --color=auto ovs
+/////////
 
 # OvS已成功启动
 [root@localhost ~]# ovs-vsctl show
@@ -465,6 +697,29 @@ system@ovs-system:
 [root@localhost ~]# lsmod | grep openvswitch
 注意：上面最开始rmmod openvswitch失败，本质就是模块的模块的引用计数不为0, 要解决此类问题，只需要使模块的引用计数为0即可。因OvS的datapath即ovs-system会使用openvswitch模块，故如果不删除该datapath，则无法卸载openvswitch模块，删除后，则卸载openvswitch模块成功。
 
+-----------------------
+
+ovs-vsctl add-br br-int
+ovs-vsctl add-br br-tun
+ip link add br-int-pair type veth peer name br-tun-pair
+ip link set br-int-pair up
+ip link set br-tun-pair up
+ovs-vsctl add-port br-int br-int-pair
+ovs-vsctl add-port br-tun br-tun-pair
+ip link add vnic0 type veth peer name vnic0-br-int
+ip link set vnic0 up
+ip link set vnic0-br-int up
+ovs-vsctl add-port br-int vnic0-br-int
+ifconfig vnic0 10.0.0.1/24
+ip link add vnic1 type veth peer name vnic1-br-int
+ip link set vnic1 up
+ip link set vnic1-br-int up
+ovs-vsctl add-port br-int vnic1-br-int
+ifconfig vnic1 10.0.1.1/24
+ovs-vsctl set Port vnic0-br-int tag=1
+ovs-vsctl set Port vnic1-br-int tag=2
+ovs-vsctl add-port br-tun gre0 -- set Interface gre0 type=gre options:local_ip=192.168.100.100 options:in_key=flow options:remote_ip=192.168.100.101 options:out_key=flow
+ovs-vsctl add-port br-tun gre1 -- set Interface gre1 type=gre options:local_ip=192.168.100.100 options:in_key=flow options:remote_ip=192.168.100.102 options:out_key=flow
 
 -----------------------
 
