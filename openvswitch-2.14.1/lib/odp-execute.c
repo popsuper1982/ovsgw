@@ -950,7 +950,7 @@ odp_execute_actions(void *dp, struct dp_packet_batch *batch, bool steal,
             break;
          }
 
-        //XXXXXX 7.DPDK mode action execution
+        //XXXXXXXX 7.DPDK mode action execution
         case OVS_ACTION_ATTR_CONFIG_GW: {
             const struct ovs_action_config_gw *config_gw = nl_attr_get(a);
 

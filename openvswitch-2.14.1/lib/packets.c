@@ -486,7 +486,7 @@ pop_nsh(struct dp_packet *packet)
     return true;
 }
 
-//XXXXXX 7.DPDK mode action execution
+//XXXXXXXX 7.DPDK mode action execution
 void
 dp_config_gw_action(struct dp_packet *packet, const struct ovs_action_config_gw *config_gw)
 {

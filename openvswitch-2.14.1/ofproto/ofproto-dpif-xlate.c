@@ -5170,7 +5170,7 @@ compose_dec_mpls_ttl_action(struct xlate_ctx *ctx)
     return true;
 }
 
-//XXXXXX 5.handle upcall, translate openvswitch action to datapath action
+//XXXXXXXX 5.handle upcall, translate openvswitch action to datapath action
 
 static void
 compose_config_gw_action(struct xlate_ctx *ctx, struct ofpact_config_gw *config_gw)
@@ -5754,7 +5754,7 @@ reversible_actions(const struct ofpact *ofpacts, size_t ofpacts_len)
         case OFPACT_ENCAP:
         case OFPACT_DECAP:
         case OFPACT_DEC_NSH_TTL:
-        //XXXXXX 5.handle upcall, translate openvswitch action to datapath action
+        //XXXXXXXX 5.handle upcall, translate openvswitch action to datapath action
         case OFPACT_CONFIG_GW:
         case OFPACT_HANDLE_GW:
             return false;
@@ -6058,7 +6058,7 @@ freeze_unroll_actions(const struct ofpact *a, const struct ofpact *end,
         case OFPACT_NAT:
         case OFPACT_CHECK_PKT_LARGER:
         case OFPACT_DELETE_FIELD:
-        //XXXXXX 5.handle upcall, translate openvswitch action to datapath action
+        //XXXXXXXX 5.handle upcall, translate openvswitch action to datapath action
         case OFPACT_CONFIG_GW:
         case OFPACT_HANDLE_GW:
             /* These may not generate PACKET INs. */
@@ -6723,7 +6723,7 @@ recirc_for_mpls(const struct ofpact *a, struct xlate_ctx *ctx)
     case OFPACT_GOTO_TABLE:
     case OFPACT_CHECK_PKT_LARGER:
     case OFPACT_DELETE_FIELD:
-    //XXXXXX 5.handle upcall, translate openvswitch action to datapath action
+    //XXXXXXXX 5.handle upcall, translate openvswitch action to datapath action
     case OFPACT_CONFIG_GW:
     case OFPACT_HANDLE_GW:
     default:
@@ -7040,7 +7040,7 @@ do_xlate_actions(const struct ofpact *ofpacts, size_t ofpacts_len,
             }
             break;
 
-        //XXXXXX 5.handle upcall, translate openvswitch action to datapath action
+        //XXXXXXXX 5.handle upcall, translate openvswitch action to datapath action
         case OFPACT_CONFIG_GW:
             compose_config_gw_action(ctx, ofpact_get_CONFIG_GW(a));
             break;

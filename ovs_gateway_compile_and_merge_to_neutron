@@ -1,0 +1,1493 @@
+openvswitch gateway compile and merge to neutron
+
+-----------------------
+
+OvS编译安装、自启动服务与卸载
+
+一、前言
+首先验证内核版本uname -r与你下载的OvS版本是否匹配（必须），目前OvS-3.2.1最高只支持内核5.8！
+【版本适配关系表】
+Linux内核与OvS版本匹配关系、OvS版本与DPDK版本匹配关系：
+https://docs.openvswitch.org/en/latest/faq/releases/
+【OvS版本路径列表】
+Open vSwitch版本下载路径：
+http://www.openvswitch.org/download/
+以OvS-2.16.0为例，编译过程如下：
+
+二、准备工作
+安装依赖包：
+yum install wget git gcc autoconf automake libtool make pkg-config uuid kernel-devel-$(uname -r) -y
+
+//////////
+yum install wget git gcc autoconf automake libtool make pkg-config uuid kernel-devel
+yum install kernel-devel
+yum install numactl-devel
+yum install openssl
+yum install libcap-ng
+yum install openssl-devel.x86_64
+yum install libcap-ng-devel.x86_64
+//////////
+
+三、获取代码
+1）wget 下载
+[root@localhost ~]# wget https://www.openvswitch.org/releases/openvswitch-2.16.0.tar.gz 
+[root@localhost ~]# tar zxvf openvswitch-2.16.0.tar.gz 
+[root@localhost ~]# cd openvswitch-2.16.0/
+[root@localhost openvswitch-2.16.0]# ls
+acinclude.m4  AUTHORS.rst  config.h.in   CONTRIBUTING.rst  debian         ipsec    m4               Makefile.in  ofproto     poc         rhel     third-party  Vagrantfile          vtep
+aclocal.m4    boot.sh      configure     datapath          Documentation  lib      MAINTAINERS.rst  NEWS         ovsdb       python      selinux  tutorial     Vagrantfile-FreeBSD  windows
+appveyor.yml  build-aux    configure.ac  datapath-windows  include        LICENSE  Makefile.am      NOTICE       package.m4  README.rst  tests    utilities    vswitchd             xenserver
+2）git 下载
+[root@localhost ~]# git clone https://github.com/openvswitch/ovs.git 
+[root@localhost tmp]# cd ovs
+// git tag 或 git branch -a 查看所有分支，切换为稳定分支
+[root@localhost ovs]# git branch
+* master
+[root@localhost ovs]# git tag
+v0.90.0
+...
+v2.15.8
+v2.16.0
+v2.16.1
+...
+[root@localhost ovs]# git checkout v2.16.0 
+[root@localhost ovs]# ls
+acinclude.m4  boot.sh       CONTRIBUTING.rst  Documentation  lib      MAINTAINERS.rst  NOTICE   poc         rhel     third-party  Vagrantfile          vtep
+appveyor.yml  build-aux     datapath-windows  include        LICENSE  Makefile.am      ofproto  python      selinux  tutorial     Vagrantfile-FreeBSD  windows
+AUTHORS.rst   configure.ac  debian            ipsec          m4       NEWS             ovsdb    README.rst  tests    utilities    vswitchd
+
+//////////
+
+git clone git@github.com:popsuper1982/ovsgw.git
+
+//////////
+
+四、编译安装
+# 当使用源代码时，需要自己创建configure脚本
+[root@localhost openvswitch-2.16.0]# ./boot.sh
+
+# 配置并开启内核模块编译，如无需编译openvswitch.ko等内核模块，则直接执行./configure即可
+[root@localhost openvswitch-2.16.0]# ./configure --with-linux=/lib/modules/`uname -r`/build
+
+# 编译安装OvS用户空间组件
+[root@localhost openvswitch-2.16.0]# make && make install
+
+# 安装内核模块,执行该步骤后，会使编译生成的openvswitch.ko等内核模块拷贝到/lib/modules/$(uname -r)/extra/目录下
+[root@localhost openvswitch-2.16.0]# make modules_install
+
+make modules_install报错
+
+[root@testovs openvswitch-2.14.1]# make modules_install
+cd datapath/linux && make modules_install
+make[1]: Entering directory '/root/ovsgw/openvswitch-2.14.1/datapath/linux'
+make -C /lib/modules/4.19.90-2102.2.0.0068.ctl2.x86_64/build  M=/root/ovsgw/openvswitch-2.14.1/datapath/linux modules_install
+make[2]: Entering directory '/usr/src/kernels/4.19.90-2102.2.0.0068.ctl2.x86_64'
+  INSTALL /root/ovsgw/openvswitch-2.14.1/datapath/linux/openvswitch.ko
+At main.c:160:
+- SSL error:02001002:system library:fopen:No such file or directory: crypto/bio/bss_file.c:69
+- SSL error:2006D080:BIO routines:BIO_new_file:no such file: crypto/bio/bss_file.c:76
+sign-file: certs/signing_key.pem: No such file or directory
+
+到这个路径下/usr/src/kernels/<linux version>/certs
+
+/usr/src/kernels/4.19.90-2102.2.0.0068.ctl2.x86_64/certs
+
+创建一个文件x509.genkey
+[root@testovs certs]# cat x509.genkey
+[ req ]
+default_bits = 4096
+distinguished_name = req_distinguished_name
+prompt = no
+string_mask = utf8only
+x509_extensions = myexts
+
+[ req_distinguished_name ]
+CN = Modules
+
+[ myexts ]
+basicConstraints=critical,CA:FALSE
+keyUsage=digitalSignature
+subjectKeyIdentifier=hash
+authorityKeyIdentifier=keyid
+运行以下命令
+
+openssl req -new -nodes -utf8 -sha512 -days 36500 -batch -x509 -config x509.genkey -outform DER -out signing_key.x509 -keyout signing_key.pem
+
+Generating a RSA private key
+................................++++
+....................................................++++
+writing new private key to 'signing_key.pem'
+-----
+
+[root@testovs certs]# ls
+Kconfig  Makefile  signing_key.pem  signing_key.x509  x509.genkey
+
+编译通过
+
+[root@testovs openvswitch-2.14.1]# make modules_install
+cd datapath/linux && make modules_install
+make[1]: Entering directory '/root/ovsgw/openvswitch-2.14.1/datapath/linux'
+make -C /lib/modules/4.19.90-2102.2.0.0068.ctl2.x86_64/build  M=/root/ovsgw/openvswitch-2.14.1/datapath/linux modules_install
+make[2]: Entering directory '/usr/src/kernels/4.19.90-2102.2.0.0068.ctl2.x86_64'
+  INSTALL /root/ovsgw/openvswitch-2.14.1/datapath/linux/openvswitch.ko
+  INSTALL /root/ovsgw/openvswitch-2.14.1/datapath/linux/vport-geneve.ko
+  INSTALL /root/ovsgw/openvswitch-2.14.1/datapath/linux/vport-gre.ko
+  INSTALL /root/ovsgw/openvswitch-2.14.1/datapath/linux/vport-lisp.ko
+  INSTALL /root/ovsgw/openvswitch-2.14.1/datapath/linux/vport-stt.ko
+  INSTALL /root/ovsgw/openvswitch-2.14.1/datapath/linux/vport-vxlan.ko
+  DEPMOD  4.19.90-2102.2.0.0068.ctl2.x86_64
+make[2]: Leaving directory '/usr/src/kernels/4.19.90-2102.2.0.0068.ctl2.x86_64'
+/sbin/depmod `sed -n 's/#define UTS_RELEASE "\([^"]*\)"/\1/p' /lib/modules/4.19.90-2102.2.0.0068.ctl2.x86_64/build/include/generated/utsrelease.h`
+make[1]: Leaving directory '/root/ovsgw/openvswitch-2.14.1/datapath/linux'
+
+注意：如何不带配置选项--with-linux=/lib/modules/$(uname -r)/build，则表示使用当前系统内核附带的openvswitch.ko模块。如果带有该配置选项，则表示在更新的Open vSwitch版本基础上，基于当前的Linux内核，构建新的openvswitch.ko模块版本。
+make modules_install会使编译生成的openvswitch.ko等内核模块安装到系统默认的/lib/modules/$(uname -r)/extra/目录下，当使用modprobe openvswitch时，则会直接加载该目录下的openvswitch.ko模块。
+
+【拓展】
+
+Linux系统中，模块默认安装在/lib/modules/$(KERNELRELEASE)/kernel/。
+
+外部模块默认安装在/lib/modules/$(KERNELRELEASE)/extra/。
+
+改变默认安装目录的前置路径，编译时设置INSTALL_MOD_PATH即可，如下：
+
+make INSTALL_MOD_PATH=/myown modules_install
+把默认安装路径/lib/modules/$(KERNELRELEASE)/kernel/更改为 /myown/lib/modules/$(KERNELRELEASE)/kernel/；该属性对编译kernel结构内或结构外模块，都可以使用。
+
+可以使用以下命令来查看OvS用户空间的组件，即可执行程序安装的位置：
+[root@localhost ~]# whereis openvswitch
+openvswitch: /etc/openvswitch /usr/local/etc/openvswitch /usr/include/openvswitch /usr/share/openvswitch
+一般而言，OvS可执行文件位于/usr/local/sbin目录下，数据库文件位于/usr/local/etc/openvswitch目录下。
+openvswitch有几个脚本放在/usr/local/share/openvswitch/scripts下，为了方便使用，可以设置PATH路径。由于运行需要root权限，可以切换到root，再设置PATH。
+echo 'export PATH=$PATH:/usr/local/share/openvswitch/scripts' | tee -a /root/.bashrc
+进行上面设置后，则可无需带文件路径，直接使用位于/usr/local/share/openvswitch/scripts/目录下的ovs-ctl等可执行程序。
+五、载入内核openvswitch模块
+# 查看系统自带openvswitch.ko模块信息,未执行上述make modules_install命令前
+[root@localhost openvswitch-2.16.0]# modinfo openvswitch
+filename:       /lib/modules/4.18.0-394.el8.x86_64/kernel/net/openvswitch/openvswitch.ko.xz
+alias:          net-pf-16-proto-16-family-ovs_ct_limit
+alias:          net-pf-16-proto-16-family-ovs_meter
+alias:          net-pf-16-proto-16-family-ovs_packet
+alias:          net-pf-16-proto-16-family-ovs_flow
+alias:          net-pf-16-proto-16-family-ovs_vport
+alias:          net-pf-16-proto-16-family-ovs_datapath
+license:        GPL
+description:    Open vSwitch switching datapath
+rhelversion:    8.7
+srcversion:     F3F697B9C54245CFAFFDBC6
+depends:        nf_conntrack,nf_nat,nf_conncount,libcrc32c,nf_defrag_ipv6
+intree:         Y
+name:           openvswitch
+vermagic:       4.18.0-394.el8.x86_64 SMP mod_unload modversions
+sig_id:         PKCS#7
+signer:         CentOS kernel signing key
+sig_key:        63:93:7D:30:8C:56:B6:89:97:5E:B1:FE:1B:5B:91:73:BC:D2:CA:D2
+...
+
+# 查看自己编译的 openvswitch.ko 依赖的模块
+[root@localhost openvswitch-2.16.0]# modinfo ./datapath/linux/openvswitch.ko
+filename:       /tmp/openvswitch-2.16.0/./datapath/linux/openvswitch.ko
+alias:          net-pf-16-proto-16-family-ovs_ct_limit
+alias:          net-pf-16-proto-16-family-ovs_meter
+alias:          net-pf-16-proto-16-family-ovs_packet
+alias:          net-pf-16-proto-16-family-ovs_flow
+alias:          net-pf-16-proto-16-family-ovs_vport
+alias:          net-pf-16-proto-16-family-ovs_datapath
+version:        2.16.0
+license:        GPL
+description:    Open vSwitch switching datapath
+rhelversion:    8.7
+srcversion:     79E4AE8CCF8AE3FCD9DB165
+depends:        nf_conntrack,nf_nat,udp_tunnel,libcrc32c,nf_defrag_ipv6
+name:           openvswitch
+vermagic:       4.18.0-394.el8.x86_64 SMP mod_unload modversions
+
+# 查看depends：行，发现 openvswitch.ko 依赖于多个模块，但其中 udp_tunnel 和 libcrc32c 模块还未加载，于是先载入 udp_tunnel 和 libcrc32c
+# 不同机器可能有所区别，根据实际依赖进行加载
+[root@localhost openvswitch-2.16.0]# modprobe udp_tunnel
+[root@localhost openvswitch-2.16.0]# modprobe libcrc32c  
+
+# 载入 openvswitch 模块
+[root@localhost openvswitch-2.16.0]# modprobe openvswitch
+
+=======================================================================================
+# 也可使用如下方式加载openvswitch.ko模块，自己编译的openvswitch.ko模块位于datapath/linux/目录下
+[root@localhost openvswitch-2.16.0]# insmod ./datapath/linux/openvswitch.ko
+=======================================================================================
+
+# 执行上述make modules_install命令后，查看模块载入情况，可以发现filename行的文件路径和之前有所不同
+[root@localhost ~]# modinfo openvswitch
+filename:       /lib/modules/4.18.0-394.el8.x86_64/extra/openvswitch.ko
+alias:          net-pf-16-proto-16-family-ovs_ct_limit
+alias:          net-pf-16-proto-16-family-ovs_meter
+alias:          net-pf-16-proto-16-family-ovs_packet
+alias:          net-pf-16-proto-16-family-ovs_flow
+alias:          net-pf-16-proto-16-family-ovs_vport
+alias:          net-pf-16-proto-16-family-ovs_datapath
+version:        2.16.0
+license:        GPL
+description:    Open vSwitch switching datapath
+rhelversion:    8.7
+srcversion:     79E4AE8CCF8AE3FCD9DB165
+depends:        nf_conntrack,nf_nat,udp_tunnel,libcrc32c,nf_defrag_ipv6
+name:           openvswitch
+vermagic:       4.18.0-394.el8.x86_64 SMP mod_unload modversions
+sig_id:         PKCS#7
+signer:         localhost
+sig_key:        2E:DC:FD:33:39:74:46:20:22:5A:63:C7:1F:0C:90:CD:90:25:50:01
+sig_hashalgo:   sha256
+...
+
+[root@localhost openvswitch-2.16.0]# lsmod | grep openvswitch
+openvswitch           184320  0
+nf_conncount           16384  1 openvswitch
+nf_nat                 45056  3 ipt_MASQUERADE,openvswitch,nft_chain_nat
+nf_conntrack          172032  5 xt_conntrack,nf_nat,ipt_MASQUERADE,openvswitch,nf_conncount
+nf_defrag_ipv6         20480  2 nf_conntrack,openvswitch
+libcrc32c              16384  5 nf_conntrack,nf_nat,openvswitch,nf_tables,xfs
+【拓展】
+
+modinfo openvswitch：可查看openvswitch依赖的模块。
+
+modprobe -D openvswitch：可查看加载的是Linux自带的openvswitch.ko模块还是自己编译的openvswitch.ko模块。
+
+/sbin/lsmod | grep openvswitch：查看安装是否成功。
+
+# 根据下面openvswitch.ko模块位于extra路径下，可知加载的是自己编译的模块
+[root@localhost ~]# modprobe -D openvswitch
+insmod /lib/modules/4.18.0-394.el8.x86_64/kernel/arch/x86/crypto/crc32c-intel.ko.xz
+insmod /lib/modules/4.18.0-394.el8.x86_64/kernel/lib/libcrc32c.ko.xz
+insmod /lib/modules/4.18.0-394.el8.x86_64/kernel/net/ipv4/udp_tunnel.ko.xz
+insmod /lib/modules/4.18.0-394.el8.x86_64/kernel/net/ipv4/netfilter/nf_defrag_ipv4.ko.xz
+insmod /lib/modules/4.18.0-394.el8.x86_64/kernel/net/ipv6/netfilter/nf_defrag_ipv6.ko.xz
+install /sbin/modprobe --ignore-install nf_conntrack $CMDLINE_OPTS && /sbin/sysctl --quiet --pattern 'net[.]netfilter[.]nf_conntrack.*' --system
+insmod /lib/modules/4.18.0-394.el8.x86_64/kernel/net/netfilter/nf_nat.ko.xz
+insmod /lib/modules/4.18.0-394.el8.x86_64/extra/openvswitch.ko
+
+六、初始化数据库与启动OvS
+# 创建 ovsdb 数据库目录
+[root@localhost openvswitch-2.16.0]# mkdir -p /usr/local/etc/openvswitch
+
+# 使用当前目录下的/vswitchd/vswitch.ovsschema创建一个名为 "conf.db" 的空数据库文件,并将其保存在上一步创建的目录中
+[root@localhost openvswitch-2.16.0]# ovsdb-tool create /usr/local/etc/openvswitch/conf.db vswitchd/vswitch.ovsschema
+[root@localhost openvswitch-2.16.0]#
+[root@localhost openvswitch-2.16.0]# ls ./vswitchd/vswitch.ovsschema
+./vswitchd/vswitch.ovsschema
+[root@localhost openvswitch-2.16.0]# ls -l /usr/local/etc/openvswitch/
+total 16
+-rw-r----- 1 root root 14800 Dec  5 10:26 conf.db
+[root@localhost openvswitch-2.16.0]#
+
+# 配置启动 ovsdb 数据库
+# 使用以下命令来启动 ovsdb-server 并加载刚才创建的数据库文件：
+[root@localhost openvswitch-2.16.0]# ovsdb-server --remote=punix:/usr/local/var/run/openvswitch/db.sock \
+>                  --remote=db:Open_vSwitch,Open_vSwitch,manager_options \
+>                  --private-key=db:Open_vSwitch,SSL,private_key \
+>                  --certificate=db:Open_vSwitch,SSL,certificate \
+>                  --bootstrap-ca-cert=db:Open_vSwitch,SSL,ca_cert \
+>                  --pidfile --detach 
+
+# 初始化数据库  
+[root@localhost openvswitch-2.16.0]# ovs-vsctl --no-wait init 
+
+# 开启 Open vSwitch 守护进程
+[root@localhost openvswitch-2.16.0]# ovs-vswitchd --pidfile --detach
+2023-12-05T08:45:16Z|00001|ovs_numa|INFO|Discovered 32 CPU cores on NUMA node 0
+2023-12-05T08:45:16Z|00002|ovs_numa|INFO|Discovered 32 CPU cores on NUMA node 1
+2023-12-05T08:45:16Z|00003|ovs_numa|INFO|Discovered 2 NUMA nodes and 64 CPU cores
+2023-12-05T08:45:16Z|00004|reconnect|INFO|unix:/usr/local/var/run/openvswitch/db.sock: connecting...
+2023-12-05T08:45:16Z|00005|reconnect|INFO|unix:/usr/local/var/run/openvswitch/db.sock: connected
+【ovsdb-server中的参数含义】
+--remote: 指定ovsdb-server的远程访问方式。punix:/usr/local/var/run/openvswitch/db.sock表示通过Unix域套接字连接本地主机，db:Open_vSwitch,manager_options则指定了Open_vSwitch数据库和manager_options表。
+--private-key: 指定SSL加密所用的私钥文件。
+--certificate：指定SSL加密所用的证书文件。
+--bootstrap-ca-cert：指定用于CA证书认证的根证书文件。
+--pidfile：将ovsdb-server进程ID写入PID文件以便后续管理。
+--detach：让ovsdb-server在后台以守护进程模式运行。
+启动成功后，ovsdb-server将加载conf.db数据库，并等待来自其他Open vSwitch组件的连接请求。
+看到类似以下几行消息，表明openvswitch配置完毕
+2023-12-05T08:45:16Z|00001|ovs_numa|INFO|Discovered 32 CPU cores on NUMA node 0
+2023-12-05T08:45:16Z|00002|ovs_numa|INFO|Discovered 32 CPU cores on NUMA node 1
+2023-12-05T08:45:16Z|00003|ovs_numa|INFO|Discovered 2 NUMA nodes and 64 CPU cores
+2023-12-05T08:45:16Z|00004|reconnect|INFO|unix:/usr/local/var/run/openvswitch/db.sock: connecting...
+2023-12-05T08:45:16Z|00005|reconnect|INFO|unix:/usr/local/var/run/openvswitch/db.sock: connected
+注意：以上操作是在root账户下进行，普通账户请注意切换权限。
+
+七、创建OvS自启动服务
+创建OvS服务脚本。
+[root@localhost ~]# touch /etc/systemd/system/ovs.service
+[root@localhost ~]# vi /etc/systemd/system/ovs.service
+脚本内容如下：
+[Unit]
+Description=Open vSwitch server daemon
+After=network.target
+ 
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/share/openvswitch/scripts/ovs-ctl start
+ExecStop=/usr/local/share/openvswitch/scripts/ovs-ctl stop
+ 
+[Install]
+WantedBy=multi-user.target
+加载服务并设置开机自启
+systemctl daemon-reload
+systemctl enable ovs
+查看重启操作系统后，OvS的状态：
+# systemctl查看OvS服务的状态，可知系统启动后OvS服务已被自动启动
+[root@localhost ~]# systemctl status ovs
+● ovs.service - Open vSwitch server daemon
+   Loaded: loaded (/etc/systemd/system/ovs.service; enabled; vendor preset: disabled)
+   Active: active (exited) since Wed 2023-12-06 04:21:51 SAST; 1min 31s ago
+  Process: 1766 ExecStart=/usr/local/share/openvswitch/scripts/ovs-ctl start (code=exited, status=0/SUCCESS)
+ Main PID: 1766 (code=exited, status=0/SUCCESS)
+    Tasks: 4 (limit: 409648)
+   Memory: 20.3M
+   CGroup: /system.slice/ovs.service
+           ├─1833 ovsdb-server: monitoring pid 1834 (healthy)
+           ├─1834 ovsdb-server /usr/local/etc/openvswitch/conf.db -vconsole:emer -vsyslog:err -vfile:info --remote=punix:/usr/local/var/run/openvswitch/db.sock --private-key=db:Open_vSwitch,SSL,private_key --cer>
+           ├─2166 ovs-vswitchd: monitoring pid 2167 (healthy)
+           └─2167 ovs-vswitchd unix:/usr/local/var/run/openvswitch/db.sock -vconsole:emer -vsyslog:err -vfile:info --mlockall --no-chdir --log-file=/usr/local/var/log/openvswitch/ovs-vswitchd.log --pidfile=/usr/>
+
+Dec 06 04:21:49 localhost ovs-ctl[1766]: Starting ovsdb-server [  OK  ]
+Dec 06 04:21:49 localhost ovs-vsctl[1841]: ovs|00001|vsctl|INFO|Called as ovs-vsctl --no-wait -- init -- set Open_vSwitch . db-version=8.3.0
+Dec 06 04:21:49 localhost ovs-ctl[1766]: system ID not configured, please use --system-id ... failed!
+Dec 06 04:21:49 localhost ovs-vsctl[1868]: ovs|00001|vsctl|INFO|Called as ovs-vsctl --no-wait set Open_vSwitch . ovs-version=2.16.0 "external-ids:system-id=\"\"" "external-ids:rundir=\"/usr/local/var/run/open>
+Dec 06 04:21:49 localhost ovs-ctl[1766]: Configuring Open vSwitch system IDs [  OK  ]
+Dec 06 04:21:51 localhost ovs-ctl[1869]: Inserting openvswitch module [  OK  ]
+Dec 06 04:21:51 localhost ovs-ctl[1766]: Starting ovs-vswitchd [  OK  ]
+Dec 06 04:21:51 localhost ovs-vsctl[2179]: ovs|00001|vsctl|INFO|Called as ovs-vsctl --no-wait add Open_vSwitch . external-ids hostname=localhost
+Dec 06 04:21:51 localhost ovs-ctl[1766]: Enabling remote OVSDB managers [  OK  ]
+Dec 06 04:21:51 localhost systemd[1]: Started Open vSwitch server daemon.
+
+# OvS已成功启动
+[root@localhost ~]# ovs-vsctl show
+d90dc0bb-1632-463a-b2ee-b266360b8b57
+    ovs_version: "2.16.0"
+
+# systemctl命令停止OvS服务
+[root@localhost ~]# systemctl stop ovs
+
+# systemctl查看OvS服务的状态，可知OvS服务已停止运行
+[root@localhost ~]# systemctl status ovs
+● ovs.service - Open vSwitch server daemon
+   Loaded: loaded (/etc/systemd/system/ovs.service; enabled; vendor preset: disabled)
+   Active: inactive (dead) since Wed 2023-12-06 04:23:54 SAST; 2s ago
+  Process: 2947 ExecStop=/usr/local/share/openvswitch/scripts/ovs-ctl stop (code=exited, status=0/SUCCESS)
+  Process: 1766 ExecStart=/usr/local/share/openvswitch/scripts/ovs-ctl start (code=exited, status=0/SUCCESS)
+ Main PID: 1766 (code=exited, status=0/SUCCESS)
+
+Dec 06 04:21:51 localhost ovs-ctl[1869]: Inserting openvswitch module [  OK  ]
+Dec 06 04:21:51 localhost ovs-ctl[1766]: Starting ovs-vswitchd [  OK  ]
+Dec 06 04:21:51 localhost ovs-vsctl[2179]: ovs|00001|vsctl|INFO|Called as ovs-vsctl --no-wait add Open_vSwitch . external-ids hostname=localhost
+Dec 06 04:21:51 localhost ovs-ctl[1766]: Enabling remote OVSDB managers [  OK  ]
+Dec 06 04:21:51 localhost systemd[1]: Started Open vSwitch server daemon.
+Dec 06 04:23:53 localhost systemd[1]: Stopping Open vSwitch server daemon...
+Dec 06 04:23:53 localhost ovs-ctl[2947]: Exiting ovs-vswitchd (2167) [  OK  ]
+Dec 06 04:23:53 localhost ovs-ctl[2947]: Exiting ovsdb-server (1834) [  OK  ]
+Dec 06 04:23:54 localhost systemd[1]: ovs.service: Succeeded.
+Dec 06 04:23:54 localhost systemd[1]: Stopped Open vSwitch server daemon.
+
+# systemctl命令启动OvS服务
+[root@localhost ~]# systemctl start ovs
+# OvS已成功启动
+[root@localhost ~]# ovs-vsctl show
+d90dc0bb-1632-463a-b2ee-b266360b8b57
+    ovs_version: "2.16.0"
+# systemctl查看OvS服务的状态，服务已成功启动
+[root@localhost ~]# systemctl status ovs
+● ovs.service - Open vSwitch server daemon
+   Loaded: loaded (/etc/systemd/system/ovs.service; enabled; vendor preset: disabled)
+   Active: active (exited) since Wed 2023-12-06 04:24:02 SAST; 10s ago
+  Process: 2947 ExecStop=/usr/local/share/openvswitch/scripts/ovs-ctl stop (code=exited, status=0/SUCCESS)
+  Process: 2977 ExecStart=/usr/local/share/openvswitch/scripts/ovs-ctl start (code=exited, status=0/SUCCESS)
+ Main PID: 2977 (code=exited, status=0/SUCCESS)
+    Tasks: 4 (limit: 409648)
+   Memory: 4.0M
+   CGroup: /system.slice/ovs.service
+           ├─2991 ovsdb-server: monitoring pid 2992 (healthy)
+           ├─2992 ovsdb-server /usr/local/etc/openvswitch/conf.db -vconsole:emer -vsyslog:err -vfile:info --remote=punix:/usr/local/var/run/openvswitch/db.sock --private-key=db:Open_vSwitch,SSL,private_key --cer>
+           ├─3008 ovs-vswitchd: monitoring pid 3009 (healthy)
+           └─3009 ovs-vswitchd unix:/usr/local/var/run/openvswitch/db.sock -vconsole:emer -vsyslog:err -vfile:info --mlockall --no-chdir --log-file=/usr/local/var/log/openvswitch/ovs-vswitchd.log --pidfile=/usr/>
+
+Dec 06 04:24:02 localhost systemd[1]: Starting Open vSwitch server daemon...
+Dec 06 04:24:02 localhost ovs-ctl[2977]: Starting ovsdb-server [  OK  ]
+Dec 06 04:24:02 localhost ovs-vsctl[2993]: ovs|00001|vsctl|INFO|Called as ovs-vsctl --no-wait -- init -- set Open_vSwitch . db-version=8.3.0
+Dec 06 04:24:02 localhost ovs-ctl[2977]: system ID not configured, please use --system-id ... failed!
+Dec 06 04:24:02 localhost ovs-vsctl[2997]: ovs|00001|vsctl|INFO|Called as ovs-vsctl --no-wait set Open_vSwitch . ovs-version=2.16.0 "external-ids:system-id=\"\"" "external-ids:rundir=\"/usr/local/var/run/open>
+Dec 06 04:24:02 localhost ovs-ctl[2977]: Configuring Open vSwitch system IDs [  OK  ]
+Dec 06 04:24:02 localhost ovs-ctl[2977]: Starting ovs-vswitchd [  OK  ]
+Dec 06 04:24:02 localhost ovs-ctl[2977]: Enabling remote OVSDB managers [  OK  ]
+Dec 06 04:24:02 localhost systemd[1]: Started Open vSwitch server daemon.
+Dec 06 04:24:02 localhost ovs-vsctl[3017]: ovs|00001|vsctl|INFO|Called as ovs-vsctl --no-wait add Open_vSwitch . external-ids hostname=localhost
+
+八、卸载OvS
+[root@localhost ~]# lsmod | grep openvswitch
+openvswitch           184320  2
+nf_conncount           16384  1 openvswitch
+nf_nat                 45056  3 ipt_MASQUERADE,openvswitch,nft_chain_nat
+nf_conntrack          172032  6 xt_conntrack,nf_nat,nfnetlink_cttimeout,ipt_MASQUERADE,openvswitch,nf_conncount
+nf_defrag_ipv6         20480  2 nf_conntrack,openvswitch
+libcrc32c              16384  5 nf_conntrack,nf_nat,openvswitch,nf_tables,xfs
+
+# 停止ovs服务
+[root@localhost ~]# /usr/local/share/openvswitch/scripts/ovs-ctl stop
+Exiting ovs-vswitchd (951780)                              [  OK  ]
+Exiting ovsdb-server (951758)                              [  OK  ]
+
+#卸载openvswitch模块，报错显示openvswitch正在使用中
+[root@localhost ~]# rmmod openvswitch
+rmmod: ERROR: Module openvswitch is in use
+[root@localhost ~]#
+
+[root@localhost ~]# ovs-vsctl show
+ovs-vsctl: unix:/usr/local/var/run/openvswitch/db.sock: database connection failed (No such file or directory)
+
+# 查看内核，会有一个ovs-system的datapath
+[root@localhost ~]# ovs-dpctl show
+system@ovs-system:
+  lookups: hit:0 missed:0 lost:0
+  flows: 0
+  masks: hit:0 total:0 hit/pkt:0.00
+  caches:
+    masks-cache: size:256
+  port 0: ovs-system (internal)
+  port 1: br0 (internal)
+
+# 删除上一步出现的datapath（不进行这一步，rmmod会报错）
+[root@localhost ~]# ovs-dpctl del-dp ovs-system
+[root@localhost ~]# ovs-dpctl show
+
+# 卸载openvswitch内核模块
+[root@localhost ~]# rmmod openvswitch
+
+# 使用lsmod | grep openvswitch 没有openvswitch
+[root@localhost ~]# lsmod | grep openvswitch
+注意：上面最开始rmmod openvswitch失败，本质就是模块的模块的引用计数不为0, 要解决此类问题，只需要使模块的引用计数为0即可。因OvS的datapath即ovs-system会使用openvswitch模块，故如果不删除该datapath，则无法卸载openvswitch模块，删除后，则卸载openvswitch模块成功。
+
+
+-----------------------
+
+对SDN Switch的配置
+
+ovs_pid=`ps aux | grep ovs-vswitchd | grep -v grep | awk -F " " '{print $2}'`
+kill -9 $ovs_pid
+ovs-vswitchd --pidfile --detach --log-file
+
+sgw_mac=`virsh dumpxml sgw | grep "mac address" | awk -F "'" '{print $2}'`
+sub_sgw_mac=${sgw_mac:3:16}
+sgw_port=`ovs-ofctl show sdmn_br | grep ${sub_sgw_mac} | awk -F '(' '{print $1}' | tr -d '[[:space:]]'`
+
+ovs-ofctl add-flow sdmn_br "hard_timeout=0 idle_timeout=0 priority=1 table=0 in_port=${sgw_port},dl_type=0x0800,nw_proto=17,nw_src=192.168.200.104,udp_src=2152 actions=flood"
+ovs-ofctl add-flow sdmn_br "hard_timeout=0 idle_timeout=0 priority=1 table=0 in_port=${sgw_port},dl_type=0x0800,nw_proto=17,nw_src=192.168.200.104,udp_dst=2152 actions=flood"
+ovs-ofctl add-flow sdmn_br "hard_timeout=0 idle_timeout=0 priority=1 table=0 in_port=${sgw_port},dl_type=0x0800,nw_proto=17,nw_src=192.168.200.104,udp_src=2123 actions=flood"
+ovs-ofctl add-flow sdmn_br "hard_timeout=0 idle_timeout=0 priority=1 table=0 in_port=${sgw_port},dl_type=0x0800,nw_proto=17,nw_src=192.168.200.104,udp_dst=2123 actions=flood"
+
+ovs-ofctl add-flow sdmn_br "hard_timeout=0 idle_timeout=0 priority=1 table=0 dl_type=0x0800,nw_proto=17,nw_dst=192.168.200.104,udp_src=2152 actions=mod_nw_src:192.168.200.108,output=${sgw_port}"
+ovs-ofctl add-flow sdmn_br "hard_timeout=0 idle_timeout=0 priority=1 table=0 dl_type=0x0800,nw_proto=17,nw_dst=192.168.200.104,udp_dst=2152 actions=mod_nw_src:192.168.200.108,output=${sgw_port}"
+ovs-ofctl add-flow sdmn_br "hard_timeout=0 idle_timeout=0 priority=1 table=0 dl_type=0x0800,nw_proto=17,nw_dst=192.168.200.104,udp_src=2123 actions=mod_nw_src:192.168.200.108,output=${sgw_port}"
+ovs-ofctl add-flow sdmn_br "hard_timeout=0 idle_timeout=0 priority=1 table=0 dl_type=0x0800,nw_proto=17,nw_dst=192.168.200.104,udp_dst=2123 actions=mod_nw_src:192.168.200.108,output=${sgw_port}"
+
+ifconfig sdmn_br 192.168.200.1/24
+
+对PGW上Linker OVS的配置
+
+ovs_pid=`ps aux | grep ovs-vswitchd | grep -v grep | awk -F " " '{print $2}'`
+kill -9 $ovs_pid
+
+ovs-vswitchd --pidfile --detach --log-file
+
+ifconfig sdmn_br 192.168.200.106/24
+
+ip route add default via 192.168.200.1 dev sdmn_br  proto static  metric 100
+
+/usr/local/bin/ovs-ofctl add-flow sdmn_br "ip,nw_src=192.168.200.104 actions=operate_gtp:3,ovs_id:0,ovs_total:2,ovs_phy_port:1,pgw_fastpath:0“
+
+DOCKERS="docker109/192.168.200.109 docker110/192.168.200.110"
+for arg in $DOCKERS  
+do
+        DOCKER_NAME=`echo $arg | awk -F '/' '{print $1}'`
+        echo $DOCKER_NAME
+        DOCKER_IP=`echo $arg | awk -F '/' '{print $2}'`
+        echo $DOCKER_IP
+
+        DOCKER_SUBNET=24
+        DOCKER_ETH1_MAC=`docker exec ${DOCKER_NAME} ip addr show eth1 | grep ether | awk -F ' ' '{print $2}'`
+        echo $DOCKER_ETH1_MAC
+        DOCKER_ETH2_MAC=`docker exec ${DOCKER_NAME} ip addr show eth2 | grep ether | awk -F ' ' '{print $2}'`
+        echo $DOCKER_ETH2_MAC
+        DOCKER_PID=`docker inspect -f "{{ .State.Pid }}" ${DOCKER_NAME}`
+        echo $DOCKER_PID
+        DOCKER_ETH1_PORT=`/usr/local/bin/ovs-ofctl show sdmn_br | grep veth1pl${DOCKER_PID} | awk -F '(' '{print $1}' | tr -d '[[:space:]]'`
+        echo $DOCKER_ETH1_PORT
+        DOCKER_ETH2_PORT=`/usr/local/bin/ovs-ofctl show sdmn_br | grep veth2pl${DOCKER_PID} | awk -F '(' '{print $1}' | tr -d '[[:space:]]'`
+        echo $DOCKER_ETH2_PORT
+        /usr/local/bin/ovs-ofctl add-flow sdmn_br "ip,nw_src=192.168.200.104 actions=operate_gtp:1,gtp_pgw_ip:${DOCKER_IP},gtp_pgw_port:${DOCKER_ETH1_PORT},gtp_pgw_eth:${DOCKER_ETH1_MAC},pgw_sgi_port:${DOCKER_ETH2_PORT},pgw_sgi_eth:${DOCKER_ETH2_MAC}"
+done
+
+/usr/local/bin/ovs-ofctl add-flow sdmn_br "hard_timeout=0 idle_timeout=0 priority=1 table=0 dl_type=0x0800,nw_proto=17,nw_src=192.168.200.104,udp_src=2152 actions=resubmit(,8)"
+/usr/local/bin/ovs-ofctl add-flow sdmn_br "hard_timeout=0 idle_timeout=0 priority=1 table=0 dl_type=0x0800,nw_proto=17,nw_src=192.168.200.104,udp_dst=2152 actions=resubmit(,8)"
+/usr/local/bin/ovs-ofctl add-flow sdmn_br "hard_timeout=0 idle_timeout=0 priority=1 table=0 dl_type=0x0800,nw_proto=17,nw_src=192.168.200.104,udp_src=2123 actions=resubmit(,8)"
+/usr/local/bin/ovs-ofctl add-flow sdmn_br "hard_timeout=0 idle_timeout=0 priority=1 table=0 dl_type=0x0800,nw_proto=17,nw_src=192.168.200.104,udp_dst=2123 actions=resubmit(,8)"
+
+/usr/local/bin/ovs-ofctl add-flow sdmn_br "hard_timeout=0 idle_timeout=0 priority=1 table=0 dl_type=0x0800,nw_proto=17,nw_dst=192.168.200.104,udp_src=2152 actions=resubmit(,8)"
+/usr/local/bin/ovs-ofctl add-flow sdmn_br "hard_timeout=0 idle_timeout=0 priority=1 table=0 dl_type=0x0800,nw_proto=17,nw_dst=192.168.200.104,udp_dst=2152 actions=resubmit(,8)"
+/usr/local/bin/ovs-ofctl add-flow sdmn_br "hard_timeout=0 idle_timeout=0 priority=1 table=0 dl_type=0x0800,nw_proto=17,nw_dst=192.168.200.104,udp_src=2123 actions=resubmit(,8)"
+/usr/local/bin/ovs-ofctl add-flow sdmn_br "hard_timeout=0 idle_timeout=0 priority=1 table=0 dl_type=0x0800,nw_proto=17,nw_dst=192.168.200.104,udp_dst=2123 actions=resubmit(,8)“
+
+/usr/local/bin/ovs-ofctl add-flow sdmn_br "hard_timeout=0 idle_timeout=0 priority=1 table=0 ip,nw_src=12.0.0.0/8  actions=resubmit(,8)"
+/usr/local/bin/ovs-ofctl add-flow sdmn_br "hard_timeout=0 idle_timeout=0 priority=1 table=0 ip,nw_dst=12.0.0.0/8  actions=resubmit(,8)“
+
+#table 0中默认有normal的规则，默认是发送
+
+/usr/local/bin/ovs-ofctl add-flow sdmn_br "hard_timeout=0 idle_timeout=0 priority=1 table=8 ip,nw_src=192.168.200.104 actions=handle_gtp"
+/usr/local/bin/ovs-ofctl add-flow sdmn_br "hard_timeout=0 idle_timeout=0 priority=1 table=8 ip,nw_dst=192.168.200.104 actions=handle_gtp"
+/usr/local/bin/ovs-ofctl add-flow sdmn_br "hard_timeout=0 idle_timeout=0 priority=1 table=8 ip,nw_src=12.0.0.0/8  actions=handle_pgw_sgi"
+/usr/local/bin/ovs-ofctl add-flow sdmn_br "hard_timeout=0 idle_timeout=0 priority=1 table=8 ip,nw_dst=12.0.0.0/8  actions=handle_pgw_sgi"
+/usr/local/bin/ovs-ofctl add-flow sdmn_br "hard_timeout=0 idle_timeout=0 priority=0 table=8 actions=drop"
+
+
+
+
+-----------------------
+
+neutron的基本原理
+
+当我们搭建好了Openstack，然后创建好了tenant后，我们会为这个tenant创建一个网络。
+
+#!/bin/bash
+TENANT_NAME="openstack"
+TENANT_NETWORK_NAME="openstack-net"
+TENANT_SUBNET_NAME="${TENANT_NETWORK_NAME}-subnet"
+TENANT_ROUTER_NAME="openstack-router"
+FIXED_RANGE="192.168.0.0/24"
+NETWORK_GATEWAY="192.168.0.1"
+
+PUBLIC_GATEWAY="172.24.1.1"
+PUBLIC_RANGE="172.24.1.0/24"
+PUBLIC_START="172.24.1.100"
+PUBLIC_END="172.24.1.200"
+
+TENANT_ID=$(keystone tenant-list | grep " $TENANT_NAME " | awk '{print $2}')
+
+(1) TENANT_NET_ID=$(neutron net-create --tenant_id $TENANT_ID $TENANT_NETWORK_NAME --provider:network_type gre --provider:segmentation_id 1 | grep " id " | awk '{print $4}')
+
+(2) TENANT_SUBNET_ID=$(neutron subnet-create --tenant_id $TENANT_ID --ip_version 4 --name $TENANT_SUBNET_NAME $TENANT_NET_ID $FIXED_RANGE --gateway $NETWORK_GATEWAY --dns_nameservers list=true 8.8.8.8 | grep " id " | awk '{print $4}')
+
+(3) ROUTER_ID=$(neutron router-create --tenant_id $TENANT_ID $TENANT_ROUTER_NAME | grep " id " | awk '{print $4}')
+
+(4) neutron router-interface-add $ROUTER_ID $TENANT_SUBNET_ID
+
+(5) neutron net-create public --router:external=True
+
+(6) neutron subnet-create --ip_version 4 --gateway $PUBLIC_GATEWAY public $PUBLIC_RANGE --allocation-pool start=$PUBLIC_START,end=$PUBLIC_END --disable-dhcp --name public-subnet
+
+(7) neutron router-gateway-set ${TENANT_ROUTER_NAME} public
+
+create network
+
+为这个Tenant创建一个private network，不同的private network是需要通过VLAN tagging进行隔离的，互相之间broadcast不能到达，这里我们用的是GRE模式，也需要一个类似VLAN ID的东西，称为Segment ID
+创建一个private network的subnet，subnet才是真正配置IP网段的地方，对于私网，我们常常用192.168.0.0/24这个网段
+为这个Tenant创建一个Router，才能够访问外网
+将private network连接到Router上
+创建一个External Network
+创建一个Exernal Network的Subnet，这个外网逻辑上代表了我们数据中心的物理网络，通过这个物理网络，我们可以访问外网。因而PUBLIC_GATEWAY应该设为数据中心里面的Gateway， PUBLIC_RANGE也应该和数据中心的物理网络的CIDR一致，否则连不通，而之所以设置PUBLIC_START和PUBLIC_END，是因为在数据中心中，不可能所有的IP地址都给Openstack使用，另外可能搭建了VMware Vcenter，可能有物理机器，仅仅分配一个区间给Openstack来用。
+将Router连接到External Network
+经过这个流程，从虚拟网络，到物理网络就逻辑上联通了。
+
+通过网络名称空间支持网络重叠
+在云环境下用户可以按照自己的规划创建网络，不同的项目（租户）的网络IP地址可能会重叠，为实现此功能，L3代理使用Linux网络名称空间来提供隔离的转发上下文，隔离不同的项目（租户）的网络，每个L3代理运行在一个名称空间中。每个名称空间由gqrouter-命名
+
+创建完毕网络，如果不创建虚拟机，我们还是发现neutron的agent还是做了很多工作的，创建了很多的虚拟网卡和switch
+
+在Compute节点上：
+
+root@ComputeNode:~# ip addr
+1: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
+    link/ether 08:00:27:49:5c:41 brd ff:ff:ff:ff:ff:ff
+    inet 172.24.1.124/22 brd 16.158.167.255 scope global eth0
+2: eth2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
+    link/ether 08:00:27:8e:42:2c brd ff:ff:ff:ff:ff:ff
+    inet 192.168.56.124/24 brd 192.168.56.255 scope global eth2
+3: eth3: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
+    link/ether 08:00:27:68:92:ce brd ff:ff:ff:ff:ff:ff
+    inet 10.10.10.124/24 brd 10.10.10.255 scope global eth3
+4: br-int: <BROADCAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UNKNOWN
+    link/ether d6:2a:96:12:4a:49 brd ff:ff:ff:ff:ff:ff
+5: br-tun: <BROADCAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UNKNOWN
+    link/ether a2:ee:75:bd:af:4a brd ff:ff:ff:ff:ff:ff
+6: qvof5da998c-82: <BROADCAST,MULTICAST,PROMISC,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
+    link/ether c2:7e:50:de:8c:c5 brd ff:ff:ff:ff:ff:ff
+7: qvbf5da998c-82: <BROADCAST,MULTICAST,PROMISC,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
+    link/ether c2:33:73:40:8f:e0 brd ff:ff:ff:ff:ff:ff
+
+root@ComputeNode:~# ovs-vsctl show
+39f69272-17d4-42bf-9020-eecc9fe8cde6
+    Bridge br-int
+        Port patch-tun
+            Interface patch-tun
+                type: patch
+                options: {peer=patch-int}
+        Port br-int
+            Interface br-int
+                type: internal
+    Bridge br-tun
+        Port patch-int
+            Interface patch-int
+                type: patch
+                options: {peer=patch-tun}
+        Port "gre-1"
+            Interface "gre-1"
+                type: gre
+                options: {in_key=flow, local_ip="10.10.10.124", out_key=flow, remote_ip="10.10.10.121"}
+        Port br-tun
+            Interface br-tun
+                type: internal
+    ovs_version: "1.10.2"
+
+在Network Node上：
+
+root@NetworkNode:~# ip addr
+1: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
+    link/ether 08:00:27:22:8a:7a brd ff:ff:ff:ff:ff:ff
+    inet 172.24.1.121/22 brd 172.24.1.255 scope global eth0
+2: eth1: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
+    link/ether 08:00:27:f1:31:81 brd ff:ff:ff:ff:ff:ff
+3: eth2: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
+    link/ether 08:00:27:56:7b:8a brd ff:ff:ff:ff:ff:ff
+    inet 192.168.56.121/24 brd 192.168.56.255 scope global eth2
+4: eth3: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
+    link/ether 08:00:27:26:bc:84 brd ff:ff:ff:ff:ff:ff
+    inet 10.10.10.121/24 brd 10.10.10.255 scope global eth3
+5: br-ex: <BROADCAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UNKNOWN
+    link/ether 08:00:27:f1:31:81 brd ff:ff:ff:ff:ff:ff
+    inet 172.24.1.8/24 brd 172.24.1.255 scope global br-ex
+6: br-int: <BROADCAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UNKNOWN
+    link/ether 22:fe:f1:9b:29:4b brd ff:ff:ff:ff:ff:ff
+7: br-tun: <BROADCAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UNKNOWN
+    link/ether c6:ea:94:ff:23:41 brd ff:ff:ff:ff:ff:ff
+
+root@NetworkNode:~# ip netns
+qrouter-b2510953-1ae4-4296-a628-1680735545ac
+qdhcp-96abd26b-0a2f-448b-b92c-4c98b8df120b
+
+root@NetworkNode:~# ip netns exec qrouter-b2510953-1ae4-4296-a628-1680735545ac ip addr
+8: qg-97040ca3-2c: <BROADCAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UNKNOWN
+    link/ether fa:16:3e:26:57:e3 brd ff:ff:ff:ff:ff:ff
+    inet 172.24.1.100/24 brd 172.24.1.255 scope global qg-97040ca3-2c
+11: qr-e8b97930-ac: <BROADCAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UNKNOWN
+    link/ether fa:16:3e:43:ef:16 brd ff:ff:ff:ff:ff:ff
+    inet 192.168.0.1/24 brd 192.168.0.255 scope global qr-e8b97930-ac
+
+root@NetworkNode:~# ip netns exec qdhcp-96abd26b-0a2f-448b-b92c-4c98b8df120b ip addr
+9: tapde5739e1-95: <BROADCAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UNKNOWN
+    link/ether fa:16:3e:19:8c:67 brd ff:ff:ff:ff:ff:ff
+    inet 192.168.0.2/24 brd 192.168.0.255 scope global tapde5739e1-95
+    inet 169.254.169.254/16 brd 169.254.255.255 scope global tapde5739e1-95
+
+root@NetworkNode:~# ovs-vsctl show
+d5d5847e-1c9e-4770-a68c-7a695b7b95cd
+    Bridge br-ex
+        Port "qg-97040ca3-2c"
+            Interface "qg-97040ca3-2c"
+                type: internal
+        Port "eth1"
+            Interface "eth1"
+        Port br-ex
+            Interface br-ex
+                type: internal
+    Bridge br-int
+        Port patch-tun
+            Interface patch-tun
+                type: patch
+                options: {peer=patch-int}
+        Port "tapde5739e1-95"
+            tag: 1
+            Interface "tapde5739e1-95"
+                type: internal
+        Port br-int
+            Interface br-int
+                type: internal
+        Port "qr-e8b97930-ac"
+            tag: 1
+            Interface "qr-e8b97930-ac"
+                type: internal
+    Bridge br-tun
+        Port patch-int
+            Interface patch-int
+                type: patch
+                options: {peer=patch-tun}
+        Port "gre-2"
+            Interface "gre-2"
+                type: gre
+                options: {in_key=flow, local_ip="10.10.10.121", out_key=flow, remote_ip="10.10.10.124"}
+        Port br-tun
+            Interface br-tun
+                type: internal
+    ovs_version: "1.10.2"
+
+这时候如果我们创建一个虚拟机在这个网络里面，在Compute Node多了下面的网卡：
+
+13: qvof5da998c-82: <BROADCAST,MULTICAST,PROMISC,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
+    link/ether c2:7e:50:de:8c:c5 brd ff:ff:ff:ff:ff:ff
+14: qvbf5da998c-82: <BROADCAST,MULTICAST,PROMISC,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
+    link/ether c2:33:73:40:8f:e0 brd ff:ff:ff:ff:ff:ff
+15: qbr591d8cc4-df: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP
+    link/ether f2:d9:f0:d5:48:c8 brd ff:ff:ff:ff:ff:ff
+16: qvo591d8cc4-df: <BROADCAST,MULTICAST,PROMISC,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP qlen 1000
+    link/ether e2:58:d4:dc:b5:16 brd ff:ff:ff:ff:ff:ff
+17: qvb591d8cc4-df: <BROADCAST,MULTICAST,PROMISC,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master qbr591d8cc4-df state UP qlen 1000
+    link/ether f2:d9:f0:d5:48:c8 brd ff:ff:ff:ff:ff:ff
+18: tap591d8cc4-df: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast master qbr591d8cc4-df state UNKNOWN qlen 500
+    link/ether fe:16:3e:6e:ba:d0 brd ff:ff:ff:ff:ff:ff
+
+在Compute节点上：
+
+private network “openstack-net”的tag在这台机器上是2，而我们创建的时候的segmentid设定的是1
+
+Bridge br-int
+    Port patch-tun
+        Interface patch-tun
+            type: patch
+            options: {peer=patch-int}
+    Port br-int
+        Interface br-int
+            type: internal
+    Port "qvo591d8cc4-df"
+        tag: 2
+        Interface "qvo591d8cc4-df"
+
+root@ComputeNodeCliu8:~# ovs-ofctl dump-flows br-tun
+NXST_FLOW reply (xid=0x4):
+
+//in_port=1是指包是从patch-int，也即是从虚拟机来的，所以是发送规则，跳转到table1
+cookie=0x0, duration=77419.191s, table=0, n_packets=22, n_bytes=2136, idle_age=6862, hard_age=65534, priority=1,in_port=1 actions=resubmit(,1)
+
+//in_port=2是指包是从GRE来的，也即是从物理网络来的，所以是接收规则，跳转到table2
+cookie=0x0, duration=77402.19s, table=0, n_packets=3, n_bytes=778, idle_age=6867, hard_age=65534, priority=1,in_port=2 actions=resubmit(,2)
+cookie=0x0, duration=77418.403s, table=0, n_packets=0, n_bytes=0, idle_age=65534, hard_age=65534, priority=0 actions=drop
+
+//multicast，跳转到table21
+cookie=0x0, duration=77416.63s, table=1, n_packets=21, n_bytes=2094, idle_age=6862, hard_age=65534, priority=0,dl_dst=01:00:00:00:00:00/01:00:00:00:00:00 actions=resubmit(,21)
+
+//unicast，跳转到table 20
+cookie=0x0, duration=77417.389s, table=1, n_packets=1, n_bytes=42, idle_age=6867, hard_age=65534, priority=0,dl_dst=00:00:00:00:00:00/01:00:00:00:00:00 actions=resubmit(,20)
+
+//这是接收规则的延续，如果接收的tun_id=0x1则转换为本地的tag，mod_vlan_vid:2，跳转到table 10
+ cookie=0x0, duration=6882.254s, table=2, n_packets=3, n_bytes=778, idle_age=6867, priority=1,tun_id=0x1 actions=mod_vlan_vid:2,resubmit(,10)
+
+cookie=0x0, duration=77415.638s, table=2, n_packets=0, n_bytes=0, idle_age=65534, hard_age=65534, priority=0 actions=drop
+
+cookie=0x0, duration=77414.432s, table=3, n_packets=0, n_bytes=0, idle_age=65534, hard_age=65534, priority=0 actions=drop
+
+cookie=0x0, duration=77412.825s, table=10, n_packets=3, n_bytes=778, idle_age=6867, hard_age=65534, priority=1 actions=learn(table=20,hard_timeout=300,priority=1,NXM_OF_VLAN_TCI[0..11],NXM_OF_ETH_DST[]=NXM_OF_ETH_SRC[],load:0->NXM_OF_VLAN_TCI[],load:NXM_NX_TUN_ID[]->NXM_NX_TUN_ID[],output:NXM_OF_IN_PORT[]),output:1
+
+cookie=0x0, duration=77411.549s, table=20, n_packets=0, n_bytes=0, idle_age=65534, hard_age=65534, priority=0 actions=resubmit(,21)
+
+//这是发送规则的延续，如果接收到的dl_vlan=2，则转换为物理网络的segmentid=1，set_tunnel:0x1
+ cookie=0x0, duration=6883.119s, table=21, n_packets=10, n_bytes=1264, idle_age=6862, priority=1,dl_vlan=2 actions=strip_vlan,set_tunnel:0x1,output:2
+
+cookie=0x0, duration=77410.56s, table=21, n_packets=11, n_bytes=830, idle_age=6885, hard_age=65534, priority=0 actions=drop
+
+在Network节点上：
+
+Bridge br-int
+    Port patch-tun
+        Interface patch-tun
+            type: patch
+            options: {peer=patch-int}
+    Port "tapde5739e1-95"
+        tag: 1
+        Interface "tapde5739e1-95"
+            type: internal
+    Port br-int
+        Interface br-int
+            type: internal
+    Port "qr-e8b97930-ac"
+        tag: 1
+        Interface "qr-e8b97930-ac"
+            type: internal
+
+非常相似的规则。
+
+root@NetworkNodeCliu8:~# ovs-ofctl dump-flows br-tun
+NXST_FLOW reply (xid=0x4):
+
+ //in_port=1是指包是从patch-int，也即是从虚拟机来的，所以是发送规则，跳转到table1
+cookie=0x0, duration=73932.142s, table=0, n_packets=12, n_bytes=1476, idle_age=3380, hard_age=65534, priority=1,in_port=1 actions=resubmit(,1)
+
+//in_port=2是指包是从GRE来的，也即是从物理网络来的，所以是接收规则，跳转到table2
+cookie=0x0, duration=73914.323s, table=0, n_packets=9, n_bytes=1166, idle_age=3376, hard_age=65534, priority=1,in_port=2 actions=resubmit(,2)
+cookie=0x0, duration=73930.934s, table=0, n_packets=0, n_bytes=0, idle_age=65534, hard_age=65534, priority=0 actions=drop
+
+ //multicast，跳转到table21
+cookie=0x0, duration=73928.59s, table=1, n_packets=6, n_bytes=468, idle_age=65534, hard_age=65534, priority=0,dl_dst=01:00:00:00:00:00/01:00:00:00:00:00 actions=resubmit(,21)
+
+ //unicast，跳转到table20
+cookie=0x0, duration=73929.695s, table=1, n_packets=3, n_bytes=778, idle_age=3380, hard_age=65534, priority=0,dl_dst=00:00:00:00:00:00/01:00:00:00:00:00 actions=resubmit(,20)
+
+ //这是接收规则的延续，如果接收的tun_id=0x1则转换为本地的tag，mod_vlan_vid:1，跳转到table 10
+cookie=0x0, duration=73906.864s, table=2, n_packets=9, n_bytes=1166, idle_age=3376, hard_age=65534, priority=1,tun_id=0x1 actions=mod_vlan_vid:1,resubmit(,10)
+
+cookie=0x0, duration=73927.542s, table=2, n_packets=0, n_bytes=0, idle_age=65534, hard_age=65534, priority=0 actions=drop
+
+cookie=0x0, duration=73926.403s, table=3, n_packets=0, n_bytes=0, idle_age=65534, hard_age=65534, priority=0 actions=drop
+
+cookie=0x0, duration=73925.611s, table=10, n_packets=9, n_bytes=1166, idle_age=3376, hard_age=65534, priority=1 actions=learn(table=20,hard_timeout=300,priority=1,NXM_OF_VLAN_TCI[0..11],NXM_OF_ETH_DST[]=NXM_OF_ETH_SRC[],load:0->NXM_OF_VLAN_TCI[],load:NXM_NX_TUN_ID[]->NXM_NX_TUN_ID[],output:NXM_OF_IN_PORT[]),output:1
+
+cookie=0x0, duration=73924.858s, table=20, n_packets=0, n_bytes=0, idle_age=65534, hard_age=65534, priority=0 actions=resubmit(,21)
+
+ //这是发送规则的延续，如果接收到的dl_vlan=1，则转换为物理网络的segmentid=1，set_tunnel:0x1
+cookie=0x0, duration=73907.657s, table=21, n_packets=0, n_bytes=0, idle_age=65534, hard_age=65534, priority=1,dl_vlan=1 actions=strip_vlan,set_tunnel:0x1,output:2
+
+cookie=0x0, duration=73924.117s, table=21, n_packets=6, n_bytes=468, idle_age=65534, hard_age=65534, priority=0 actions=drop
+
+-----------------------
+
+neutron创建network执行的那些命令
+
+当搭建完openstack之后，在创建instance之前，第一件事情就是创建network，一个经典的流程如下：
+
+TENANT_NAME="openstack"
+TENANT_NETWORK_NAME="openstack-net"
+TENANT_SUBNET_NAME="${TENANT_NETWORK_NAME}-subnet"
+TENANT_ROUTER_NAME="openstack-router"
+FIXED_RANGE="NEUTRON_FIXED_RANGE"
+NETWORK_GATEWAY="NEUTRON_NETWORK_GATEWAY"
+
+PUBLIC_GATEWAY="NEUTRON_PUBLIC_GATEWAY"
+PUBLIC_RANGE="NEUTRON_PUBLIC_RANGE"
+PUBLIC_START="NEUTRON_PUBLIC_START"
+PUBLIC_END="NEUTRON_PUBLIC_END"
+
+(1) 创建private network和subnet
+
+TENANT_ID=$(keystone tenant-list | grep " $TENANT_NAME " | awk '{print $2}')
+TENANT_NET_ID=$(neutron net-create --tenant_id $TENANT_ID $TENANT_NETWORK_NAME --provider:network_type gre --provider:segmentation_id 1 | grep " id " | awk '{print $4}')
+TENANT_SUBNET_ID=$(neutron subnet-create --tenant_id $TENANT_ID --ip_version 4 --name $TENANT_SUBNET_NAME $TENANT_NET_ID $FIXED_RANGE --gateway $NETWORK_GATEWAY --dns_nameservers list=true 8.8.8.8 | grep " id " | awk '{print $4}')
+
+当仅有private network的时候，会对这个private network创建一个DHCP Server
+
+所以DHCP Agent会执行下面的命令：
+
+ip netns exec qdhcp-66b9930b-2871-414c-8c6f-991a6a8cffe0 ip -o link show tap452bdfab-31
+
+这个命令试图从dhcp的namespace里面查找dhcp的网卡，但是很可惜找不到，返回error
+
+Cannot open network namespace "qdhcp-66b9930b-2871-414c-8c6f-991a6a8cffe0": No such file or directory
+
+于是试图创建dhcp server的网卡，这个网卡会attach到br-int上，所以先查看br-int
+
+ip -o link show br-int
+
+如果br-int没有问题，于是创建dhcp server的网卡，并且attach到br-int上
+
+ovs-vsctl -- --if-exists del-port tap452bdfab-31 -- add-port br-int tap452bdfab-31 -- set Interface tap452bdfab-31 type=internal -- set Interface tap452bdfab-31 external-ids:iface-id=452bdfab-3152-44d0-bd9c-40c94a6f8640 -- set Interface tap452bdfab-31 external-ids:iface-status=active -- set Interface tap452bdfab-31 external-ids:attached-mac=fa:16:3e:d7:08:67
+
+为网卡设置mac
+
+ip link set tap452bdfab-31 address fa:16:3e:d7:08:67
+
+查看当前存在的namespace
+
+ip -o netns list
+
+返回
+
+qrouter-26a45e0e-a58a-443b-a972-d62c0c5a1323
+
+qdhcp-760d2c5e-4938-49b0-bffe-c77c5b141d18
+
+发现没有这个dhcp所对应的namespace，需要创建一个
+
+ip netns add qdhcp-66b9930b-2871-414c-8c6f-991a6a8cffe0
+
+将io网卡设置为up
+
+ip netns exec qdhcp-66b9930b-2871-414c-8c6f-991a6a8cffe0 ip link set lo up
+
+将新建的dhcp server的网卡放在这个namespace里面
+
+ip link set tap452bdfab-31 netns qdhcp-66b9930b-2871-414c-8c6f-991a6a8cffe0
+
+将DHCP server的网卡设置为up
+
+ip netns exec qdhcp-66b9930b-2871-414c-8c6f-991a6a8cffe0 ip link set tap452bdfab-31 up
+
+查看这个网卡的ip地址
+
+ip netns exec qdhcp-66b9930b-2871-414c-8c6f-991a6a8cffe0 ip addr show tap452bdfab-31 permanent scope global
+
+为这个网卡配置ip地址
+
+ip netns exec qdhcp-66b9930b-2871-414c-8c6f-991a6a8cffe0 ip -4 addr add 192.168.10.3/24 brd 192.168.10.255 scope global dev tap452bdfab-31
+
+ip netns exec qdhcp-66b9930b-2871-414c-8c6f-991a6a8cffe0 ip -4 addr add 169.254.169.254/16 brd 169.254.255.255 scope global dev tap452bdfab-31
+
+第一个地址是dhcp server的地址，第二个地址是metadata server的地址
+
+查看路由表
+
+ip netns exec qdhcp-66b9930b-2871-414c-8c6f-991a6a8cffe0 ip route list dev tap452bdfab-31
+
+169.254.0.0/16  proto kernel  scope link  src 169.254.169.254
+
+192.168.10.0/24  proto kernel  scope link  src 192.168.10.3
+
+添加路由表
+
+ip netns exec qdhcp-66b9930b-2871-414c-8c6f-991a6a8cffe0 ip route replace default via 192.168.10.1 dev tap452bdfab-31
+
+查看网卡的配置
+
+ip netns exec qdhcp-66b9930b-2871-414c-8c6f-991a6a8cffe0 ip addr show tap452bdfab-31
+
+232: tap452bdfab-31: <BROADCAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UNKNOWN group default
+
+link/ether fa:16:3e:d7:08:67 brd ff:ff:ff:ff:ff:ff
+
+inet 192.168.10.3/24 brd 192.168.10.255 scope global tap452bdfab-31
+
+valid_lft forever preferred_lft forever
+
+inet 169.254.169.254/16 brd 169.254.255.255 scope global tap452bdfab-31
+
+valid_lft forever preferred_lft forever
+
+inet6 fe80::f816:3eff:fed7:867/64 scope link tentative
+
+valid_lft forever preferred_lft forever
+
+启动dhcp server
+
+ip netns exec qdhcp-66b9930b-2871-414c-8c6f-991a6a8cffe0 env NEUTRON_NETWORK_ID=66b9930b-2871-414c-8c6f-991a6a8cffe0 dnsmasq --no-hosts --no-resolv --strict-order --bind-interfaces --interface=tap452bdfab-31 --except-interface=lo --pid-file=/var/lib/neutron/dhcp/66b9930b-2871-414c-8c6f-991a6a8cffe0/pid --dhcp-hostsfile=/var/lib/neutron/dhcp/66b9930b-2871-414c-8c6f-991a6a8cffe0/host --addn-hosts=/var/lib/neutron/dhcp/66b9930b-2871-414c-8c6f-991a6a8cffe0/addn_hosts --dhcp-optsfile=/var/lib/neutron/dhcp/66b9930b-2871-414c-8c6f-991a6a8cffe0/opts --leasefile-ro --dhcp-range=set:tag0,192.168.10.0,static,86400s --dhcp-lease-max=256 --conf-file= --domain=openstacklocal
+
+启动metadata proxy
+
+ip netns exec qdhcp-66b9930b-2871-414c-8c6f-991a6a8cffe0 neutron-ns-metadata-proxy --pid_file=/var/lib/neutron/external/pids/66b9930b-2871-414c-8c6f-991a6a8cffe0.pid --metadata_proxy_socket=/var/lib/neutron/metadata_proxy --network_id=66b9930b-2871-414c-8c6f-991a6a8cffe0 --state_path=/var/lib/neutron --metadata_port=80 --debug --verbose --log-file=neutron-ns-metadata-proxy-66b9930b-2871-414c-8c6f-991a6a8cffe0.log --log-dir=/var/log/neutron
+
+最后查看一下网卡配置
+
+ip netns exec qdhcp-66b9930b-2871-414c-8c6f-991a6a8cffe0 ip addr show tap452bdfab-31
+
+kill -HUP 17666
+
+这个PID是什么呢？
+
+# ps aux | grep 17666
+nobody   17666  0.0  0.0  28204  1112 ?        S    Jul14   0:00 dnsmasq --no-hosts --no-resolv --strict-order --bind-interfaces --interface=tap452bdfab-31 --except-interface=lo --pid-file=/var/lib/neutron/dhcp/66b9930b-2871-414c-8c6f-991a6a8cffe0/pid --dhcp-hostsfile=/var/lib/neutron/dhcp/66b9930b-2871-414c-8c6f-991a6a8cffe0/host --addn-hosts=/var/lib/neutron/dhcp/66b9930b-2871-414c-8c6f-991a6a8cffe0/addn_hosts --dhcp-optsfile=/var/lib/neutron/dhcp/66b9930b-2871-414c-8c6f-991a6a8cffe0/opts --leasefile-ro --dhcp-range=set:tag0,192.168.10.0,static,86400s --dhcp-lease-max=256 --conf-file= --domain=openstacklocal
+
+原来是我们的dhcp server
+
+这个命令的作用是：如果想要更改配置而不需停止并重新启动服务，请使用该命令。在对配置文件作必要的更改后，发出该命令以动态更新服务配置。
+
+最后查看一下路由配置
+
+ip netns exec qdhcp-66b9930b-2871-414c-8c6f-991a6a8cffe0 ip route list dev tap452bdfab-31
+
+(2) 创建一个router，并且和private network相连
+ROUTER_ID=$(neutron router-create --tenant_id $TENANT_ID $TENANT_ROUTER_NAME | grep " id " | awk '{print $4}')
+
+neutron router-interface-add $ROUTER_ID $TENANT_SUBNET_ID
+
+查看br-ex
+
+ip -o link show br-ex
+
+59: br-ex: <BROADCAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UNKNOWN mode DEFAULT group default
+
+link/ether a0:48:1c:ab:df:b5 brd ff:ff:ff:ff:ff:ff
+
+查看所有的namespace
+
+ip -o netns list
+
+qdhcp-66b9930b-2871-414c-8c6f-991a6a8cffe0
+
+qrouter-26a45e0e-a58a-443b-a972-d62c0c5a1323
+
+qdhcp-760d2c5e-4938-49b0-bffe-c77c5b141d18
+
+发现没有这个router的namespace，创建一个
+
+ip netns add qrouter-d62d417d-2005-46d7-a83b-b1e5c0a36d82
+
+将io网卡设为up
+
+ip netns exec qrouter-d62d417d-2005-46d7-a83b-b1e5c0a36d82 ip link set lo up
+
+这是一个router，所以enable ip forward
+
+ip netns exec qrouter-d62d417d-2005-46d7-a83b-b1e5c0a36d82 sysctl -w net.ipv4.ip_forward=1
+
+初始化iptables
+
+ip netns exec qrouter-d62d417d-2005-46d7-a83b-b1e5c0a36d82 iptables-save –c
+
+# Generated by iptables-save v1.4.21 on Thu Jul 17 01:37:57 2014
+
+*nat
+
+:PREROUTING ACCEPT [0:0]
+
+:INPUT ACCEPT [0:0]
+
+:OUTPUT ACCEPT [0:0]
+
+:POSTROUTING ACCEPT [0:0]
+
+COMMIT
+
+# Completed on Thu Jul 17 01:37:57 2014
+
+# Generated by iptables-save v1.4.21 on Thu Jul 17 01:37:57 2014
+
+*mangle
+
+:PREROUTING ACCEPT [0:0]
+
+:INPUT ACCEPT [0:0]
+
+:FORWARD ACCEPT [0:0]
+
+:OUTPUT ACCEPT [0:0]
+
+:POSTROUTING ACCEPT [0:0]
+
+COMMIT
+
+# Completed on Thu Jul 17 01:37:57 2014
+
+# Generated by iptables-save v1.4.21 on Thu Jul 17 01:37:57 2014
+
+*filter
+
+:INPUT ACCEPT [0:0]
+
+:FORWARD ACCEPT [0:0]
+
+:OUTPUT ACCEPT [0:0]
+
+COMMIT
+
+# Completed on Thu Jul 17 01:37:57 2014
+
+ip netns exec qrouter-d62d417d-2005-46d7-a83b-b1e5c0a36d82 iptables-restore –c
+
+启动metadata proxy
+
+ip netns exec qrouter-d62d417d-2005-46d7-a83b-b1e5c0a36d82 neutron-ns-metadata-proxy --pid_file=/var/lib/neutron/external/pids/d62d417d-2005-46d7-a83b-b1e5c0a36d82.pid --metadata_proxy_socket=/var/lib/neutron/metadata_proxy --router_id=d62d417d-2005-46d7-a83b-b1e5c0a36d82 --state_path=/var/lib/neutron --metadata_port=9697 --debug --verbose --log-file=neutron-ns-metadata-proxy-d62d417d-2005-46d7-a83b-b1e5c0a36d82.log --log-dir=/var/log/neutron
+
+查看router的网卡
+
+ip netns exec qrouter-d62d417d-2005-46d7-a83b-b1e5c0a36d82 ip -o link show qr-29003a09-e7
+
+但是网卡不存在
+
+Device "qr-29003a09-e7" does not exist.
+
+查看br-int，router的网卡会attach到这个网卡上
+
+ip -o link show br-int
+
+58: br-int: <BROADCAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UNKNOWN mode DEFAULT group default
+
+link/ether 0a:9b:c6:54:ef:46 brd ff:ff:ff:ff:ff:ff
+
+创建router的网卡，并且attach到br-int
+
+ovs-vsctl -- --if-exists del-port qr-29003a09-e7 -- add-port br-int qr-29003a09-e7 -- set Interface qr-29003a09-e7 type=internal -
+- set Interface qr-29003a09-e7 external-ids:iface-id=29003a09-e787-49dd-b5f4-11ad107159c7 -- set Interface qr-29003a09-e7 external-ids:iface-status=active -- set Interface qr-29003a09-e7 external-ids:attached-mac=fa:16:3e:84:6e:cc
+
+设置router网卡的mac
+
+ip link set qr-29003a09-e7 address fa:16:3e:84:6e:cc
+
+查看所有的namespace
+
+ip -o netns list
+
+qrouter-d62d417d-2005-46d7-a83b-b1e5c0a36d82
+
+qdhcp-66b9930b-2871-414c-8c6f-991a6a8cffe0
+
+qrouter-26a45e0e-a58a-443b-a972-d62c0c5a1323
+
+qdhcp-760d2c5e-4938-49b0-bffe-c77c5b141d18
+
+有这个router的namespace
+
+将这个网卡放在这个namespace里面
+
+ip link set qr-29003a09-e7 netns qrouter-d62d417d-2005-46d7-a83b-b1e5c0a36d82
+
+将router的网卡设为up
+
+ip netns exec qrouter-d62d417d-2005-46d7-a83b-b1e5c0a36d82 ip link set qr-29003a09-e7 up
+
+查看网卡的地址
+
+ip netns exec qrouter-d62d417d-2005-46d7-a83b-b1e5c0a36d82 ip addr show qr-29003a09-e7 permanent scope global
+
+设置网卡的地址
+
+ip netns exec qrouter-d62d417d-2005-46d7-a83b-b1e5c0a36d82 ip -4 addr add 192.168.10.1/24 brd 192.168.10.255 scope global dev qr-2
+9003a09-e7
+
+查看所有的网卡
+
+ip netns exec qrouter-d62d417d-2005-46d7-a83b-b1e5c0a36d82 ip -o -d link list
+
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN mode DEFAULT group default
+
+link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00 promiscuity 0
+
+241: qr-29003a09-e7: <BROADCAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UNKNOWN mode DEFAULT group default
+
+link/ether fa:16:3e:84:6e:cc brd ff:ff:ff:ff:ff:ff promiscuity 1
+
+(3) 创建外网，并且连接到router
+neutron net-create public --router:external=True
+
+neutron subnet-create --ip_version 4 --gateway $PUBLIC_GATEWAY public $PUBLIC_RANGE --allocation-pool start=$PUBLIC_START,end=$PUBLIC_END --disable-dhcp --name public-subnet
+
+neutron router-gateway-set ${TENANT_ROUTER_NAME} public
+
+查看br-ex
+
+ip -o link show br-ex
+
+59: br-ex: <BROADCAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UNKNOWN mode DEFAULT group default
+
+link/ether a0:48:1c:ab:df:b5 brd ff:ff:ff:ff:ff:ff
+
+列出所有的网卡
+
+ip netns exec qrouter-d62d417d-2005-46d7-a83b-b1e5c0a36d82 ip -o -d link list
+
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN mode DEFAULT group default
+
+link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00 promiscuity 0
+
+241: qr-29003a09-e7: <BROADCAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UNKNOWN mode DEFAULT group default
+
+link/ether fa:16:3e:84:6e:cc brd ff:ff:ff:ff:ff:ff promiscuity 1
+
+查看qg网卡
+
+ip netns exec qrouter-d62d417d-2005-46d7-a83b-b1e5c0a36d82 ip -o link show qg-556ca938-e1
+
+但是网卡不存在
+
+Device "qg-556ca938-e1" does not exist.
+
+查看br-ex
+
+ip -o link show br-ex
+
+创建新的网卡qg，attach到br-ex
+
+ovs-vsctl -- --if-exists del-port qg-556ca938-e1 -- add-port br-ex qg-556ca938-e1 -- set Interface qg-556ca938-e1 type=internal -- set Interface qg-556ca938-e1 external-ids:iface-id=556ca938-e11b-4246-bdc1-ef25c91b7593 -- set Interface qg-556ca938-e1 external-ids:iface-status=active -- set Interface qg-556ca938-e1 external-ids:attached-mac=fa:16:3e:68:12:c0
+
+设置网卡mac
+
+ip link set qg-556ca938-e1 address fa:16:3e:68:12:c0
+
+查看所有的namespace
+
+ip -o netns list
+
+qrouter-d62d417d-2005-46d7-a83b-b1e5c0a36d82
+
+qdhcp-66b9930b-2871-414c-8c6f-991a6a8cffe0
+
+qrouter-26a45e0e-a58a-443b-a972-d62c0c5a1323
+
+qdhcp-760d2c5e-4938-49b0-bffe-c77c5b141d18
+
+将qg网卡设置到namespace中
+
+ip link set qg-556ca938-e1 netns qrouter-d62d417d-2005-46d7-a83b-b1e5c0a36d82
+
+将网卡设置为up
+
+ip netns exec qrouter-d62d417d-2005-46d7-a83b-b1e5c0a36d82 ip link set qg-556ca938-e1 up
+
+查看网卡地址
+
+ip netns exec qrouter-d62d417d-2005-46d7-a83b-b1e5c0a36d82 ip addr show qg-556ca938-e1 permanent scope global
+
+设置网卡地址
+
+ip netns exec qrouter-d62d417d-2005-46d7-a83b-b1e5c0a36d82 ip -4 addr add 16.158.165.105/22 brd 16.158.167.255 scope global dev qg
+-556ca938-e1
+
+添加router表
+
+ip netns exec qrouter-d62d417d-2005-46d7-a83b-b1e5c0a36d82 route add default gw 16.158.164.1
+
+设置iptables
+
+ip netns exec qrouter-d62d417d-2005-46d7-a83b-b1e5c0a36d82 iptables-save –c
+
+# Generated by iptables-save v1.4.21 on Thu Jul 17 01:58:30 2014
+
+*nat
+
+:PREROUTING ACCEPT [4:425]
+
+:INPUT ACCEPT [1:229]
+
+:OUTPUT ACCEPT [0:0]
+
+:POSTROUTING ACCEPT [0:0]
+
+:neutron-l3-agent-OUTPUT - [0:0]
+
+:neutron-l3-agent-POSTROUTING - [0:0]
+
+:neutron-l3-agent-PREROUTING - [0:0]
+
+:neutron-l3-agent-float-snat - [0:0]
+
+:neutron-l3-agent-snat - [0:0]
+
+:neutron-postrouting-bottom - [0:0]
+
+[4:425] -A PREROUTING -j neutron-l3-agent-PREROUTING
+
+[0:0] -A OUTPUT -j neutron-l3-agent-OUTPUT
+
+[0:0] -A POSTROUTING -j neutron-l3-agent-POSTROUTING
+
+[0:0] -A POSTROUTING -j neutron-postrouting-bottom
+
+[0:0] -A neutron-l3-agent-PREROUTING -d 169.254.169.254/32 -p tcp -m tcp --dport 80 -j REDIRECT --to-ports 9697
+
+[0:0] -A neutron-l3-agent-snat -jneutron-l3-agent-float-snat
+
+[0:0] -A neutron-postrouting-bottom -j neutron-l3-agent-snat
+
+COMMIT
+
+# Completed on Thu Jul 17 01:58:30 2014
+
+# Generated by iptables-save v1.4.21 on Thu Jul 17 01:58:30 2014
+
+*mangle
+
+:PREROUTING ACCEPT [4:425]
+
+:INPUT ACCEPT [1:229]
+
+:FORWARD ACCEPT [0:0]
+
+:OUTPUT ACCEPT [0:0]
+
+:POSTROUTING ACCEPT [0:0]
+
+COMMIT
+
+# Completed on Thu Jul 17 01:58:30 2014
+
+# Generated by iptables-save v1.4.21 on Thu Jul 17 01:58:30 2014
+
+*filter
+
+:INPUT ACCEPT [1:229]
+
+:FORWARD ACCEPT [0:0]
+
+:OUTPUT ACCEPT [0:0]
+
+:neutron-filter-top - [0:0]
+
+:neutron-l3-agent-FORWARD - [0:0]
+
+:neutron-l3-agent-INPUT - [0:0]
+
+:neutron-l3-agent-OUTPUT - [0:0]
+
+:neutron-l3-agent-local - [0:0]
+
+[1:229] -A INPUT -j neutron-l3-agent-INPUT
+
+[0:0] -A FORWARD -j neutron-filter-top
+
+[0:0] -A FORWARD -j neutron-l3-agent-FORWARD
+
+[0:0] -A OUTPUT -j neutron-filter-top
+
+[0:0] -A OUTPUT -j neutron-l3-agent-OUTPUT
+
+[0:0] -A neutron-filter-top -j neutron-l3-agent-local
+
+[0:0] -A neutron-l3-agent-INPUT -d 127.0.0.1/32 -p tcp -m tcp --dport 9697 -j ACCEPT
+
+COMMIT
+
+# Completed on Thu Jul 17 01:58:30 2014
+
+ip netns exec qrouter-d62d417d-2005-46d7-a83b-b1e5c0a36d82 iptables-restore –c
+
+显示网卡信息
+
+ip netns exec qrouter-d62d417d-2005-46d7-a83b-b1e5c0a36d82 ip addr show qg-556ca938-e1
+
+242: qg-556ca938-e1: <BROADCAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UNKNOWN group default
+
+    link/ether fa:16:3e:68:12:c0 brd ff:ff:ff:ff:ff:ff
+
+    inet 16.158.165.105/22 brd 16.158.167.255 scope global qg-556ca938-e1
+
+       valid_lft forever preferred_lft forever
+
+    inet6 fe80::f816:3eff:fe68:12c0/64 scope link tentative
+
+       valid_lft forever preferred_lft forever
+
+-----------------------
+
+对于Flow Table的管理，由ovs-ofctl来控制
+
+add−flow switch flow
+mod−flows switch flow
+del−flows switch [flow]
+
+一行flow entry主要有下面两部分组成：
+Match Field
+Actions
+
+其中Match Field是对网络包进行解析，解析如下的字段，看这些字段是否能够匹配某个值。
+
+这些字段分别在TCP/IP协议栈的各个层次。
+Actions有以下的操作：
+output:port 和 output:NXM_NX_REG0[16..31]
+enqueue:port:queue
+mod_vlan_vid:vlan_vid
+strip_vlan
+mod_dl_src:mac 和 mod_dl_dst:mac
+mod_nw_src:ip 和 mod_nw_dst:ip
+mod_tp_src:port 和 mod_tp_dst:port
+set_tunnel:id
+resubmit([port],[table])
+move:src[start..end]−>dst[start..end]
+load:value−>dst[start..end]
+learn(argument[,argument]...)
+
+我们做一个实验，实现如下的拓扑结构，并通过操作flow表改变流向。
+
+其中的flow表设计如下：
+
+接下来我们逐步创建整个拓扑结构和流表。
+
+配置拓扑结构：在三台机器上都运行。
+
+ovs-vsctl add-br br-int
+ovs-vsctl add-br br-tun
+ip link add br-int-pair type veth peer name br-tun-pair
+ip link set br-int-pair up
+ip link set br-tun-pair up
+ovs-vsctl add-port br-int br-int-pair
+ovs-vsctl add-port br-tun br-tun-pair
+ip link add vnic0 type veth peer name vnic0-br-int
+ip link set vnic0 up
+ip link set vnic0-br-int up
+ovs-vsctl add-port br-int vnic0-br-int
+ifconfig vnic0 10.0.0.1/24
+ip link add vnic1 type veth peer name vnic1-br-int
+ip link set vnic1 up
+ip link set vnic1-br-int up
+ovs-vsctl add-port br-int vnic1-br-int
+ifconfig vnic1 10.0.1.1/24
+ovs-vsctl set Port vnic0-br-int tag=1
+ovs-vsctl set Port vnic1-br-int tag=2
+ovs-vsctl add-port br-tun gre0 -- set Interface gre0 type=gre options:local_ip=192.168.100.100 options:in_key=flow options:remote_ip=192.168.100.101 options:out_key=flow
+ovs-vsctl add-port br-tun gre1 -- set Interface gre1 type=gre options:local_ip=192.168.100.100 options:in_key=flow options:remote_ip=192.168.100.102 options:out_key=flow
+
+执行结果如下：
+
+接下来我们配置Flow。
+
+1. 删除所有的Flow
+
+ovs-ofctl del-flows br-tun
+
+2. 配置Table 0
+
+从port 1进来的，由table 1处理
+
+ovs-ofctl add-flow br-tun "hard_timeout=0 idle_timeout=0 priority=1 in_port=1 actions=resubmit(,1)"
+
+从port 2/3进来的，由Table 3处理
+
+ovs-ofctl add-flow br-tun "hard_timeout=0 idle_timeout=0 priority=1 in_port=2 actions=resubmit(,3)"
+ovs-ofctl add-flow br-tun "hard_timeout=0 idle_timeout=0 priority=1 in_port=3 actions=resubmit(,3)"
+
+默认丢弃
+
+ovs-ofctl add-flow br-tun "hard_timeout=0 idle_timeout=0 priority=0 actions=drop"
+
+3. 配置Table 1
+
+对于单播，由table 20处理
+
+ovs-ofctl add-flow br-tun "hard_timeout=0 idle_timeout=0 priority=1 table=1 dl_dst=00:00:00:00:00:00/01:00:00:00:00:00 actions=resubmit(,20)"
+
+对于多播，由table 21处理
+
+ovs-ofctl add-flow br-tun "hard_timeout=0 idle_timeout=0 priority=1 table=1 dl_dst=01:00:00:00:00:00/01:00:00:00:00:00 actions=resubmit(,21)"
+
+4. 配置Table 2
+
+默认丢弃
+
+ovs-ofctl add-flow br-tun "hard_timeout=0 idle_timeout=0 priority=0 table=2 actions=drop"
+
+5. 配置Table 3
+
+默认丢弃
+
+ovs-ofctl add-flow br-tun "hard_timeout=0 idle_timeout=0 priority=0 table=3 actions=drop"
+
+Tunnel ID -> VLAN ID
+
+ovs-ofctl add-flow br-tun "hard_timeout=0 idle_timeout=0 priority=1 table=3 tun_id=0x1 actions=mod_vlan_vid:1,resubmit(,10)"
+ovs-ofctl add-flow br-tun "hard_timeout=0 idle_timeout=0 priority=1 table=3 tun_id=0x2 actions=mod_vlan_vid:2,resubmit(,10)"
+
+6. 配置Table 10
+
+MAC地址学习
+
+ovs-ofctl add-flow br-tun "hard_timeout=0 idle_timeout=0 priority=1 table=10  actions=learn(table=20,priority=1,hard_timeout=300,NXM_OF_VLAN_TCI[0..11],NXM_OF_ETH_DST[]=NXM_OF_ETH_SRC[],load:0->NXM_OF_VLAN_TCI[],load:NXM_NX_TUN_ID[]->NXM_NX_TUN_ID[],output:NXM_OF_IN_PORT[]),output:1"
+
+Table 10是用来学习MAC地址的，学习的结果放在Table 20里面，Table20被称为MAC learning table
+
+NXM_OF_VLAN_TCI这个是VLAN Tag，在MAC Learning table中，每一个entry都是仅仅对某一个VLAN来说的，不同VLAN的learning table是分开的。在学习的结果的entry中，会标出这个entry是对于哪个VLAN的。
+
+NXM_OF_ETH_DST[]=NXM_OF_ETH_SRC[]这个的意思是当前包里面的MAC Source Address会被放在学习结果的entry里面的dl_dst里面。这是因为每个switch都是通过Ingress包来学习，某个MAC从某个port进来，switch就应该记住以后发往这个MAC的包要从这个port出去，因而MAC source address就被放在了Mac destination address里面，因为这是为发送用的。
+
+load:0->NXM_OF_VLAN_TCI[]意思是发送出去的时候，vlan tag设为0，所以结果中有actions=strip_vlan
+
+load:NXM_NX_TUN_ID[]->NXM_NX_TUN_ID[]意思是发出去的时候，设置tunnel id，进来的时候是多少，发送的时候就是多少，所以结果中有set_tunnel:0x3e9
+
+output:NXM_OF_IN_PORT[]意思是发送给哪个port，由于是从port2进来的，因而结果中有output:2
+
+7. 配置Table 20
+
+这个是MAC Address Learning Table，如果不空就按照规则处理。
+
+如果为空，就使用默认规则，交给Table 21处理。
+
+ovs-ofctl add-flow br-tun "hard_timeout=0 idle_timeout=0 priority=0 table=20 actions=resubmit(,21)"
+
+8. 配置Table 21
+
+默认丢弃
+
+ovs-ofctl add-flow br-tun "hard_timeout=0 idle_timeout=0 priority=0 table=21 actions=drop"
+
+VLAN ID -> Tunnel ID
+
+ovs-ofctl add-flow br-tun "hard_timeout=0 idle_timeout=0 priority=1 table=21 dl_vlan=1 actions=strip_vlan,set_tunnel:0x1,output:2,output:3"
+ovs-ofctl add-flow br-tun "hard_timeout=0 idle_timeout=0 priority=1 table=21 dl_vlan=2 actions=strip_vlan,set_tunnel:0x2,output:2,output:3"

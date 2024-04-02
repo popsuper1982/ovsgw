@@ -1273,7 +1273,7 @@ dpif_execute_helper_cb(void *aux_, struct dp_packet_batch *packets_,
     case OVS_ACTION_ATTR_UNSPEC:
     case OVS_ACTION_ATTR_CHECK_PKT_LEN:
     case OVS_ACTION_ATTR_DROP:
-    //XXXXXX 7.DPDK mode action execution
+    //XXXXXXXX 7.DPDK mode action execution
     case OVS_ACTION_ATTR_CONFIG_GW:
     case OVS_ACTION_ATTR_HANDLE_GW:
     case __OVS_ACTION_ATTR_MAX:

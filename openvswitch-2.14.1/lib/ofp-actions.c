@@ -68,7 +68,7 @@ struct ext_action_header {
 };
 OFP_ASSERT(sizeof(struct ext_action_header) == 16);
 
-/*XXXXXX 1.define openflow action: add openflow action type*/
+/*XXXXXXXX 1.define openflow action: add openflow action type*/
 
 /* Raw identifiers for OpenFlow actions.
  *
@@ -512,7 +512,7 @@ ofpact_next_flattened(const struct ofpact *ofpact)
     case OFPACT_DEC_NSH_TTL:
     case OFPACT_CHECK_PKT_LARGER:
     case OFPACT_DELETE_FIELD:
-    //XXXXXX 8.cmd ovs-ofctl implementation
+    //XXXXXXXX 8.cmd ovs-ofctl implementation
     case OFPACT_CONFIG_GW:
     case OFPACT_HANDLE_GW:
         return ofpact_next(ofpact);
@@ -2739,7 +2739,7 @@ check_REG_MOVE(const struct ofpact_reg_move *a,
     return nxm_reg_move_check(a, cp->match);
 }
 
-/*XXXXXX 1.define openflow action: define openflow action struct*/
+/*XXXXXXXX 1.define openflow action: define openflow action struct*/
 
 /* Action structure for OFPAT10_CONFIG_GW. */
 struct ofp_action_config_gw {
@@ -4345,7 +4345,7 @@ check_POP_QUEUE(const struct ofpact_null *a OVS_UNUSED,
     return 0;
 }
 
-//XXXXXX 3.translate between openflow action and openvswitch action: decode, encode, parse, format, check
+//XXXXXXXX 3.translate between openflow action and openvswitch action: decode, encode, parse, format, check
 
 static enum ofperr
 decode_OFPAT_RAW_CONFIG_GW(const struct ofp_action_config_gw *a,
@@ -8239,7 +8239,7 @@ action_set_classify(const struct ofpact *a)
     case OFPACT_DEBUG_SLOW:
     case OFPACT_CHECK_PKT_LARGER:
     case OFPACT_DELETE_FIELD:
-    //XXXXXX 8.cmd ovs-ofctl implementation
+    //XXXXXXXX 8.cmd ovs-ofctl implementation
     case OFPACT_CONFIG_GW:
     case OFPACT_HANDLE_GW:
         return ACTION_SLOT_INVALID;
@@ -8446,7 +8446,7 @@ ovs_instruction_type_from_ofpact_type(enum ofpact_type type,
     case OFPACT_DEC_NSH_TTL:
     case OFPACT_CHECK_PKT_LARGER:
     case OFPACT_DELETE_FIELD:
-    //XXXXXX 8.cmd ovs-ofctl implementation
+    //XXXXXXXX 8.cmd ovs-ofctl implementation
     case OFPACT_CONFIG_GW:
     case OFPACT_HANDLE_GW:
     default:
@@ -9155,7 +9155,7 @@ struct ofpact_map {
     int ofpat;                  /* OFPAT_* number from OpenFlow spec. */
 };
 
-//XXXXXX 3.translate between openflow action and openvswitch action: add mapping
+//XXXXXXXX 3.translate between openflow action and openvswitch action: add mapping
 
 static const struct ofpact_map *
 get_ofpact_map(enum ofp_version version)
@@ -9369,7 +9369,7 @@ ofpact_outputs_to_port(const struct ofpact *ofpact, ofp_port_t port)
     case OFPACT_DEC_NSH_TTL:
     case OFPACT_CHECK_PKT_LARGER:
     case OFPACT_DELETE_FIELD:
-    //XXXXXX 8.cmd ovs-ofctl implementation
+    //XXXXXXXX 8.cmd ovs-ofctl implementation
     case OFPACT_CONFIG_GW:
     case OFPACT_HANDLE_GW:
     default:

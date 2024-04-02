@@ -933,7 +933,7 @@ struct check_pkt_len_arg {
 };
 #endif
 
-//XXXXXX 4.XXX define datapath action: define data path action struct
+//XXXXXXXX 4.XXX define datapath action: define data path action struct
 
 struct ovs_eth_addr {
     __u8     eth[ETH_ALEN];
@@ -959,7 +959,7 @@ struct ovs_action_handle_gw {
     uint32_t pipeline5;
 };
 
-//XXXXXX 4.define datapath action
+//XXXXXXXX 4.define datapath action
 
 /**
  * enum ovs_action_attr - Action types.

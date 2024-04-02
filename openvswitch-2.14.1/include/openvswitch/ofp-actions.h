@@ -67,7 +67,7 @@ struct vl_mff_map;
     OFPACT(ENQUEUE,         ofpact_enqueue,     ofpact, "enqueue")      \
     OFPACT(OUTPUT_REG,      ofpact_output_reg,  ofpact, "output_reg")   \
     OFPACT(BUNDLE,          ofpact_bundle,      slaves, "bundle")       \
-    /*XXXXXX 2.define openvswitch action*/                              \
+    /*XXXXXXXX 2.define openvswitch action*/                              \
     OFPACT(CONFIG_GW,       ofpact_config_gw,   ofpact, "config_gw")    \
     OFPACT(HANDLE_GW,       ofpact_handle_gw,   ofpact, "handle_gw")    \
                                                                         \
@@ -590,7 +590,7 @@ struct ofpact_delete_field {
     );
 };
 
-//XXXXXX 2.define openvswitch action: define action struct
+//XXXXXXXX 2.define openvswitch action: define action struct
 
 /* OFPACT_CONFIG_GW.
  *

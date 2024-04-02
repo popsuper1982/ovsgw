@@ -813,7 +813,7 @@ static int set_sctp(struct sk_buff *skb, struct sw_flow_key *flow_key,
 	return 0;
 }
 
-//XXXXXX 6.kernel datapath action execution
+//XXXXXXXX 6.kernel datapath action execution
 
 static int do_config_gw_action(struct sk_buff *skb, struct sw_flow_key *key,
              const struct ovs_action_config_gw *config_gw)
@@ -1335,7 +1335,7 @@ static int do_execute_actions(struct datapath *dp, struct sk_buff *skb,
 			err = push_vlan(skb, key, nla_data(a));
 			break;
 
-        //XXXXXX 6.kernel datapath action exeution
+        //XXXXXXXX 6.kernel datapath action exeution
         case OVS_ACTION_ATTR_CONFIG_GW:
             err = do_config_gw_action(skb, key, nla_data(a));
             break;

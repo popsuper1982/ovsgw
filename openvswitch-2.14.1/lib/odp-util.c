@@ -143,7 +143,7 @@ odp_action_len(uint16_t type)
     case OVS_ACTION_ATTR_POP_NSH: return 0;
     case OVS_ACTION_ATTR_CHECK_PKT_LEN: return ATTR_LEN_VARIABLE;
     case OVS_ACTION_ATTR_DROP: return sizeof(uint32_t);
-    //XXXXXX 9.cmd dpctl implementation
+    //XXXXXXXX 9.cmd dpctl implementation
     case OVS_ACTION_ATTR_CONFIG_GW: return sizeof(struct ovs_action_config_gw);
     case OVS_ACTION_ATTR_HANDLE_GW: return sizeof(struct ovs_action_handle_gw);
 
@@ -1112,7 +1112,7 @@ format_odp_check_pkt_len_action(struct ds *ds, const struct nlattr *attr,
     ds_put_cstr(ds, "))");
 }
 
-//XXXXXX 9.cmd dpctl implementation
+//XXXXXXXX 9.cmd dpctl implementation
 
 static void
 format_odp_config_gw_action(struct ds *ds, const struct nlattr *attr)
@@ -1322,7 +1322,7 @@ format_odp_action(struct ds *ds, const struct nlattr *a,
     case OVS_ACTION_ATTR_DROP:
         ds_put_cstr(ds, "drop");
         break;
-    //XXXXXX 9.cmd dpctl implementation
+    //XXXXXXXX 9.cmd dpctl implementation
     case OVS_ACTION_ATTR_CONFIG_GW:
         format_odp_config_gw_action(ds, a);
         break;
