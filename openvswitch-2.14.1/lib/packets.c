@@ -36,6 +36,8 @@
 #include "unaligned.h"
 #include "openvswitch/vlog.h"
 
+VLOG_DEFINE_THIS_MODULE(packets);
+
 const struct in6_addr in6addr_exact = IN6ADDR_EXACT_INIT;
 const struct in6_addr in6addr_all_hosts = IN6ADDR_ALL_HOSTS_INIT;
 const struct in6_addr in6addr_all_routers = IN6ADDR_ALL_ROUTERS_INIT;
