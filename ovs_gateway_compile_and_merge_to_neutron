@@ -2,6 +2,42 @@ openvswitch gateway compile and merge to neutron
 
 -----------------------
 
+日常命令
+
+编译
+./boot.sh
+./configure --with-linux=/lib/modules/`uname -r`/build
+make
+make install
+make modules_install
+
+卸载
+lsmod | grep openvswitch
+systemctl stop ovs
+rmmod openvswitch
+rmmod: ERROR: Module openvswitch is in use
+ovs-dpctl del-dp ovs-system
+ovs-dpctl show
+
+编译
+./boot.sh
+./configure --with-linux=/lib/modules/`uname -r`/build
+make
+make install
+make modules_install
+
+安装
+modinfo openvswitch
+modprobe -D openvswitch
+
+ovsdb-tool create /usr/local/etc/openvswitch/conf.db vswitchd/vswitch.ovsschema
+
+systemctl start ovs
+
+
+
+-----------------------
+
 OvS编译安装、自启动服务与卸载
 
 一、前言
