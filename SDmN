@@ -1,0 +1,199 @@
+////////////////////////对于SDN Switch的配置
+chmod +x /etc/rc.d/rc.local
+
+在rc.local文件中
+modprobe gre
+modprobe openvswitch
+modprobe libcrc32c
+ovsdb-server --remote=punix:/usr/local/var/run/openvswitch/db.sock --remote=db:Open_vSwitch,Open_vSwitch,manager_options --pidfile --detach --log-file
+ovs-vswitchd --pidfile --detach --log-file
+
+sgw_mac=`virsh dumpxml sgw | grep "mac address" | awk -F "'" '{print $2}'`
+sub_sgw_mac=${sgw_mac:3:16}
+sgw_port=`ovs-ofctl show sdmn_br | grep ${sub_sgw_mac} | awk -F '(' '{print $1}' | tr -d '[[:space:]]'`
+
+ovs-ofctl add-flow sdmn_br "hard_timeout=0 idle_timeout=0 priority=1 table=0 in_port=${sgw_port},dl_type=0x0800,nw_proto=17,nw_src=192.168.200.104,udp_src=2152 actions=flood"
+ovs-ofctl add-flow sdmn_br "hard_timeout=0 idle_timeout=0 priority=1 table=0 in_port=${sgw_port},dl_type=0x0800,nw_proto=17,nw_src=192.168.200.104,udp_dst=2152 actions=flood"
+ovs-ofctl add-flow sdmn_br "hard_timeout=0 idle_timeout=0 priority=1 table=0 in_port=${sgw_port},dl_type=0x0800,nw_proto=17,nw_src=192.168.200.104,udp_src=2123 actions=flood"
+ovs-ofctl add-flow sdmn_br "hard_timeout=0 idle_timeout=0 priority=1 table=0 in_port=${sgw_port},dl_type=0x0800,nw_proto=17,nw_src=192.168.200.104,udp_dst=2123 actions=flood"
+
+ovs-ofctl add-flow sdmn_br "hard_timeout=0 idle_timeout=0 priority=1 table=0 dl_type=0x0800,nw_proto=17,nw_dst=192.168.200.104,udp_src=2152 actions=mod_nw_src:192.168.200.108,output=${sgw_port}"
+ovs-ofctl add-flow sdmn_br "hard_timeout=0 idle_timeout=0 priority=1 table=0 dl_type=0x0800,nw_proto=17,nw_dst=192.168.200.104,udp_dst=2152 actions=mod_nw_src:192.168.200.108,output=${sgw_port}"
+ovs-ofctl add-flow sdmn_br "hard_timeout=0 idle_timeout=0 priority=1 table=0 dl_type=0x0800,nw_proto=17,nw_dst=192.168.200.104,udp_src=2123 actions=mod_nw_src:192.168.200.108,output=${sgw_port}"
+ovs-ofctl add-flow sdmn_br "hard_timeout=0 idle_timeout=0 priority=1 table=0 dl_type=0x0800,nw_proto=17,nw_dst=192.168.200.104,udp_dst=2123 actions=mod_nw_src:192.168.200.108,output=${sgw_port}"
+
+ifconfig sdmn_br 192.168.200.1/24
+
+virsh start sdmnnode01
+virsh start sdmnnode02
+virsh start presodupgw
+virsh start sgw
+virsh start mme
+
+////////////////////////对于sdmnnode01的配置
+在/etc/rc.local中
+/bin/bash -c /root/start.sh > /root/start.log 2>&1
+
+start.sh的脚本内容
+
+export PATH=$PATH:/usr/local/bin:/usr/local/sbin
+
+modprobe gre
+modprobe openvswitch
+modprobe libcrc32c
+/usr/local/sbin/ovsdb-server --remote=punix:/usr/local/var/run/openvswitch/db.sock --remote=db:Open_vSwitch,Open_vSwitch,manager_options --pidfile --detach --log-file
+/usr/local/sbin/ovs-vswitchd --pidfile --detach --log-file
+
+#/usr/local/bin/ovs-vsctl add-br sdmn_br
+#/usr/local/bin/ovs-vsctl add-port sdmn_br eth0
+ifconfig eth0 0
+ifconfig sdmn_br 192.168.200.106/24
+ip route add default via 192.168.200.1 dev sdmn_br  proto static  metric 100
+
+/usr/local/bin/ovs-ofctl add-flow sdmn_br "ip,nw_src=192.168.200.104 actions=operate_gtp:3,ovs_id:0,ovs_total:2,ovs_phy_port:1,pgw_fastpath:0"
+
+/usr/local/bin/ovs-vsctl show | grep "Port \"veth" | awk -F '"' '{print $2}' | while read line
+do
+	/usr/local/bin/ovs-vsctl del-port sdmn_br ${line}
+done
+
+docker rm -f `docker ps -q -a`
+
+
+DOCKERS="docker109/192.168.200.109 docker110/192.168.200.110"
+for arg in $DOCKERS  
+do
+	DOCKER_NAME=`echo $arg | awk -F '/' '{print $1}'`
+	echo $DOCKER_NAME
+	DOCKER_IP=`echo $arg | awk -F '/' '{print $2}'`
+	echo $DOCKER_IP
+	
+	DOCKER_SUBNET=24
+	docker run --privileged -d --name ${DOCKER_NAME} ubuntu1404
+	docker cp /usr/local/bin/nwLteSaeGw ${DOCKER_NAME}:/root/
+	/usr/local/bin/pipework sdmn_br -i eth1 ${DOCKER_NAME} ${DOCKER_IP}/${DOCKER_SUBNET}
+	DOCKER_ETH1_MAC=`docker exec ${DOCKER_NAME} ip addr show eth1 | grep ether | awk -F ' ' '{print $2}'`
+	echo $DOCKER_ETH1_MAC
+	/usr/local/bin/pipework sdmn_br -i eth2 ${DOCKER_NAME} 0.0.0.0/0
+	DOCKER_ETH2_MAC=`docker exec ${DOCKER_NAME} ip addr show eth2 | grep ether | awk -F ' ' '{print $2}'`
+	echo $DOCKER_ETH2_MAC
+	/usr/local/bin/ovs-ofctl show sdmn_br
+	DOCKER_PID=`docker inspect -f "{{ .State.Pid }}" ${DOCKER_NAME}`
+	echo $DOCKER_PID
+	/usr/local/bin/ovs-ofctl show sdmn_br | grep veth1pl${DOCKER_PID} | awk -F '(' '{print $1}' | tr -d '[[:space:]]'
+	DOCKER_ETH1_PORT=`/usr/local/bin/ovs-ofctl show sdmn_br | grep veth1pl${DOCKER_PID} | awk -F '(' '{print $1}' | tr -d '[[:space:]]'`
+	echo $DOCKER_ETH1_PORT
+	/usr/local/bin/ovs-ofctl show sdmn_br | grep veth2pl${DOCKER_PID} | awk -F '(' '{print $1}' | tr -d '[[:space:]]'
+	DOCKER_ETH2_PORT=`/usr/local/bin/ovs-ofctl show sdmn_br | grep veth2pl${DOCKER_PID} | awk -F '(' '{print $1}' | tr -d '[[:space:]]'`
+	echo $DOCKER_ETH2_PORT
+	/usr/local/bin/ovs-ofctl add-flow sdmn_br "ip,nw_src=192.168.200.104 actions=operate_gtp:1,gtp_pgw_ip:${DOCKER_IP},gtp_pgw_port:${DOCKER_ETH1_PORT},gtp_pgw_eth:${DOCKER_ETH1_MAC},pgw_sgi_port:${DOCKER_ETH2_PORT},pgw_sgi_eth:${DOCKER_ETH2_MAC}"
+done
+
+/usr/local/bin/ovs-ofctl add-flow sdmn_br "hard_timeout=0 idle_timeout=0 priority=1 table=0 dl_type=0x0800,nw_proto=17,nw_src=192.168.200.104,udp_src=2152 actions=resubmit(,8)"
+/usr/local/bin/ovs-ofctl add-flow sdmn_br "hard_timeout=0 idle_timeout=0 priority=1 table=0 dl_type=0x0800,nw_proto=17,nw_src=192.168.200.104,udp_dst=2152 actions=resubmit(,8)"
+/usr/local/bin/ovs-ofctl add-flow sdmn_br "hard_timeout=0 idle_timeout=0 priority=1 table=0 dl_type=0x0800,nw_proto=17,nw_src=192.168.200.104,udp_src=2123 actions=resubmit(,8)"
+/usr/local/bin/ovs-ofctl add-flow sdmn_br "hard_timeout=0 idle_timeout=0 priority=1 table=0 dl_type=0x0800,nw_proto=17,nw_src=192.168.200.104,udp_dst=2123 actions=resubmit(,8)"
+
+/usr/local/bin/ovs-ofctl add-flow sdmn_br "hard_timeout=0 idle_timeout=0 priority=1 table=0 dl_type=0x0800,nw_proto=17,nw_dst=192.168.200.104,udp_src=2152 actions=resubmit(,8)"
+/usr/local/bin/ovs-ofctl add-flow sdmn_br "hard_timeout=0 idle_timeout=0 priority=1 table=0 dl_type=0x0800,nw_proto=17,nw_dst=192.168.200.104,udp_dst=2152 actions=resubmit(,8)"
+/usr/local/bin/ovs-ofctl add-flow sdmn_br "hard_timeout=0 idle_timeout=0 priority=1 table=0 dl_type=0x0800,nw_proto=17,nw_dst=192.168.200.104,udp_src=2123 actions=resubmit(,8)"
+/usr/local/bin/ovs-ofctl add-flow sdmn_br "hard_timeout=0 idle_timeout=0 priority=1 table=0 dl_type=0x0800,nw_proto=17,nw_dst=192.168.200.104,udp_dst=2123 actions=resubmit(,8)"
+
+/usr/local/bin/ovs-ofctl add-flow sdmn_br "hard_timeout=0 idle_timeout=0 priority=1 table=0 ip,nw_src=12.0.0.0/8  actions=resubmit(,8)"
+/usr/local/bin/ovs-ofctl add-flow sdmn_br "hard_timeout=0 idle_timeout=0 priority=1 table=0 ip,nw_dst=12.0.0.0/8  actions=resubmit(,8)"
+
+/usr/local/bin/ovs-ofctl add-flow sdmn_br "hard_timeout=0 idle_timeout=0 priority=1 table=8 ip,nw_src=192.168.200.104 actions=handle_gtp"
+/usr/local/bin/ovs-ofctl add-flow sdmn_br "hard_timeout=0 idle_timeout=0 priority=1 table=8 ip,nw_dst=192.168.200.104 actions=handle_gtp"
+/usr/local/bin/ovs-ofctl add-flow sdmn_br "hard_timeout=0 idle_timeout=0 priority=1 table=8 ip,nw_src=12.0.0.0/8  actions=handle_pgw_sgi"
+/usr/local/bin/ovs-ofctl add-flow sdmn_br "hard_timeout=0 idle_timeout=0 priority=1 table=8 ip,nw_dst=12.0.0.0/8  actions=handle_pgw_sgi"
+/usr/local/bin/ovs-ofctl add-flow sdmn_br "hard_timeout=0 idle_timeout=0 priority=0 table=8 actions=drop"
+
+
+apt-get install arping -y
+
+////////////////////////对于sdmnnode02的配置
+在/etc/rc.local中
+/bin/bash -c /root/start.sh > /root/start.log 2>&1
+
+start.sh的脚本内容
+
+export PATH=$PATH:/usr/local/bin:/usr/local/sbin
+
+modprobe gre
+modprobe openvswitch
+modprobe libcrc32c
+/usr/local/sbin/ovsdb-server --remote=punix:/usr/local/var/run/openvswitch/db.sock --remote=db:Open_vSwitch,Open_vSwitch,manager_options --pidfile --detach --log-file
+/usr/local/sbin/ovs-vswitchd --pidfile --detach --log-file
+
+#/usr/local/bin/ovs-vsctl add-br sdmn_br
+#/usr/local/bin/ovs-vsctl add-port sdmn_br eth0
+ifconfig eth0 0
+ifconfig sdmn_br 192.168.200.107/24
+ip route add default via 192.168.200.1 dev sdmn_br  proto static  metric 100
+
+/usr/local/bin/ovs-ofctl add-flow sdmn_br "ip,nw_src=192.168.200.104 actions=operate_gtp:3,ovs_id:1,ovs_total:2,ovs_phy_port:1,pgw_fastpath:0"
+
+/usr/local/bin/ovs-vsctl show | grep "Port \"veth" | awk -F '"' '{print $2}' | while read line
+do
+        /usr/local/bin/ovs-vsctl del-port sdmn_br ${line}
+done
+
+docker rm -f `docker ps -q -a`
+
+
+DOCKERS="docker111/192.168.200.111 docker112/192.168.200.112"
+for arg in $DOCKERS  
+do
+        DOCKER_NAME=`echo $arg | awk -F '/' '{print $1}'`
+        echo $DOCKER_NAME
+        DOCKER_IP=`echo $arg | awk -F '/' '{print $2}'`
+        echo $DOCKER_IP
+
+        DOCKER_SUBNET=24
+        docker run --privileged -d --name ${DOCKER_NAME} ubuntu1404
+        docker cp /usr/local/bin/nwLteSaeGw ${DOCKER_NAME}:/root/
+        /usr/local/bin/pipework sdmn_br -i eth1 ${DOCKER_NAME} ${DOCKER_IP}/${DOCKER_SUBNET}
+        DOCKER_ETH1_MAC=`docker exec ${DOCKER_NAME} ip addr show eth1 | grep ether | awk -F ' ' '{print $2}'`
+        echo $DOCKER_ETH1_MAC
+        /usr/local/bin/pipework sdmn_br -i eth2 ${DOCKER_NAME} 0.0.0.0/0
+        DOCKER_ETH2_MAC=`docker exec ${DOCKER_NAME} ip addr show eth2 | grep ether | awk -F ' ' '{print $2}'`
+        echo $DOCKER_ETH2_MAC
+        /usr/local/bin/ovs-ofctl show sdmn_br
+        DOCKER_PID=`docker inspect -f "{{ .State.Pid }}" ${DOCKER_NAME}`
+        echo $DOCKER_PID
+        /usr/local/bin/ovs-ofctl show sdmn_br | grep veth1pl${DOCKER_PID} | awk -F '(' '{print $1}' | tr -d '[[:space:]]'
+        DOCKER_ETH1_PORT=`/usr/local/bin/ovs-ofctl show sdmn_br | grep veth1pl${DOCKER_PID} | awk -F '(' '{print $1}' | tr -d '[[:space:]]'`
+        echo $DOCKER_ETH1_PORT
+        /usr/local/bin/ovs-ofctl show sdmn_br | grep veth2pl${DOCKER_PID} | awk -F '(' '{print $1}' | tr -d '[[:space:]]'
+        DOCKER_ETH2_PORT=`/usr/local/bin/ovs-ofctl show sdmn_br | grep veth2pl${DOCKER_PID} | awk -F '(' '{print $1}' | tr -d '[[:space:]]'`
+        echo $DOCKER_ETH2_PORT
+        /usr/local/bin/ovs-ofctl add-flow sdmn_br "ip,nw_src=192.168.200.104 actions=operate_gtp:1,gtp_pgw_ip:${DOCKER_IP},gtp_pgw_port:${DOCKER_ETH1_PORT},gtp_pgw_eth:${DOCKER_ETH1_MAC},pgw_sgi_port:${DOCKER_ETH2_PORT},pgw_sgi_eth:${DOCKER_ETH2_MAC}"
+done
+
+/usr/local/bin/ovs-ofctl add-flow sdmn_br "hard_timeout=0 idle_timeout=0 priority=1 table=0 dl_type=0x0800,nw_proto=17,nw_src=192.168.200.104,udp_src=2152 actions=resubmit(,8)"
+/usr/local/bin/ovs-ofctl add-flow sdmn_br "hard_timeout=0 idle_timeout=0 priority=1 table=0 dl_type=0x0800,nw_proto=17,nw_src=192.168.200.104,udp_dst=2152 actions=resubmit(,8)"
+/usr/local/bin/ovs-ofctl add-flow sdmn_br "hard_timeout=0 idle_timeout=0 priority=1 table=0 dl_type=0x0800,nw_proto=17,nw_src=192.168.200.104,udp_src=2123 actions=resubmit(,8)"
+/usr/local/bin/ovs-ofctl add-flow sdmn_br "hard_timeout=0 idle_timeout=0 priority=1 table=0 dl_type=0x0800,nw_proto=17,nw_src=192.168.200.104,udp_dst=2123 actions=resubmit(,8)"
+
+/usr/local/bin/ovs-ofctl add-flow sdmn_br "hard_timeout=0 idle_timeout=0 priority=1 table=0 dl_type=0x0800,nw_proto=17,nw_dst=192.168.200.104,udp_src=2152 actions=resubmit(,8)"
+/usr/local/bin/ovs-ofctl add-flow sdmn_br "hard_timeout=0 idle_timeout=0 priority=1 table=0 dl_type=0x0800,nw_proto=17,nw_dst=192.168.200.104,udp_dst=2152 actions=resubmit(,8)"
+/usr/local/bin/ovs-ofctl add-flow sdmn_br "hard_timeout=0 idle_timeout=0 priority=1 table=0 dl_type=0x0800,nw_proto=17,nw_dst=192.168.200.104,udp_src=2123 actions=resubmit(,8)"
+/usr/local/bin/ovs-ofctl add-flow sdmn_br "hard_timeout=0 idle_timeout=0 priority=1 table=0 dl_type=0x0800,nw_proto=17,nw_dst=192.168.200.104,udp_dst=2123 actions=resubmit(,8)"
+
+/usr/local/bin/ovs-ofctl add-flow sdmn_br "hard_timeout=0 idle_timeout=0 priority=1 table=0 ip,nw_src=12.0.0.0/8  actions=resubmit(,8)"
+/usr/local/bin/ovs-ofctl add-flow sdmn_br "hard_timeout=0 idle_timeout=0 priority=1 table=0 ip,nw_dst=12.0.0.0/8  actions=resubmit(,8)"
+
+/usr/local/bin/ovs-ofctl add-flow sdmn_br "hard_timeout=0 idle_timeout=0 priority=1 table=8 ip,nw_src=192.168.200.104 actions=handle_gtp"
+/usr/local/bin/ovs-ofctl add-flow sdmn_br "hard_timeout=0 idle_timeout=0 priority=1 table=8 ip,nw_dst=192.168.200.104 actions=handle_gtp"
+/usr/local/bin/ovs-ofctl add-flow sdmn_br "hard_timeout=0 idle_timeout=0 priority=1 table=8 ip,nw_src=12.0.0.0/8  actions=handle_pgw_sgi"
+/usr/local/bin/ovs-ofctl add-flow sdmn_br "hard_timeout=0 idle_timeout=0 priority=1 table=8 ip,nw_dst=12.0.0.0/8  actions=handle_pgw_sgi"
+/usr/local/bin/ovs-ofctl add-flow sdmn_br "hard_timeout=0 idle_timeout=0 priority=0 table=8 actions=drop"
+
+apt-get install arping -y
+
+////////////////////////对于sgw的配置
+在/etc/rc.local中
+ip addr add 192.168.200.104/24 dev eth0
+exit 0
+
+

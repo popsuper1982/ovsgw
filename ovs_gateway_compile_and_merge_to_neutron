@@ -42,12 +42,37 @@ ip link set vnic0-br-int up
 ovs-vsctl add-port br-int vnic0-br-int
 ifconfig vnic0 10.0.0.1/24
 ovs-vsctl set Port vnic0-br-int tag=1
+ovs-vsctl clear Port vnic0-br-int tag
 ip link add vnic1 type veth peer name vnic1-br-int
 ip link set vnic1 up
 ip link set vnic1-br-int up
 ovs-vsctl add-port br-int vnic1-br-int
 ifconfig vnic1 10.0.1.1/24
 ovs-vsctl set Port vnic1-br-int tag=2
+ovs-vsctl clear Port vnic1-br-int tag
+[root@testovs ~]# ip netns add container1
+[root@testovs ~]# ip netns add container2
+[root@testovs ~]# ip netns
+container2
+container1
+
+ip link set vnic0 netns container1
+ip netns exec container1 ip link set vnic0 name eth0
+ip netns exec container1 ip link set eth0 up
+ip netns exec container1 ip link set lo up
+ip netns exec container1 ifconfig eth0 10.0.0.1/24
+ip netns exec container1 ip addr
+ip netns exec container1 ip route add 10.0.1.0/24 via 10.0.0.1 dev eth0
+ip netns exec container1 ip route add default via 10.0.0.1
+
+ip link set vnic1 netns container2
+ip netns exec container2 ip link set vnic1 name eth0
+ip netns exec container2 ip link set eth0 up
+ip netns exec container2 ip link set lo up
+ip netns exec container2 ifconfig eth0 10.0.1.1/24
+ip netns exec container2 ip addr
+ip netns exec container2 ip route add 10.0.0.0/24 via 10.0.1.1 dev eth0
+ip netns exec container2 ip route add default via 10.0.1.1
 
 [root@testovs openvswitch-2.14.1]# ovs-vsctl show
 8742308b-c0bc-47bc-adce-668778c2d73a
@@ -83,12 +108,34 @@ actions: output enqueue config_gw handle_gw set_vlan_vid set_vlan_pcp strip_vlan
      speed: 0 Mbps now, 0 Mbps max
 OFPT_GET_CONFIG_REPLY (xid=0x4): frags=normal miss_send_len=0
 
-ovs-ofctl add-flow br-int "in_port=1 actions=config_gw(param1=1,param2=2,param3=8e:e4:45:55:eb:ba,param4=4,param5=5,param6=8e:e4:45:55:eb:ba,param7=7,param8=8,param9=8e:e4:45:55:eb:ba)"
+ovs-ofctl add-flow br-int "in_port=1 actions=config_gw(param1=1,param2=2,param3=8e:e4:45:55:eb:ba,param4=4,param5=5,param6=8e:e4:45:55:eb:ba,param7=7,param8=8,param9=8e:e4:45:55:eb:ba),set_vlan_vid:2,output=2"
 
-ovs-ofctl add-flow br-int "in_port=2 actions=handle_gw(pipeline1=1,pipeline2=2,pipeline3=3,pipeline4=4,pipeline5=5)"
+ovs-ofctl add-flow br-int "in_port=2 actions=handle_gw(pipeline1=1,pipeline2=2,pipeline3=3,pipeline4=4,pipeline5=5),set_vlan_vid:1,output=1"
+
+ovs-ofctl add-flow br-int "in_port=1 actions=output=2"
+ovs-ofctl add-flow br-int "in_port=2 actions=output=1"
+
+ovs-ofctl del-flows br-int "in_port=1"
+ovs-ofctl del-flows br-int "in_port=2"
+
+ovs-ofctl add-flow br-int "in_port=1 actions=config_gw(param1=1,param2=2,param3=8e:e4:45:55:eb:ba,param4=4,param5=5,param6=8e:e4:45:55:eb:ba,param7=7,param8=8,param9=8e:e4:45:55:eb:ba),output=2"
+
+ovs-ofctl add-flow br-int "in_port=2 actions=handle_gw(pipeline1=1,pipeline2=2,pipeline3=3,pipeline4=4,pipeline5=5),output=1"
+
+ip netns exec container1 ping 10.0.1.1
+ip netns exec container2 ping 10.0.0.1
 
 
-learn(dl_type=0x800, nw_proto=17, udp_dst=udp_src)
+[root@testovs openvswitch-2.14.1]# ovs-ofctl dump-flows br-int
+2024-04-03T08:41:38Z|00001|ofp_actions|INFO|decode_OFPAT_RAW_CONFIG_GW
+2024-04-03T08:41:38Z|00002|ofp_actions|INFO|decode_OFPAT_RAW_HANDLE_GW
+2024-04-03T08:41:38Z|00003|ofp_actions|INFO|format_CONFIG_GW
+ cookie=0x0, duration=22.605s, table=0, n_packets=0, n_bytes=0, in_port="vnic0-br-int" actions=config_gw(param1=1,param2=2,param3=8e:e4:45:55:eb:ba,param4=4,param5=5,param6=8e:e4:45:55:eb:ba,param7=7,param8=8,param9=8e:e4:45:55:eb:ba)
+2024-04-03T08:41:38Z|00004|ofp_actions|INFO|format_HANDLE_GW
+ cookie=0x0, duration=12.910s, table=0, n_packets=0, n_bytes=0, in_port="vnic1-br-int" actions=handle_gw(pipeline1=1,pipeline2=2,pipeline3=3,pipeline4=4,pipeline5=5)
+ cookie=0x0, duration=69.368s, table=0, n_packets=0, n_bytes=0, priority=0 actions=NORMAL
+
+
 
 sgw_port=`ovs-ofctl show sdmn_br | grep ${sub_sgw_mac} | awk -F '(' '{print $1}' | tr -d '[[:space:]]'`
 /usr/local/bin/ovs-ofctl add-flow sdmn_br "ip,nw_src=192.168.200.104 actions=operate_gtp:1,gtp_pgw_ip:${DOCKER_IP},gtp_pgw_port:${DOCKER_ETH1_PORT},gtp_pgw_eth:${DOCKER_ETH1_MAC},pgw_sgi_port:${DOCKER_ETH2_PORT},pgw_sgi_eth:${DOCKER_ETH2_MAC}"
@@ -99,6 +146,8 @@ ovs-ofctl add-flow sdmn_br "hard_timeout=0 idle_timeout=0 priority=1 table=0 dl_
 2024-04-03T06:52:02Z|00001|ofp_actions|INFO|parse_HANDLE_GW
 2024-04-03T06:52:02Z|00002|ofp_actions|INFO|check_HANDLE_GW
 2024-04-03T06:52:02Z|00003|ofp_actions|INFO|encode_HANDLE_GW
+
+
 
 
 -----------------------
@@ -1901,3 +1950,155 @@ VLAN ID -> Tunnel ID
 
 ovs-ofctl add-flow br-tun "hard_timeout=0 idle_timeout=0 priority=1 table=21 dl_vlan=1 actions=strip_vlan,set_tunnel:0x1,output:2,output:3"
 ovs-ofctl add-flow br-tun "hard_timeout=0 idle_timeout=0 priority=1 table=21 dl_vlan=2 actions=strip_vlan,set_tunnel:0x2,output:2,output:3"
+
+------------------------
+
+Aliyun安装docker报错Status code: 404问题
+
+- Status code: 404 for https://mirrors.aliyun.com/docker-ce/linux/centos/3/x86_64/stable/repodata/repomd.xml
+
+ 按照官方文档部署并使用Docker（Alibaba Cloud Linux 3） - 云服务器 ECS - 阿里云这个安装docker的时候，发现报错404问题，我这边使用的是Alibaba Cloud Linux 3，使用的是这个命令查看的
+
+cat /etc/os-release
+NAME="Alibaba Cloud Linux"
+VERSION="3 (Soaring Falcon)"
+ID="alinux"
+ID_LIKE="rhel fedora centos"
+VERSION_ID="3"
+PLATFORM_ID="platform:al8"
+PRETTY_NAME="Alibaba Cloud Linux 3 (Soaring Falcon)"
+ANSI_COLOR="0;31"
+HOME_URL="https://www.aliyun.com/"
+
+然后我就想，既然是404那就是上面那个地址有问题，接着开始把地址拿过来进行查看，结果发现
+
+我直接找到https://mirrors.aliyun.com/docker-ce/linux/centos/的时候，下面并没有3，是7-8，然后猜测对应的是centos7-centos8，然后那个3是Alibaba Linux 3自己的发行版本，接着我就使用
+
+sudo vim /etc/yum.repos.d/docker-ce.repo
+打开这个的时候发现第一行
+
+[docker-ce-stable]
+name=Docker CE Stable - $basearch
+baseurl=https://mirrors.aliyun.com/docker-ce/linux/centos/$releasever/$basearch/stable
+enabled=1
+gpgcheck=1
+gpgkey=https://mirrors.aliyun.com/docker-ce/linux/centos/gpg
+感觉像是这个地址，我就直接把 $releasever 直接改成了8 这样地址就是
+
+baseurl=https://mirrors.aliyun.com/docker-ce/linux/centos/8/$basearch/stable
+然后保存修改，接着执行命令
+
+dnf -y install docker
+
+一、环境准备
+
+uname -r
+
+系统版本获取（Alibaba Cloud Linux 3 全面兼容CentOS 8）
+
+cat /etc/os-release 
+
+Alibaba Cloud Linux 3 全面兼容CentOS 8
+
+二、卸载旧版本
+yum remove docker \
+                  docker-client \
+                  docker-client-latest \
+                  docker-common \
+                  docker-latest \
+                  docker-latest-logrotate \
+                  docker-logrotate \
+                  docker-engine
+
+ No packages marked for removal.表示 yum 报告未安装任何这些软件包。
+
+三、需要的安装包
+yum install -y yum-utils 
+
+centos8安装docker 遇到yum install -y yum-utils报错，No match for argument：Unable to find a match：
+
+因为centos8项目官方已于2021年底停止维护，相关源已无法使用，所以网上22年前的换源教程都已无法使用。
+
+下面是最新的换源教程
+进入配置文件目录 
+
+#进入配置文件目录
+cd /etc/yum.repos.d/
+
+ 删除所有的.repo源文件
+
+#删除旧的配置文件
+rm *.repo #
+对每个文件进行确认：输入“y”回车确认
+
+ 下载可用的.repo文件
+
+wget -O /etc/yum.repos.d/CentOS-Base.repo https://mirrors.aliyun.com/repo/Centos-vault-8.5.2111.repo
+
+通过ls已经看到新的centos.repo了 
+
+ 重新运行 yum install -y yum-utils device-mapper-persistent-data lvm2 命令 安装依赖
+
+设置镜像的仓库
+
+yum-config-manager \
+    --add-repo \
+    http://mirrors.aliyun.com/docker-ce/linux/centos/docker-ce.repo   #推荐使用阿里云的
+
+这样镜像就设置成功了 
+
+四、更新yum软件包索引
+yum makecache fast
+
+ 报错提示fast参数的问题，这是因为版本问题,centos8没有该参数。
+解决办法为：去掉fast参数。
+
+处理更新软件包出现的问题：
+
+去掉fast参数，执行命令
+yum makecache  
+
+五、安装docker-ce 
+dnf -y install docker-ce --nobest
+
+
+ Complete安装完成！
+
+六、查看docker-ce是否成功安装
+dnf list docker-ce 
+
+ 报错 必须安装 Alibaba Cloud Linux 3专用的dnf源兼容插件，将无法正常安装docker-ce
+
+安装Alibaba Cloud Linux 3专用的dnf源兼容插件
+dnf -y install dnf-plugin-releasever-adapter --repo alinux3-plus 
+
+输入一下指令 
+
+
+
+七、再次查看docker-ce是否成功安装
+dnf list docker-ce 
+
+ 八、启动Docker服务
+ systemctl start docker
+
+
+
+原因：命令前面多了一个空格 去掉即可
+
+ 九、查看Docker服务的运行状态
+systemctl status docker 
+
+
+
+active(running)标识运行成功！ 
+
+十、测试hello-world
+docker run hello-world 
+
+
+————————————————
+
+                            版权声明：本文为博主原创文章，遵循 CC 4.0 BY-SA 版权协议，转载请附上原文出处链接和本声明。
+                        
+原文链接：https://blog.csdn.net/weixin_68458168/article/details/135492423
