@@ -4589,7 +4589,7 @@ static enum ofperr
 check_HANDLE_GW(const struct ofpact_handle_gw *a OVS_UNUSED,
                 const struct ofpact_check_params *cp OVS_UNUSED)
 {
-    VLOG_INFO("check_HANDLE_GW");
+    VLOG_INFO("%s", "check_HANDLE_GW");
     return 0;
 }
 

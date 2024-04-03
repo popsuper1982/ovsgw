@@ -491,13 +491,13 @@ pop_nsh(struct dp_packet *packet)
 void
 dp_config_gw_action(struct dp_packet *packet, const struct ovs_action_config_gw *config_gw)
 {
-    VLOG_INFO("dp_config_gw_action");
+    VLOG_INFO("%s", "dp_config_gw_action");
 }
 
 void
 dp_handle_gw_action(struct dp_packet *packet, const struct ovs_action_handle_gw *handle_gw)
 {
-    VLOG_INFO("dp_handle_gw_action");
+    VLOG_INFO("%s", "dp_handle_gw_action");
 }
 
 /* Converts hex digits in 'hex' to an Ethernet packet in '*packetp'.  The
