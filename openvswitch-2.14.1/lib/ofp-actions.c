@@ -4354,6 +4354,7 @@ decode_OFPAT_RAW_CONFIG_GW(const struct ofp_action_config_gw *a,
 {
     struct ofpact_config_gw *config_gw;
 
+    VLOG_INFO("decode_OFPAT_RAW_CONFIG_GW");
     config_gw = ofpact_put_CONFIG_GW(out);
 
     //may do ntohs htons ntohl htonl
@@ -4376,6 +4377,7 @@ encode_CONFIG_GW(const struct ofpact_config_gw *config_gw,
 {
     struct ofp_action_config_gw *ofp_config_gw;
 
+    VLOG_INFO("encode_CONFIG_GW");
     ofp_config_gw = put_OFPAT_CONFIG_GW(out);
 
     //may do ntohs htons ntohl htonl
@@ -4400,6 +4402,7 @@ parse_CONFIG_GW(const char *arg, const struct ofpact_parse_params *pp)
     struct eth_addr ethaddr;
     char *error;
 
+    VLOG_INFO("parse_CONFIG_GW");
     ofpacts = pp->ofpacts;
     config_gw = ofpact_put_CONFIG_GW(ofpacts);
     args = arg;
@@ -4448,6 +4451,7 @@ format_CONFIG_GW(const struct ofpact_config_gw *a, const struct ofpact_format_pa
 
     s = fp->s;
 
+    VLOG_INFO("format_CONFIG_GW");
     ds_put_format(s, "config_gw(");
     if (a->param1 != 0) {
         ds_put_format(s, "param1=%"PRIu32, a->param1);
@@ -4484,6 +4488,7 @@ static enum ofperr
 check_CONFIG_GW(const struct ofpact_config_gw *a OVS_UNUSED,
                 const struct ofpact_check_params *cp OVS_UNUSED)
 {
+    VLOG_INFO("check_CONFIG_GW");
     return 0;
 }
 
@@ -4494,6 +4499,7 @@ decode_OFPAT_RAW_HANDLE_GW(const struct ofp_action_handle_gw *a,
 {
     struct ofpact_handle_gw *handle_gw;
 
+    VLOG_INFO("decode_OFPAT_RAW_HANDLE_GW");
     handle_gw = ofpact_put_CONFIG_GW(out);
 
     //may do ntohs htons ntohl htonl
@@ -4514,6 +4520,7 @@ encode_HANDLE_GW(const struct ofpact_handle_gw *handle_gw,
 
     struct ofp_action_handle_gw *ofp_handle_gw;
 
+    VLOG_INFO("encode_HANDLE_GW");
     ofp_handle_gw = put_OFPAT_HANDLE_GW(out);
 
     //may do ntohs htons ntohl htonl
@@ -4531,6 +4538,7 @@ parse_HANDLE_GW(const char *arg, const struct ofpact_parse_params *pp)
     struct ofpact_handle_gw *handle_gw;
     char *name, *value;
 
+    VLOG_INFO("parse_HANDLE_GW");
     ofpacts = pp->ofpacts;
     handle_gw = ofpact_put_HANDLE_GW(ofpacts);
 
@@ -4557,7 +4565,7 @@ format_HANDLE_GW(const struct ofpact_handle_gw *a, const struct ofpact_format_pa
     struct ds *s;
 
     s = fp->s;
-
+    VLOG_INFO("format_HANDLE_GW");
     ds_put_format(s, "handle_gw(");
     if (a->pipeline1 != 0) {
         ds_put_format(s, "pipeline1=%"PRIu32, ntohl(a->pipeline1));
@@ -4581,6 +4589,7 @@ static enum ofperr
 check_HANDLE_GW(const struct ofpact_handle_gw *a OVS_UNUSED,
                 const struct ofpact_check_params *cp OVS_UNUSED)
 {
+    VLOG_INFO("check_HANDLE_GW");
     return 0;
 }
 

@@ -5176,6 +5176,7 @@ static void
 compose_config_gw_action(struct xlate_ctx *ctx, struct ofpact_config_gw *config_gw)
 {
     struct ovs_action_config_gw *ovs_config_gw;
+    VLOG_INFO("compose_config_gw_action");
     ovs_config_gw = nl_msg_put_unspec_zero(ctx->odp_actions,
                                   OVS_ACTION_ATTR_CONFIG_GW,
                                   sizeof *ovs_config_gw);
@@ -5194,6 +5195,7 @@ static void
 compose_handle_gw_action(struct xlate_ctx *ctx, struct ofpact_handle_gw *handle_gw)
 {
     struct ovs_action_handle_gw *ovs_handle_gw;
+    VLOG_INFO("compose_handle_gw_action");
     ovs_handle_gw = nl_msg_put_unspec_zero(ctx->odp_actions,
                                   OVS_ACTION_ATTR_HANDLE_GW,
                                   sizeof *ovs_handle_gw);

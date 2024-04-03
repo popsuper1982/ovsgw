@@ -1118,7 +1118,8 @@ static void
 format_odp_config_gw_action(struct ds *ds, const struct nlattr *attr)
 {
     const struct ovs_action_config_gw *config_gw = nl_attr_get(attr);
-
+    
+    VLOG_INFO("format_odp_config_gw_action");
     ds_put_format(ds, "config_gw(");
     if (config_gw->param1 != 0) {
         ds_put_format(ds, "param1=%"PRIu32, config_gw->param1);
@@ -1156,6 +1157,7 @@ format_odp_handle_gw_action(struct ds *ds, const struct nlattr *attr)
 {
     const struct ovs_action_handle_gw *handle_gw = nl_attr_get(attr);
 
+    VLOG_INFO("format_odp_handle_gw_action");
     ds_put_format(ds, "handle_gw(");
     if (handle_gw->pipeline1 != 0) {
         ds_put_format(ds, "pipeline1=%"PRIx32, ntohl(handle_gw->pipeline1));

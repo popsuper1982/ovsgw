@@ -818,12 +818,14 @@ static int set_sctp(struct sk_buff *skb, struct sw_flow_key *flow_key,
 static int do_config_gw_action(struct sk_buff *skb, struct sw_flow_key *key,
              const struct ovs_action_config_gw *config_gw)
 {
+	pr_info("do_config_gw_action");
     return 0;
 }
 
 static int do_handle_gw_action(struct sk_buff *skb, struct sw_flow_key *key,
              const struct ovs_action_handle_gw *handle_gw)
 {
+	pr_info("do_handle_gw_action");
     return 0;
 }
 
