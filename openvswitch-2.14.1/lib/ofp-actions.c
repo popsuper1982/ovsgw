@@ -4500,7 +4500,7 @@ decode_OFPAT_RAW_HANDLE_GW(const struct ofp_action_handle_gw *a,
     struct ofpact_handle_gw *handle_gw;
 
     VLOG_INFO("decode_OFPAT_RAW_HANDLE_GW");
-    handle_gw = ofpact_put_CONFIG_GW(out);
+    handle_gw = ofpact_put_HANDLE_GW(out);
 
     //may do ntohs htons ntohl htonl
     handle_gw->pipeline1 = a->pipeline1;

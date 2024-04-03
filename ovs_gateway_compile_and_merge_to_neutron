@@ -29,12 +29,138 @@ make modules_install
 安装
 modinfo openvswitch
 modprobe -D openvswitch
+modprobe openvswitch
+lsmod | grep openvswitch
 
 ovsdb-tool create /usr/local/etc/openvswitch/conf.db vswitchd/vswitch.ovsschema
 
 systemctl start ovs
 
+systemctl status ovs
 
+echo "" > /etc/ld.so.preload
+
+搭建环境
+
+ovs-vsctl add-br br-int
+ip link add vnic0 type veth peer name vnic0-br-int
+ip link set vnic0 up
+ip link set vnic0-br-int up
+ovs-vsctl add-port br-int vnic0-br-int
+ifconfig vnic0 10.0.0.1/24
+ovs-vsctl set Port vnic0-br-int tag=1
+ip link add vnic1 type veth peer name vnic1-br-int
+ip link set vnic1 up
+ip link set vnic1-br-int up
+ovs-vsctl add-port br-int vnic1-br-int
+ifconfig vnic1 10.0.1.1/24
+ovs-vsctl set Port vnic1-br-int tag=2
+
+[root@testovs openvswitch-2.14.1]# ovs-vsctl show
+8742308b-c0bc-47bc-adce-668778c2d73a
+    Bridge br-int
+        Port vnic1-br-int
+            tag: 2
+            Interface vnic1-br-int
+        Port vnic0-br-int
+            tag: 1
+            Interface vnic0-br-int
+        Port br-int
+            Interface br-int
+                type: internal
+    ovs_version: "2.14.1"
+[root@testovs openvswitch-2.14.1]# ovs-ofctl show br-int
+OFPT_FEATURES_REPLY (xid=0x2): dpid:00008acb0035094b
+n_tables:254, n_buffers:0
+capabilities: FLOW_STATS TABLE_STATS PORT_STATS QUEUE_STATS ARP_MATCH_IP
+actions: output enqueue config_gw handle_gw set_vlan_vid set_vlan_pcp strip_vlan mod_dl_src mod_dl_dst mod_nw_src mod_nw_dst mod_nw_tos mod_tp_src mod_tp_dst
+ 1(vnic0-br-int): addr:06:92:57:3f:6a:c8
+     config:     0
+     state:      0
+     current:    10GB-FD COPPER
+     speed: 10000 Mbps now, 0 Mbps max
+ 2(vnic1-br-int): addr:8e:e4:45:55:eb:ba
+     config:     0
+     state:      0
+     current:    10GB-FD COPPER
+     speed: 10000 Mbps now, 0 Mbps max
+ LOCAL(br-int): addr:8a:cb:00:35:09:4b
+     config:     0
+     state:      0
+     speed: 0 Mbps now, 0 Mbps max
+OFPT_GET_CONFIG_REPLY (xid=0x4): frags=normal miss_send_len=0
+
+ovs-ofctl add-flow br-int "in_port=1 actions=config_gw(param1=1,param2=2,param3=8e:e4:45:55:eb:ba,param4=4,param5=5,param6=8e:e4:45:55:eb:ba,param7=7,param8=8,param9=8e:e4:45:55:eb:ba)"
+
+ovs-ofctl add-flow br-int "in_port=2 actions=handle_gw(pipeline1=1,pipeline2=2,pipeline3=3,pipeline4=4,pipeline5=5)"
+
+
+learn(dl_type=0x800, nw_proto=17, udp_dst=udp_src)
+
+sgw_port=`ovs-ofctl show sdmn_br | grep ${sub_sgw_mac} | awk -F '(' '{print $1}' | tr -d '[[:space:]]'`
+/usr/local/bin/ovs-ofctl add-flow sdmn_br "ip,nw_src=192.168.200.104 actions=operate_gtp:1,gtp_pgw_ip:${DOCKER_IP},gtp_pgw_port:${DOCKER_ETH1_PORT},gtp_pgw_eth:${DOCKER_ETH1_MAC},pgw_sgi_port:${DOCKER_ETH2_PORT},pgw_sgi_eth:${DOCKER_ETH2_MAC}"
+/usr/local/bin/ovs-ofctl add-flow sdmn_br "hard_timeout=0 idle_timeout=0 priority=1 table=8 ip,nw_src=192.168.200.104 actions=handle_gtp"
+ovs-ofctl add-flow sdmn_br "hard_timeout=0 idle_timeout=0 priority=1 table=0 dl_type=0x0800,nw_proto=17,nw_dst=192.168.200.104,udp_src=2152 actions=mod_nw_src:192.168.200.108,output=${sgw_port}"
+
+[root@testovs etc]# ovs-ofctl add-flow br-int "in_port=2 actions=handle_gw(pipeline1=1,pipeline2=2,pipeline3=3,p>
+2024-04-03T06:52:02Z|00001|ofp_actions|INFO|parse_HANDLE_GW
+2024-04-03T06:52:02Z|00002|ofp_actions|INFO|check_HANDLE_GW
+2024-04-03T06:52:02Z|00003|ofp_actions|INFO|encode_HANDLE_GW
+
+
+-----------------------
+
+调试
+
+Open vSwitch的日志功能
+
+Open vSwitch具有一个内建的日志机制，它称之为VLOG。VLOG工具允许你在各种网络交换组件中启用并自定义日志，由VLOG生成的日志信息可以被发送到一个控制台、syslog以及一个便于查看的单独日志文件。你可以通过一个名为ovs-appctl的命令行工具在运行时动态配置OVS日志。
+
+这里为你演示如何使用ovs-appctl启用Open vSwitch中的日志功能，并进行自定义。
+
+下面是ovs-appctl自定义VLOG的语法。
+
+$sudo ovs-appctl vlog/set module[:facility[:level]]
+
+Module：OVS中的任何合法组件的名称（如netdev，ofproto，dpif，vswitchd等等）
+
+Facility：日志信息的目的地（必须是：console，syslog，或者file）
+
+Level：日志的详细程度（必须是：emer，err，warn，info，或者dbg）
+
+在OVS源代码中，模块名称在源文件中是以以下格式定义的：
+
+VLOG_DEFINE_THIS_MODULE(<module-name>);
+
+例如，在lib/netdev.c中，你可以看到：
+
+VLOG_DEFINE_THIS_MODULE(netdev);
+
+这个表明，lib/netdev.c是netdev模块的一部分，任何在lib/netdev.c中生成的日志信息将属于netdev模块。
+
+在OVS源代码中，有多个严重度等级用于定义几个不同类型的日志信息：VLOGINFO()用于报告，VLOGWARN()用于警告，VLOGERR()用于错误提示，VLOGDBG()用于调试信息，VLOG_EMERG用于紧急情况。日志等级和工具确定哪个日志信息发送到哪里。
+
+要查看可用模块、工具和各自日志级别的完整列表，请运行以下命令。该命令必须在你启动OVS后调用。
+
+$sudo ovs-appctl vlog/list
+
+输出结果显示了用于三个场合（facility：console，syslog，file）的各个模块的调试级别。默认情况下，所有模块的日志等级都被设置为INFO。
+
+指定任何一个OVS模块，你可以选择性地修改任何特定场合的调试级别。例如，如果你想要在控制台屏幕中查看dpif更为详细的调试信息，可以运行以下命令。
+
+$sudo ovs-appctl vlog/set dpif:console:dbg
+
+你将看到dpif模块的console工具已经将其日志等级修改为DBG，而其它两个场合syslog和file的日志级别仍然没有改变。
+
+如果你想要修改所有模块的日志等级，你可以指定“ANY”作为模块名。例如，下面命令将修改每个模块的console的日志级别为DBG。
+
+$sudo ovs-appctl vlog/set ANY:console:dbg
+
+同时，如果你想要一次性修改所有三个场合的日志级别，你可以指定“ANY”作为场合名。例如，下面的命令将修改每个模块的所有场合的日志级别为DBG。
+
+$sudo ovs-appctl vlog/set ANY:ANY:dbg
+
+日志路径/usr/local/var/log/openvswitch/
 
 -----------------------
 
