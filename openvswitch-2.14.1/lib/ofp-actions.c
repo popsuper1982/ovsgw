@@ -4457,7 +4457,7 @@ format_CONFIG_GW(const struct ofpact_config_gw *a, const struct ofpact_format_pa
         ds_put_format(s, "param1=%"PRIu32, a->param1);
     }
     if (a->param2 != 0) {
-        ds_put_format(s, ",param2=%"PRIx32, ntohl(a->param2));
+        ds_put_format(s, ",param2=%"PRIu32, a->param2);
     }
     if (a->param3.ea != 0) {
         ds_put_format(s, ",param3="ETH_ADDR_FMT, ETH_ADDR_ARGS(a->param3));
@@ -4466,7 +4466,7 @@ format_CONFIG_GW(const struct ofpact_config_gw *a, const struct ofpact_format_pa
         ds_put_format(s, ",param4=%"PRIu32, a->param4);
     }
     if (a->param5 != 0) {
-        ds_put_format(s, ",param5=%"PRIx32, ntohl(a->param5));
+        ds_put_format(s, ",param5=%"PRIu32, a->param5);
     }
     if (a->param6.ea != 0) {
         ds_put_format(s, ",param6="ETH_ADDR_FMT, ETH_ADDR_ARGS(a->param6));
@@ -4475,7 +4475,7 @@ format_CONFIG_GW(const struct ofpact_config_gw *a, const struct ofpact_format_pa
         ds_put_format(s, ",param7=%"PRIu32, a->param7);
     }
     if (a->param8 != 0) {
-        ds_put_format(s, ",param8=%"PRIx32, ntohl(a->param8));
+        ds_put_format(s, ",param8=%"PRIu32, a->param8);
     }
     if (a->param9.ea != 0) {
         ds_put_format(s, ",param9="ETH_ADDR_FMT, ETH_ADDR_ARGS(a->param9));
@@ -4568,19 +4568,19 @@ format_HANDLE_GW(const struct ofpact_handle_gw *a, const struct ofpact_format_pa
     VLOG_INFO("format_HANDLE_GW");
     ds_put_format(s, "handle_gw(");
     if (a->pipeline1 != 0) {
-        ds_put_format(s, "pipeline1=%"PRIu32, ntohl(a->pipeline1));
+        ds_put_format(s, "pipeline1=%"PRIx32, a->pipeline1);
     }
     if (a->pipeline2 != 0) {
-        ds_put_format(s, ",pipeline2=%"PRIx32, ntohl(a->pipeline2));
+        ds_put_format(s, ",pipeline2=%"PRIx32, a->pipeline2);
     }
     if (a->pipeline3 != 0) {
-        ds_put_format(s, ",pipeline3=%"PRIx32, ntohl(a->pipeline3));
+        ds_put_format(s, ",pipeline3=%"PRIx32, a->pipeline3);
     }
     if (a->pipeline4 != 0) {
-        ds_put_format(s, "pipeline4=%"PRIu32, ntohl(a->pipeline4));
+        ds_put_format(s, ",pipeline4=%"PRIx32, a->pipeline4);
     }
     if (a->pipeline5 != 0) {
-        ds_put_format(s, ",pipeline5=%"PRIx32, ntohl(a->pipeline5));
+        ds_put_format(s, ",pipeline5=%"PRIx32, a->pipeline5);
     }
     ds_put_format(s, ")");
 }
