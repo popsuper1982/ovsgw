@@ -2565,6 +2565,8 @@ static const struct dpctl_command all_commands[] = {
     { "parse-actions", "actions", 1, INT_MAX, dpctl_parse_actions, DP_RO },
     { "normalize-actions", "actions",
       2, INT_MAX, dpctl_normalize_actions, DP_RO },
+    { "set-gateway-params", "[dp] [operation=L] [param1=N,value=L]...", 1, INT_MAX,
+        dpctl_set_gateway_params, DP_RW },
 
     { NULL, NULL, 0, 0, NULL, DP_RO },
 };

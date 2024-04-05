@@ -6601,3 +6601,2965 @@ odp_action_len(uint16_t type)
     case OVS_ACTION_ATTR_PROBDROP: return sizeof(uint32_t);
     }
 }
+
+/////////////////////如何通过既有的命令流程，将配置写入内核
+
+在netlink message里面的action如何提交给内核中呢？
+
+handle_upcalls 将flow rule添加到内核中的fast path(如果should_install_flow为true，put_op_init里面设置op->dop.type = DPIF_OP_FLOW_PUT)，且在内核执行action(设置op->dop.type = DPIF_OP_EXECUTE) 
+-> dpif_operate -> dpif_netlink_operate -> dpif_netlink_operate_chunks -> dpif_netlink_operate__ (case DPIF_OP_FLOW_PUT: dpif_netlink_init_flow_put + dpif_netlink_flow_to_ofpbuf ; case DPIF_OP_EXECUTE: dpif_netlink_encode_execute)
++ nl_transact_multiple(通过netlink发送给内核)
+
+lib\dpif-netlink.c
+
+/* Executes, against 'dpif', up to the first 'n_ops' operations in 'ops'.
+ * Returns the number actually executed (at least 1, if 'n_ops' is
+ * positive). */
+static size_t
+dpif_netlink_operate__(struct dpif_netlink *dpif,
+                       struct dpif_op **ops, size_t n_ops)
+{
+    struct op_auxdata {
+        struct nl_transaction txn;
+
+        struct ofpbuf request;
+        uint64_t request_stub[1024 / 8];
+
+        struct ofpbuf reply;
+        uint64_t reply_stub[1024 / 8];
+    } auxes[OPERATE_MAX_OPS];
+
+    struct nl_transaction *txnsp[OPERATE_MAX_OPS];
+    size_t i;
+
+    n_ops = MIN(n_ops, OPERATE_MAX_OPS);
+    for (i = 0; i < n_ops; i++) {
+        struct op_auxdata *aux = &auxes[i];
+        struct dpif_op *op = ops[i];
+        struct dpif_flow_put *put;
+        struct dpif_flow_del *del;
+        struct dpif_flow_get *get;
+        struct dpif_netlink_flow flow;
+
+        ofpbuf_use_stub(&aux->request,
+                        aux->request_stub, sizeof aux->request_stub);
+        aux->txn.request = &aux->request;
+
+        ofpbuf_use_stub(&aux->reply, aux->reply_stub, sizeof aux->reply_stub);
+        aux->txn.reply = NULL;
+
+        switch (op->type) {
+        case DPIF_OP_FLOW_PUT:
+            put = &op->flow_put;
+            dpif_netlink_init_flow_put(dpif, put, &flow);
+            if (put->stats) {
+                flow.nlmsg_flags |= NLM_F_ECHO;
+                aux->txn.reply = &aux->reply;
+            }
+            dpif_netlink_flow_to_ofpbuf(&flow, &aux->request);
+            break;
+
+        case DPIF_OP_FLOW_DEL:
+            del = &op->flow_del;
+            dpif_netlink_init_flow_del(dpif, del, &flow);
+            if (del->stats) {
+                flow.nlmsg_flags |= NLM_F_ECHO;
+                aux->txn.reply = &aux->reply;
+            }
+            dpif_netlink_flow_to_ofpbuf(&flow, &aux->request);
+            break;
+
+        case DPIF_OP_EXECUTE:
+            /* Can't execute a packet that won't fit in a Netlink attribute. */
+            if (OVS_UNLIKELY(nl_attr_oversized(
+                                 dp_packet_size(op->execute.packet)))) {
+                /* Report an error immediately if this is the first operation.
+                 * Otherwise the easiest thing to do is to postpone to the next
+                 * call (when this will be the first operation). */
+                if (i == 0) {
+                    VLOG_ERR_RL(&error_rl,
+                                "dropping oversized %"PRIu32"-byte packet",
+                                dp_packet_size(op->execute.packet));
+                    op->error = ENOBUFS;
+                    return 1;
+                }
+                n_ops = i;
+            } else {
+                dpif_netlink_encode_execute(dpif->dp_ifindex, &op->execute,
+                                            &aux->request);
+            }
+            break;
+
+        case DPIF_OP_FLOW_GET:
+            get = &op->flow_get;
+            dpif_netlink_init_flow_get(dpif, get, &flow);
+            aux->txn.reply = get->buffer;
+            dpif_netlink_flow_to_ofpbuf(&flow, &aux->request);
+            break;
+
+        default:
+            OVS_NOT_REACHED();
+        }
+    }
+
+    for (i = 0; i < n_ops; i++) {
+        txnsp[i] = &auxes[i].txn;
+    }
+    nl_transact_multiple(NETLINK_GENERIC, txnsp, n_ops);
+
+    for (i = 0; i < n_ops; i++) {
+        struct op_auxdata *aux = &auxes[i];
+        struct nl_transaction *txn = &auxes[i].txn;
+        struct dpif_op *op = ops[i];
+        struct dpif_flow_put *put;
+        struct dpif_flow_del *del;
+        struct dpif_flow_get *get;
+
+        op->error = txn->error;
+
+        switch (op->type) {
+        case DPIF_OP_FLOW_PUT:
+            put = &op->flow_put;
+            if (put->stats) {
+                if (!op->error) {
+                    struct dpif_netlink_flow reply;
+
+                    op->error = dpif_netlink_flow_from_ofpbuf(&reply,
+                                                              txn->reply);
+                    if (!op->error) {
+                        dpif_netlink_flow_get_stats(&reply, put->stats);
+                    }
+                }
+            }
+            break;
+
+        case DPIF_OP_FLOW_DEL:
+            del = &op->flow_del;
+            if (del->stats) {
+                if (!op->error) {
+                    struct dpif_netlink_flow reply;
+
+                    op->error = dpif_netlink_flow_from_ofpbuf(&reply,
+                                                              txn->reply);
+                    if (!op->error) {
+                        dpif_netlink_flow_get_stats(&reply, del->stats);
+                    }
+                }
+            }
+            break;
+
+        case DPIF_OP_EXECUTE:
+            break;
+
+        case DPIF_OP_FLOW_GET:
+            get = &op->flow_get;
+            if (!op->error) {
+                struct dpif_netlink_flow reply;
+
+                op->error = dpif_netlink_flow_from_ofpbuf(&reply, txn->reply);
+                if (!op->error) {
+                    dpif_netlink_flow_to_dpif_flow(get->flow, &reply);
+                }
+            }
+            break;
+
+        default:
+            OVS_NOT_REACHED();
+        }
+
+        ofpbuf_uninit(&aux->request);
+        ofpbuf_uninit(&aux->reply);
+    }
+
+    return n_ops;
+}
+
+这里我们分析case DPIF_OP_FLOW_PUT: dpif_netlink_init_flow_put + dpif_netlink_flow_to_ofpbuf
+
+static void
+dpif_netlink_init_flow_put(struct dpif_netlink *dpif,
+                           const struct dpif_flow_put *put,
+                           struct dpif_netlink_flow *request)
+{
+    static const struct nlattr dummy_action;
+
+    dpif_netlink_flow_init(request);
+    request->cmd = (put->flags & DPIF_FP_CREATE
+                    ? OVS_FLOW_CMD_NEW : OVS_FLOW_CMD_SET);
+    request->dp_ifindex = dpif->dp_ifindex;
+    request->key = put->key;
+    request->key_len = put->key_len;
+    request->mask = put->mask;
+    request->mask_len = put->mask_len;
+    dpif_netlink_flow_init_ufid(request, put->ufid, false);
+
+    /* Ensure that OVS_FLOW_ATTR_ACTIONS will always be included. */
+    request->actions = (put->actions
+                        ? put->actions
+                        : CONST_CAST(struct nlattr *, &dummy_action));
+    request->actions_len = put->actions_len;
+    if (put->flags & DPIF_FP_ZERO_STATS) {
+        request->clear = true;
+    }
+    if (put->flags & DPIF_FP_PROBE) {
+        request->probe = true;
+    }
+    request->nlmsg_flags = put->flags & DPIF_FP_MODIFY ? 0 : NLM_F_CREATE;
+}
+
+/* Appends to 'buf' (which must initially be empty) a "struct ovs_header"
+ * followed by Netlink attributes corresponding to 'flow'. */
+static void
+dpif_netlink_flow_to_ofpbuf(const struct dpif_netlink_flow *flow,
+                            struct ofpbuf *buf)
+{
+    struct ovs_header *ovs_header;
+
+    nl_msg_put_genlmsghdr(buf, 0, ovs_flow_family,
+                          NLM_F_REQUEST | flow->nlmsg_flags,
+                          flow->cmd, OVS_FLOW_VERSION);
+
+    ovs_header = ofpbuf_put_uninit(buf, sizeof *ovs_header);
+    ovs_header->dp_ifindex = flow->dp_ifindex;
+
+    if (flow->ufid_present) {
+        nl_msg_put_u128(buf, OVS_FLOW_ATTR_UFID, flow->ufid);
+    }
+    if (flow->ufid_terse) {
+        nl_msg_put_u32(buf, OVS_FLOW_ATTR_UFID_FLAGS,
+                       OVS_UFID_F_OMIT_KEY | OVS_UFID_F_OMIT_MASK
+                       | OVS_UFID_F_OMIT_ACTIONS);
+    }
+    if (!flow->ufid_terse || !flow->ufid_present) {
+        if (flow->key_len) {
+            put_exclude_packet_type(buf, OVS_FLOW_ATTR_KEY, flow->key,
+                                           flow->key_len);
+        }
+        if (flow->mask_len) {
+            put_exclude_packet_type(buf, OVS_FLOW_ATTR_MASK, flow->mask,
+                                           flow->mask_len);
+        }
+        if (flow->actions || flow->actions_len) {
+            nl_msg_put_unspec(buf, OVS_FLOW_ATTR_ACTIONS,
+                              flow->actions, flow->actions_len);
+        }
+    }
+
+    /* We never need to send these to the kernel. */
+    ovs_assert(!flow->stats);
+    ovs_assert(!flow->tcp_flags);
+    ovs_assert(!flow->used);
+
+    if (flow->clear) {
+        nl_msg_put_flag(buf, OVS_FLOW_ATTR_CLEAR);
+    }
+    if (flow->probe) {
+        nl_msg_put_flag(buf, OVS_FLOW_ATTR_PROBE);
+    }
+}
+
+内核里面
+
+接下来我们到内核里面datapath\datapath.c
+
+OVS_FLOW_CMD_NEW或者OVS_FLOW_CMD_SET对应的函数为
+
+static const struct genl_ops dp_flow_genl_ops[] = {
+    { .cmd = OVS_FLOW_CMD_NEW,
+#ifdef HAVE_GENL_VALIDATE_FLAGS
+      .validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
+#endif
+      .flags = GENL_UNS_ADMIN_PERM, /* Requires CAP_NET_ADMIN privilege. */
+#ifdef HAVE_GENL_OPS_POLICY
+      .policy = flow_policy,
+#endif
+      .doit = ovs_flow_cmd_new -> ovs_flow_tbl_insert(&dp->table, new_flow, &mask)
+    },
+......
+    { .cmd = OVS_FLOW_CMD_SET,
+#ifdef HAVE_GENL_VALIDATE_FLAGS
+      .validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
+#endif
+      .flags = GENL_UNS_ADMIN_PERM, /* Requires CAP_NET_ADMIN privilege. */
+#ifdef HAVE_GENL_OPS_POLICY
+      .policy = flow_policy,
+#endif
+      .doit = ovs_flow_cmd_set,
+    },
+};
+
+最终会调用到__ovs_nla_copy_actions
+
+在这里面可以找到定义的action，在case里面设置内核里面的参数，然后skip_copy = true，并不把action放到内核流表中
+
+static int __ovs_nla_copy_actions(struct net *net, const struct nlattr *attr,
+                  const struct sw_flow_key *key,
+                  struct sw_flow_actions **sfa,
+                  __be16 eth_type, __be16 vlan_tci,
+                  u32 mpls_label_count, bool log)
+{
+    u8 mac_proto = ovs_key_mac_proto(key);
+    const struct nlattr *a;
+    int rem, err;
+
+    nla_for_each_nested(a, attr, rem) {
+        /* Expected argument lengths, (u32)-1 for variable length. */
+        static const u32 action_lens[OVS_ACTION_ATTR_MAX + 1] = {
+            [OVS_ACTION_ATTR_OUTPUT] = sizeof(u32),
+            [OVS_ACTION_ATTR_RECIRC] = sizeof(u32),
+            [OVS_ACTION_ATTR_USERSPACE] = (u32)-1,
+            [OVS_ACTION_ATTR_PUSH_MPLS] = sizeof(struct ovs_action_push_mpls),
+            [OVS_ACTION_ATTR_POP_MPLS] = sizeof(__be16),
+            [OVS_ACTION_ATTR_PUSH_VLAN] = sizeof(struct ovs_action_push_vlan),
+            [OVS_ACTION_ATTR_POP_VLAN] = 0,
+            [OVS_ACTION_ATTR_SET] = (u32)-1,
+            [OVS_ACTION_ATTR_SET_MASKED] = (u32)-1,
+            [OVS_ACTION_ATTR_SAMPLE] = (u32)-1,
+            [OVS_ACTION_ATTR_HASH] = sizeof(struct ovs_action_hash),
+            [OVS_ACTION_ATTR_CT] = (u32)-1,
+            [OVS_ACTION_ATTR_CT_CLEAR] = 0,
+            [OVS_ACTION_ATTR_TRUNC] = sizeof(struct ovs_action_trunc),
+            [OVS_ACTION_ATTR_PUSH_ETH] = sizeof(struct ovs_action_push_eth),
+            [OVS_ACTION_ATTR_POP_ETH] = 0,
+            [OVS_ACTION_ATTR_PUSH_NSH] = (u32)-1,
+            [OVS_ACTION_ATTR_POP_NSH] = 0,
+            [OVS_ACTION_ATTR_METER] = sizeof(u32),
+            [OVS_ACTION_ATTR_CLONE] = (u32)-1,
+            [OVS_ACTION_ATTR_CHECK_PKT_LEN] = (u32)-1,
+        };
+        const struct ovs_action_push_vlan *vlan;
+        int type = nla_type(a);
+        bool skip_copy;
+
+        if (type > OVS_ACTION_ATTR_MAX ||
+            (action_lens[type] != nla_len(a) &&
+             action_lens[type] != (u32)-1))
+            return -EINVAL;
+
+        skip_copy = false;
+        switch (type) {
+        case OVS_ACTION_ATTR_UNSPEC:
+            return -EINVAL;
+
+        case OVS_ACTION_ATTR_USERSPACE:
+            err = validate_userspace(a);
+            if (err)
+                return err;
+            break;
+
+        case OVS_ACTION_ATTR_OUTPUT:
+            if (nla_get_u32(a) >= DP_MAX_PORTS)
+                return -EINVAL;
+            break;
+
+        case OVS_ACTION_ATTR_TRUNC: {
+            const struct ovs_action_trunc *trunc = nla_data(a);
+
+            if (trunc->max_len < ETH_HLEN)
+                return -EINVAL;
+            break;
+        }
+
+        case OVS_ACTION_ATTR_HASH: {
+            const struct ovs_action_hash *act_hash = nla_data(a);
+
+            switch (act_hash->hash_alg) {
+            case OVS_HASH_ALG_L4:
+                break;
+            default:
+                return  -EINVAL;
+            }
+
+            break;
+        }
+
+        case OVS_ACTION_ATTR_POP_VLAN:
+            if (mac_proto != MAC_PROTO_ETHERNET)
+                return -EINVAL;
+            vlan_tci = htons(0);
+            break;
+
+        case OVS_ACTION_ATTR_PUSH_VLAN:
+            if (mac_proto != MAC_PROTO_ETHERNET)
+                return -EINVAL;
+            vlan = nla_data(a);
+            if (!eth_type_vlan(vlan->vlan_tpid))
+                return -EINVAL;
+            if (!(vlan->vlan_tci & htons(VLAN_CFI_MASK)))
+                return -EINVAL;
+            vlan_tci = vlan->vlan_tci;
+            break;
+
+        case OVS_ACTION_ATTR_RECIRC:
+            break;
+
+        case OVS_ACTION_ATTR_PUSH_MPLS: {
+            const struct ovs_action_push_mpls *mpls = nla_data(a);
+
+            if (!eth_p_mpls(mpls->mpls_ethertype))
+                return -EINVAL;
+            /* Prohibit push MPLS other than to a white list
+             * for packets that have a known tag order.
+             */
+            if (vlan_tci & htons(VLAN_CFI_MASK) ||
+                (eth_type != htons(ETH_P_IP) &&
+                 eth_type != htons(ETH_P_IPV6) &&
+                 eth_type != htons(ETH_P_ARP) &&
+                 eth_type != htons(ETH_P_RARP) &&
+                 !eth_p_mpls(eth_type)))
+                return -EINVAL;
+            eth_type = mpls->mpls_ethertype;
+            mpls_label_count++;
+            break;
+        }
+
+        case OVS_ACTION_ATTR_POP_MPLS: {
+            __be16  proto;
+            if (vlan_tci & htons(VLAN_CFI_MASK) ||
+                !eth_p_mpls(eth_type))
+                return -EINVAL;
+
+            /* Disallow subsequent L2.5+ set actions and mpls_pop
+             * actions once the last MPLS label in the packet is
+             * popped as there is no check here to ensure that
+             * the new eth type is valid and thus set actions could
+             * write off the end of the packet or otherwise corrupt
+             * it.
+             *
+             * Support for these actions is planned using packet
+             * recirculation.
+             */
+            proto = nla_get_be16(a);
+            mpls_label_count--;
+
+            if (!eth_p_mpls(proto) || !mpls_label_count)
+                eth_type = htons(0);
+            else
+                eth_type =  proto;
+            break;
+        }
+        case OVS_ACTION_ATTR_SET:
+            err = validate_set(a, key, sfa,
+                       &skip_copy, mac_proto, eth_type,
+                       false, log);
+            if (err)
+                return err;
+            break;
+
+        case OVS_ACTION_ATTR_SET_MASKED:
+            err = validate_set(a, key, sfa,
+                       &skip_copy, mac_proto, eth_type,
+                       true, log);
+            if (err)
+                return err;
+            break;
+
+        case OVS_ACTION_ATTR_SAMPLE: {
+            bool last = nla_is_last(a, rem);
+
+            err = validate_and_copy_sample(net, a, key, sfa,
+                               eth_type, vlan_tci,
+                               mpls_label_count,
+                               log, last);
+            if (err)
+                return err;
+            skip_copy = true;
+            break;
+        }
+
+        case OVS_ACTION_ATTR_CT:
+            err = ovs_ct_copy_action(net, a, key, sfa, log);
+            if (err)
+                return err;
+            skip_copy = true;
+            break;
+
+        case OVS_ACTION_ATTR_CT_CLEAR:
+            break;
+
+        case OVS_ACTION_ATTR_PUSH_ETH:
+            /* Disallow pushing an Ethernet header if one
+             * is already present */
+            if (mac_proto != MAC_PROTO_NONE)
+                return -EINVAL;
+            mac_proto = MAC_PROTO_ETHERNET;
+            break;
+
+        case OVS_ACTION_ATTR_POP_ETH:
+            if (mac_proto != MAC_PROTO_ETHERNET)
+                return -EINVAL;
+            if (vlan_tci & htons(VLAN_CFI_MASK))
+                return -EINVAL;
+            mac_proto = MAC_PROTO_NONE;
+            break;
+
+        case OVS_ACTION_ATTR_PUSH_NSH:
+            if (mac_proto != MAC_PROTO_ETHERNET) {
+                u8 next_proto;
+
+                next_proto = tun_p_from_eth_p(eth_type);
+                if (!next_proto)
+                    return -EINVAL;
+            }
+            mac_proto = MAC_PROTO_NONE;
+            if (!validate_nsh(nla_data(a), false, true, true))
+                return -EINVAL;
+            break;
+
+        case OVS_ACTION_ATTR_POP_NSH: {
+            __be16 inner_proto;
+
+            if (eth_type != htons(ETH_P_NSH))
+                return -EINVAL;
+            inner_proto = tun_p_to_eth_p(key->nsh.base.np);
+            if (!inner_proto)
+                return -EINVAL;
+            if (key->nsh.base.np == TUN_P_ETHERNET)
+                mac_proto = MAC_PROTO_ETHERNET;
+            else
+                mac_proto = MAC_PROTO_NONE;
+            break;
+        }
+
+        case OVS_ACTION_ATTR_METER:
+            /* Non-existent meters are simply ignored.  */
+            break;
+
+        case OVS_ACTION_ATTR_CLONE: {
+            bool last = nla_is_last(a, rem);
+
+            err = validate_and_copy_clone(net, a, key, sfa,
+                              eth_type, vlan_tci,
+                              mpls_label_count,
+                              log, last);
+            if (err)
+                return err;
+            skip_copy = true;
+            break;
+        }
+
+        case OVS_ACTION_ATTR_CHECK_PKT_LEN: {
+                        bool last = nla_is_last(a, rem);
+
+                        err = validate_and_copy_check_pkt_len(net, a, key, sfa,
+                                                              eth_type,
+                                                              vlan_tci, log,
+                                  mpls_label_count,
+                                                              last);
+                        if (err)
+                                return err;
+                        skip_copy = true;
+                        break;
+                }
+
+        default:
+            OVS_NLERR(log, "Unknown Action type %d", type);
+            return -EINVAL;
+        }
+        if (!skip_copy) {
+            err = copy_action(a, sfa, log);
+            if (err)
+                return err;
+        }
+    }
+
+    if (rem > 0)
+        return -EINVAL;
+
+    return 0;
+}
+
+////////////////////
+
+void
+handle_gtpc_message(struct flow *flow, struct flow_wildcards *wc, struct gtpc_msg_header * gtpcmsg, const struct dp_packet * packet, struct xlate_ctx *ctx)
+{
+    VLOG_INFO("handle gtpc message......");
+    if (flow->in_port.ofp_port == ovs_phy_port){
+        //from sgw to pgw
+        VLOG_INFO("from sgw to pgw......");
+        if (!gtpcmsg->has_teid || gtpcmsg->teid == 0)
+        {
+            if (gtpcmsg->seq_num%ovs_total == ovs_id)
+            {
+                VLOG_INFO("this ovs %d is selected.", ovs_id);
+                int ramdompgw = gtp_manager_get_pgw();
+                if (gtpcmsg->message_type == 32)
+                {
+                    VLOG_INFO("create session request");
+                    //create session request
+                    if (pgw_fastpath != 0)
+                    {
+                        VLOG_INFO("fast path is not supported.");
+                        //enable fast path
+                        //parse body to get t2, t3
+                        //create gtp_tunnel_node, set t2, t3, pgwindex
+                        //put t2->pnode, t3->pnode, ref_count=2
+                    }
+                }
+
+                //set dst to pgw ip and mac
+                memset(&wc->masks.nw_dst, 0xff, sizeof wc->masks.nw_dst);
+                flow->nw_dst = pgw_list[ramdompgw].gtp_pgw_ip;
+                WC_MASK_FIELD(wc, dl_dst);
+                flow->dl_dst = pgw_list[ramdompgw].gtp_pgw_eth;
+                //output to pgw port
+                VLOG_INFO("output to pgw port %d.", pgw_list[ramdompgw].gtp_pgw_port);
+                xlate_output_action(ctx, pgw_list[ramdompgw].gtp_pgw_port, 0, false);   
+            }
+            //else drop
+        } else {
+            struct gtp_teid_to_pgw_node * selectedpgw = gtp_manager_get_teid_pgw(gtpcmsg->teid);
+            if (selectedpgw == NULL)
+            {
+                //drop
+                VLOG_INFO("do not find the pgw, drop");
+            } else {
+                int selectedpgwindex = selectedpgw->gtp_tunnel_node->pgw_index;
+                if (pgw_list[selectedpgwindex].gtp_pgw_ip == 0) {
+                    //drop
+                    VLOG_INFO("the found pgw is deleted.");
+                } else {
+                    //set dst to pgw ip and mac
+                    memset(&wc->masks.nw_dst, 0xff, sizeof wc->masks.nw_dst);
+                    flow->nw_dst = pgw_list[selectedpgwindex].gtp_pgw_ip;
+                    WC_MASK_FIELD(wc, dl_dst);
+                    flow->dl_dst = pgw_list[selectedpgwindex].gtp_pgw_eth;
+                    //output to pgw port
+                    VLOG_INFO("output to pgw port %d.", pgw_list[selectedpgwindex].gtp_pgw_port);
+                    xlate_output_action(ctx, pgw_list[selectedpgwindex].gtp_pgw_port, 0, false);
+                }
+                bool willfree = false;
+                ovs_mutex_lock(&selectedpgw->mutex);
+                selectedpgw->ref_count--;
+                if (selectedpgw->ref_count == 0) {
+                    willfree = true;
+                }
+                ovs_mutex_unlock(&selectedpgw->mutex);
+                if (willfree)
+                {
+                    //just unref, do not free, let t2 to free it
+                    selectedpgw->gtp_tunnel_node->ref_count--;
+                    if (selectedpgw->gtp_tunnel_node->ref_count==0)
+                    {
+                        free(selectedpgw->gtp_tunnel_node);
+                    }
+                    free(selectedpgw);
+                }
+            }
+        } 
+        
+    } else {
+        //from pgw to sgw
+        VLOG_INFO("from pgw to sgw ......");
+        if (!gtpcmsg->has_teid || gtpcmsg->teid == 0) {
+            //output to phy port
+            VLOG_INFO("output to phy port %d.", ovs_phy_port);
+            xlate_output_action(ctx, ovs_phy_port, 0, false);
+        } else if (gtpcmsg->message_type == 33){
+            //create session response
+            VLOG_INFO("create session response ......");
+            //int ret = gtp_manager_put_teid_pgw(gtpcmsg->teid, flow->nw_src);
+            //get t2 from header
+            uint32_t t2 = gtpcmsg->teid;
+            //continue to parse body
+            int start = gtpcmsg->body_offset;
+            //Octets 3 to 4 represent the Message Length field. 
+            //This field shall indicate the length of the message in octets excluding the mandatory part of the GTP-C header (the first 4 octets).
+            int length = gtpcmsg->message_length + 4;
+            int finish = start + (length - gtpcmsg->header_length);
+            //get t4, t5, ueip
+            uint32_t t4 = 0;
+            uint32_t t5 = 0;
+            ovs_be32 ueip = 0;
+            while(start < finish){
+                uint8_t * ie_type = dp_packet_at(packet, start, 1);
+                ovs_be16 * ie_length = dp_packet_at(packet, start+1, 2);
+                uint16_t ie_length_t = ntohs(*ie_length);
+                if (*ie_type == 87)
+                {
+                    //t4
+                    ovs_be32 *t4p = dp_packet_at(packet, start+5, 4);
+                    t4 = ntohl(*t4p);
+                } else if (*ie_type == 79)
+                {
+                    //ueip
+                    ovs_be32 *ueipp = dp_packet_at(packet, start+5, 4);
+                    ueip = *ueipp;
+                } else if (*ie_type == 93)
+                {
+                    //bearer context
+                    int bcstart = start+4;
+                    int bcstartend = bcstart + ie_length_t;
+                    while(bcstart < bcstartend){
+                        uint8_t * bc_ie_type = dp_packet_at(packet, bcstart, 1);
+                        ovs_be16 * bc_ie_length = dp_packet_at(packet, bcstart+1, 2);
+                        uint16_t bc_ie_length_t = ntohs(*bc_ie_length);
+                        if (*bc_ie_type == 87)
+                        {
+                            ovs_be32 *t5p = dp_packet_at(packet, bcstart+5, 4);
+                            t5 = ntohl(*t5p);
+                            break;
+                        }
+                        bcstart = bcstart + bc_ie_length_t + 4;
+                    }
+                }
+                if (t4 !=0 && t5 !=0 && ueip != 0)
+                {
+                    break;
+                }
+                start = start + ie_length_t + 4;
+            }
+            if (t4 !=0 && t5 !=0 && ueip != 0) {
+                if (pgw_fastpath == 0)
+                {
+                    //not fast path
+                    ////create gtp_tunnel_node,
+                    struct gtp_tunnel_node * node = xmalloc(sizeof *node);
+                    ////set t4, t5, ueip, pgwindex, also set t2 for delete response
+                    node->teid2_pgw_c=t2;
+                    node->teid4_sgw_c=t4;
+                    node->teid5_sgw_u=t5;
+                    node->ue_ip = ueip;
+
+                    VLOG_INFO("parse result from CreateSessionResponse : t2=%#"PRIx32", t4=%#"PRIx32", t5=%#"PRIx32", ueip="IP_FMT".", t2, t4, t5, IP_ARGS(ueip));
+
+                    ////put t4->pnode, t5->pnode, ueip->pnode, t2->pnode
+                    int pgwindex = gtp_manager_find_pgw(flow->nw_src);
+                    if (pgwindex != -1)
+                    {
+                        node->pgw_index = pgwindex;
+                        node->ref_count = 4;
+                        gtp_manager_put_teid_pgw(t4, node);
+                        gtp_manager_put_teid_pgw(t5, node);
+                        gtp_manager_put_ueip_pgw(ueip, node);
+                        gtp_manager_put_teid_pgw(t2, node);
+                        VLOG_INFO(" { teid4_sgw_c=%d, teid5_sgw_u=%d, teid2_pgw_c=%d, ue_ip="IP_FMT" pgw_index=%d }", t4, t5, t2, IP_ARGS(ueip), pgwindex);
+
+                        ////refcount = refcount+4
+                        //output to phy port
+                        VLOG_INFO("output to phy port %d.", ovs_phy_port);
+                        xlate_output_action(ctx, ovs_phy_port, 0, false);
+                    }
+
+                } else {
+                    VLOG_INFO("fast path is not supported ......");
+                    //fast path
+                    ////get gtp_tunnel_node with t2 
+                    ////and check gtp_tunnel_node's pgw==the current pgw
+                    ////set t4, t5, ueip
+                    ////put t4->pnode, t5->pnode, ueip->pnode
+                    ////refcount = refcount+3
+                    //output to phy port
+                }
+            }
+            //drop
+        } else if (gtpcmsg->message_type == 37) {
+            //delete session response
+            VLOG_INFO("delete session response ......");
+            //int ret = gtp_manager_del_teid_pgw(gtpcmsg->teid);
+            //teid in header is t2
+            uint32_t t2 = gtpcmsg->teid;
+            //both fastpath and not fastpath, the t2 is in map, get gtp_tunnel_node from t2
+            struct gtp_teid_to_pgw_node * node = gtp_manager_get_teid_pgw(t2);
+            uint32_t t4 = node->gtp_tunnel_node->teid4_sgw_c;
+            uint32_t t5 = node->gtp_tunnel_node->teid5_sgw_u;
+            uint32_t ueip = node->gtp_tunnel_node->ue_ip;
+            //delete t2, t3 when fastpath, t4, t5, ueip in map, delete one, unref one, if zero, free the node
+            gtp_manager_del_teid_pgw(t4);
+            gtp_manager_del_teid_pgw(t5);
+            gtp_manager_del_ueip_pgw(ueip);
+            gtp_manager_del_teid_pgw(t2);
+
+            VLOG_INFO("delete session : t2=%#"PRIx32", t4=%#"PRIx32", t5=%#"PRIx32", ueip="IP_FMT".", t2, t4, t5, IP_ARGS(ueip));
+
+            bool willfree = false;
+            ovs_mutex_lock(&node->mutex);
+            node->ref_count--;
+            if (node->ref_count == 0) {
+                willfree = true;
+            }
+            ovs_mutex_unlock(&node->mutex);
+            if (willfree)
+            {
+                //just unref, do not free, let t2 to free it
+                node->gtp_tunnel_node->ref_count--;
+                if (node->gtp_tunnel_node->ref_count==0)
+                {
+                    free(node->gtp_tunnel_node);
+                }
+                free(node);
+            }
+            //output to phy port
+            VLOG_INFO("output to phy port %d.", ovs_phy_port);
+            xlate_output_action(ctx, ovs_phy_port, 0, false);
+        } else {
+            //output to phy port
+            VLOG_INFO("output to phy port %d.", ovs_phy_port);
+            xlate_output_action(ctx, ovs_phy_port, 0, false);
+        } 
+    }
+}
+
+void
+handle_gtpu_message(struct flow *flow, struct flow_wildcards *wc, struct gtpu_msg_header * gtpumsg, const struct dp_packet * packet, struct xlate_ctx *ctx)
+{
+    VLOG_INFO("handle gtpu message......");
+    if (flow->in_port.ofp_port == ovs_phy_port){
+        //from sgw to pgw
+        VLOG_INFO("from sgw to pgw.");
+        if (gtpumsg->teid == 0){
+            //drop
+            VLOG_INFO("teid is zero, drop.");
+        } else {
+            if (pgw_fastpath == 0){
+                //not fastpath
+                //teid in header is t5
+                //get gtp_tunnel_node with t5 from map
+                //get pgw
+                //output to pgw port
+                struct gtp_teid_to_pgw_node * selectedpgw = gtp_manager_get_teid_pgw(gtpumsg->teid);
+                if (selectedpgw == NULL)
+                {
+                    //drop
+                    VLOG_INFO("pgw not found, drop.");
+                } else {
+                    int selectedpgwindex = selectedpgw->gtp_tunnel_node->pgw_index;
+                    if (pgw_list[selectedpgwindex].gtp_pgw_ip == 0) {
+                        //drop
+                        VLOG_INFO("the found pgw is deleted, drop.");
+                    } else {
+                        //set dst to pgw ip and mac
+                        memset(&wc->masks.nw_dst, 0xff, sizeof wc->masks.nw_dst);
+                        flow->nw_dst = pgw_list[selectedpgwindex].gtp_pgw_ip;
+                        WC_MASK_FIELD(wc, dl_dst);
+                        flow->dl_dst = pgw_list[selectedpgwindex].gtp_pgw_eth;
+                        //output to pgw port
+                        VLOG_INFO("output to pgw port %d.", pgw_list[selectedpgwindex].gtp_pgw_port);
+                        xlate_output_action(ctx, pgw_list[selectedpgwindex].gtp_pgw_port, 0, false);
+                    }
+                    bool willfree = false;
+                    ovs_mutex_lock(&selectedpgw->mutex);
+                    selectedpgw->ref_count--;
+                    if (selectedpgw->ref_count == 0) {
+                        willfree = true;
+                    }
+                    ovs_mutex_unlock(&selectedpgw->mutex);
+                    if (willfree)
+                    {
+                        //just unref, do not free, let t2 to free it
+                        selectedpgw->gtp_tunnel_node->ref_count--;
+                        if (selectedpgw->gtp_tunnel_node->ref_count==0)
+                        {
+                            free(selectedpgw->gtp_tunnel_node);
+                        }
+                        free(selectedpgw);
+                    }
+                }                
+            } else {
+                VLOG_INFO("fast path not supported %"PRId64".", (uint64_t)packet);
+                //get body from package
+                //send the ip msg in body to phy port
+                //how? modify the current? drop the current and create new one?
+                //learn from arp
+            }
+        }
+    } else {
+        //from pgw to sgw
+        VLOG_INFO("from sgw to pgw.");
+        if (pgw_fastpath == 0)
+        {
+            //not fast path
+            //output to phy port
+            VLOG_INFO("output to phy port %d.", ovs_phy_port);
+            xlate_output_action(ctx, ovs_phy_port, 0, false);
+        } else {
+            //should not be here
+            VLOG_INFO("fast path not supported.");
+        }
+    }
+}
+
+void handle_gtp(struct flow *flow, struct flow_wildcards *wc, const struct dp_packet * packet, struct xlate_ctx *ctx)
+{
+    if (packet == NULL){
+        VLOG_INFO("packet is null for revalidating");
+        return;
+    }
+
+    if (maybe_gtpc_message(flow)){
+        VLOG_INFO("handle gtpc......");
+        struct gtpc_msg_header * gtpcmsgheader = NULL;
+        gtpcmsgheader = parse_gtpc_msg_header(packet);
+        if(gtpcmsgheader != NULL) {
+            handle_gtpc_message(flow, wc, gtpcmsgheader, packet, ctx);
+            free(gtpcmsgheader); 
+        }                   
+    } else if (maybe_gtpu_message(flow)){
+        VLOG_INFO("handle gtpu......");
+        struct gtpu_msg_header * gtpumsgheader = NULL;
+        gtpumsgheader = parse_gtpu_message(packet);
+        if(gtpumsgheader != NULL) {
+            handle_gtpu_message(flow, wc, gtpumsgheader, packet, ctx);
+            free(gtpumsgheader);                    
+        }
+    }
+}
+
+////////////////////
+
+lib\dpif-netlink-rtnl.c
+
+static int
+rtnl_set_mtu(const char *name, uint32_t mtu, struct ofpbuf *request)
+{
+    ofpbuf_clear(request);
+    nl_msg_put_nlmsghdr(request, 0, RTM_SETLINK,
+                        NLM_F_REQUEST | NLM_F_ACK);
+    ofpbuf_put_zeros(request, sizeof(struct ifinfomsg));
+    nl_msg_put_string(request, IFLA_IFNAME, name);
+    nl_msg_put_u32(request, IFLA_MTU, mtu);
+
+    return nl_transact(NETLINK_ROUTE, request, NULL);
+}
+
+static int
+dpif_netlink_rtnl_create(const struct netdev_tunnel_config *tnl_cfg,
+                         const char *name, enum ovs_vport_type type,
+                         const char *kind, uint32_t flags)
+{
+    enum {
+        /* For performance, we want to use the largest MTU that the system
+         * supports.  Most existing tunnels will accept UINT16_MAX, treating it
+         * as the actual max MTU, but some do not.  Thus, we use a slightly
+         * smaller value, that should always be safe yet does not noticeably
+         * reduce performance. */
+        MAX_MTU = 65000
+    };
+
+    size_t linkinfo_off, infodata_off;
+    struct ifinfomsg *ifinfo;
+    struct ofpbuf request;
+    int err;
+
+    ofpbuf_init(&request, 0);
+    nl_msg_put_nlmsghdr(&request, 0, RTM_NEWLINK, flags);
+    ifinfo = ofpbuf_put_zeros(&request, sizeof(struct ifinfomsg));
+    ifinfo->ifi_change = ifinfo->ifi_flags = IFF_UP;
+    nl_msg_put_string(&request, IFLA_IFNAME, name);
+    nl_msg_put_u32(&request, IFLA_MTU, MAX_MTU);
+    linkinfo_off = nl_msg_start_nested(&request, IFLA_LINKINFO);
+    nl_msg_put_string(&request, IFLA_INFO_KIND, kind);
+    infodata_off = nl_msg_start_nested(&request, IFLA_INFO_DATA);
+
+    /* tunnel unique info */
+    switch (type) {
+    case OVS_VPORT_TYPE_VXLAN:
+        nl_msg_put_u8(&request, IFLA_VXLAN_LEARNING, 0);
+        nl_msg_put_u8(&request, IFLA_VXLAN_COLLECT_METADATA, 1);
+        nl_msg_put_u8(&request, IFLA_VXLAN_UDP_ZERO_CSUM6_RX, 1);
+        if (tnl_cfg->exts & (1 << OVS_VXLAN_EXT_GBP)) {
+            nl_msg_put_flag(&request, IFLA_VXLAN_GBP);
+        }
+        if (tnl_cfg->exts & (1 << OVS_VXLAN_EXT_GPE)) {
+            nl_msg_put_flag(&request, IFLA_VXLAN_GPE);
+        }
+        nl_msg_put_be16(&request, IFLA_VXLAN_PORT, tnl_cfg->dst_port);
+        break;
+    case OVS_VPORT_TYPE_GRE:
+    case OVS_VPORT_TYPE_ERSPAN:
+    case OVS_VPORT_TYPE_IP6ERSPAN:
+    case OVS_VPORT_TYPE_IP6GRE:
+        nl_msg_put_flag(&request, IFLA_GRE_COLLECT_METADATA);
+        break;
+    case OVS_VPORT_TYPE_GENEVE:
+        nl_msg_put_flag(&request, IFLA_GENEVE_COLLECT_METADATA);
+        nl_msg_put_u8(&request, IFLA_GENEVE_UDP_ZERO_CSUM6_RX, 1);
+        nl_msg_put_be16(&request, IFLA_GENEVE_PORT, tnl_cfg->dst_port);
+        break;
+    case OVS_VPORT_TYPE_NETDEV:
+    case OVS_VPORT_TYPE_INTERNAL:
+    case OVS_VPORT_TYPE_LISP:
+    case OVS_VPORT_TYPE_STT:
+    case OVS_VPORT_TYPE_GTPU:
+    case OVS_VPORT_TYPE_UNSPEC:
+    case __OVS_VPORT_TYPE_MAX:
+    default:
+        err = EOPNOTSUPP;
+        goto exit;
+    }
+
+    nl_msg_end_nested(&request, infodata_off);
+    nl_msg_end_nested(&request, linkinfo_off);
+
+    err = nl_transact(NETLINK_ROUTE, &request, NULL);
+    if (!err && (type == OVS_VPORT_TYPE_GRE ||
+                 type == OVS_VPORT_TYPE_IP6GRE)) {
+        /* Work around a bug in kernel GRE driver, which ignores IFLA_MTU in
+         * RTM_NEWLINK, by setting the MTU again.  See
+         * https://bugzilla.redhat.com/show_bug.cgi?id=1488484.
+         *
+         * In case of MAX_MTU exceeds hw max MTU, retry a smaller value. */
+        int err2 = rtnl_set_mtu(name, MAX_MTU, &request);
+        if (err2) {
+            err2 = rtnl_set_mtu(name, 1450, &request);
+        }
+        if (err2) {
+            static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(1, 5);
+
+            VLOG_WARN_RL(&rl, "setting MTU of tunnel %s failed (%s)",
+                         name, ovs_strerror(err2));
+        }
+    }
+
+exit:
+    ofpbuf_uninit(&request);
+
+    return err;
+}
+
+int
+dpif_netlink_rtnl_port_create(struct netdev *netdev)
+{
+    const struct netdev_tunnel_config *tnl_cfg;
+    char namebuf[NETDEV_VPORT_NAME_BUFSIZE];
+    enum ovs_vport_type type;
+    const char *name;
+    const char *kind;
+    uint32_t flags;
+    int err;
+
+    type = netdev_to_ovs_vport_type(netdev_get_type(netdev));
+    tnl_cfg = netdev_get_tunnel_config(netdev);
+    if (!tnl_cfg) {
+        return EOPNOTSUPP;
+    }
+
+    kind = vport_type_to_kind(type, tnl_cfg);
+    if (!kind) {
+        return EOPNOTSUPP;
+    }
+
+    name = netdev_vport_get_dpif_port(netdev, namebuf, sizeof namebuf);
+    flags = NLM_F_REQUEST | NLM_F_ACK | NLM_F_CREATE | NLM_F_EXCL;
+
+    err = dpif_netlink_rtnl_create(tnl_cfg, name, type, kind, flags);
+
+    /* If the device exists, validate and/or attempt to recreate it. */
+    if (err == EEXIST) {
+        err = dpif_netlink_rtnl_verify(tnl_cfg, type, name);
+        if (!err) {
+            return 0;
+        }
+        err = dpif_netlink_rtnl_destroy(name);
+        if (err) {
+            static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(1, 5);
+
+            VLOG_WARN_RL(&rl, "RTNL device %s exists and cannot be "
+                         "deleted: %s", name, ovs_strerror(err));
+            return err;
+        }
+        err = dpif_netlink_rtnl_create(tnl_cfg, name, type, kind, flags);
+    }
+    if (err) {
+        return err;
+    }
+
+    err = dpif_netlink_rtnl_verify(tnl_cfg, type, name);
+    if (err) {
+        int err2 = dpif_netlink_rtnl_destroy(name);
+
+        if (err2) {
+            static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(1, 5);
+
+            VLOG_WARN_RL(&rl, "Failed to delete device %s during rtnl port "
+                         "creation: %s", name, ovs_strerror(err2));
+        }
+    }
+
+    return err;
+}
+
+
+static int
+dpif_netlink_rtnl_port_create_and_add(struct dpif_netlink *dpif,
+                                      struct netdev *netdev,
+                                      odp_port_t *port_nop)
+    OVS_REQ_WRLOCK(dpif->upcall_lock)
+{
+    static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(5, 20);
+    char namebuf[NETDEV_VPORT_NAME_BUFSIZE];
+    const char *name;
+    int error;
+
+    error = dpif_netlink_rtnl_port_create(netdev);
+    if (error) {
+        if (error != EOPNOTSUPP) {
+            VLOG_WARN_RL(&rl, "Failed to create %s with rtnetlink: %s",
+                         netdev_get_name(netdev), ovs_strerror(error));
+        }
+        return error;
+    }
+
+    name = netdev_vport_get_dpif_port(netdev, namebuf, sizeof namebuf);
+    error = dpif_netlink_port_add__(dpif, name, OVS_VPORT_TYPE_NETDEV, NULL,
+                                    port_nop);
+    if (error) {
+        dpif_netlink_rtnl_port_destroy(name, netdev_get_type(netdev));
+    }
+    return error;
+}
+
+static int
+dpif_netlink_port_add(struct dpif *dpif_, struct netdev *netdev,
+                      odp_port_t *port_nop)
+{
+    struct dpif_netlink *dpif = dpif_netlink_cast(dpif_);
+    int error = EOPNOTSUPP;
+
+    fat_rwlock_wrlock(&dpif->upcall_lock);
+    if (!ovs_tunnels_out_of_tree) {
+        error = dpif_netlink_rtnl_port_create_and_add(dpif, netdev, port_nop);
+    }
+    if (error) {
+        error = dpif_netlink_port_add_compat(dpif, netdev, port_nop);
+    }
+    fat_rwlock_unlock(&dpif->upcall_lock);
+
+    return error;
+}
+
+const struct dpif_class dpif_netlink_class = {
+    "system",
+    false,                      /* cleanup_required */
+    NULL,                       /* init */
+    dpif_netlink_enumerate,
+    NULL,
+    dpif_netlink_open,
+    dpif_netlink_close,
+    dpif_netlink_destroy,
+    dpif_netlink_run,
+    NULL,                       /* wait */
+    dpif_netlink_get_stats,
+    dpif_netlink_set_features,
+    dpif_netlink_port_add,
+    dpif_netlink_port_del,
+    NULL,                       /* port_set_config */
+    dpif_netlink_port_query_by_number,
+    dpif_netlink_port_query_by_name,
+    dpif_netlink_port_get_pid,
+    dpif_netlink_port_dump_start,
+    dpif_netlink_port_dump_next,
+    dpif_netlink_port_dump_done,
+    dpif_netlink_port_poll,
+    dpif_netlink_port_poll_wait,
+    dpif_netlink_flow_flush,
+    dpif_netlink_flow_dump_create,
+    dpif_netlink_flow_dump_destroy,
+    dpif_netlink_flow_dump_thread_create,
+    dpif_netlink_flow_dump_thread_destroy,
+    dpif_netlink_flow_dump_next,
+    dpif_netlink_operate,
+    dpif_netlink_recv_set,
+    dpif_netlink_handlers_set,
+    NULL,                       /* set_config */
+    dpif_netlink_queue_to_priority,
+    dpif_netlink_recv,
+    dpif_netlink_recv_wait,
+    dpif_netlink_recv_purge,
+    NULL,                       /* register_dp_purge_cb */
+    NULL,                       /* register_upcall_cb */
+    NULL,                       /* enable_upcall */
+    NULL,                       /* disable_upcall */
+    dpif_netlink_get_datapath_version, /* get_datapath_version */
+    dpif_netlink_ct_dump_start,
+    dpif_netlink_ct_dump_next,
+    dpif_netlink_ct_dump_done,
+    dpif_netlink_ct_flush,
+    NULL,                       /* ct_set_maxconns */
+    NULL,                       /* ct_get_maxconns */
+    NULL,                       /* ct_get_nconns */
+    NULL,                       /* ct_set_tcp_seq_chk */
+    NULL,                       /* ct_get_tcp_seq_chk */
+    dpif_netlink_ct_set_limits,
+    dpif_netlink_ct_get_limits,
+    dpif_netlink_ct_del_limits,
+    dpif_netlink_ct_set_timeout_policy,
+    dpif_netlink_ct_get_timeout_policy,
+    dpif_netlink_ct_del_timeout_policy,
+    dpif_netlink_ct_timeout_policy_dump_start,
+    dpif_netlink_ct_timeout_policy_dump_next,
+    dpif_netlink_ct_timeout_policy_dump_done,
+    dpif_netlink_ct_get_timeout_policy_name,
+    NULL,                       /* ipf_set_enabled */
+    NULL,                       /* ipf_set_min_frag */
+    NULL,                       /* ipf_set_max_nfrags */
+    NULL,                       /* ipf_get_status */
+    NULL,                       /* ipf_dump_start */
+    NULL,                       /* ipf_dump_next */
+    NULL,                       /* ipf_dump_done */
+    dpif_netlink_meter_get_features,
+    dpif_netlink_meter_set,
+    dpif_netlink_meter_get,
+    dpif_netlink_meter_del,
+    NULL,                       /* bond_add */
+    NULL,                       /* bond_del */
+    NULL,                       /* bond_stats_get */
+};
+
+static int
+dpif_netlink_port_add__(struct dpif_netlink *dpif, const char *name,
+                        enum ovs_vport_type type,
+                        struct ofpbuf *options,
+                        odp_port_t *port_nop)
+    OVS_REQ_WRLOCK(dpif->upcall_lock)
+{
+    struct dpif_netlink_vport request, reply;
+    struct ofpbuf *buf;
+    struct nl_sock *sock = NULL;
+    uint32_t upcall_pids = 0;
+    int error = 0;
+
+    /* per-cpu dispatch mode does not require a socket per vport. */
+    if (!dpif_netlink_upcall_per_cpu(dpif)) {
+        if (dpif->handlers) {
+            error = create_nl_sock(dpif, &sock);
+            if (error) {
+                return error;
+            }
+        }
+        if (sock) {
+            upcall_pids = nl_sock_pid(sock);
+        }
+    }
+
+    dpif_netlink_vport_init(&request);
+    request.cmd = OVS_VPORT_CMD_NEW;
+    request.dp_ifindex = dpif->dp_ifindex;
+    request.type = type;
+    request.name = name;
+
+    request.port_no = *port_nop;
+    request.n_upcall_pids = 1;
+    request.upcall_pids = &upcall_pids;
+
+    if (options) {
+        request.options = options->data;
+        request.options_len = options->size;
+    }
+
+    error = dpif_netlink_vport_transact(&request, &reply, &buf);
+    if (!error) {
+        *port_nop = reply.port_no;
+    } else {
+        if (error == EBUSY && *port_nop != ODPP_NONE) {
+            VLOG_INFO("%s: requested port %"PRIu32" is in use",
+                      dpif_name(&dpif->dpif), *port_nop);
+        }
+
+        close_nl_sock(sock);
+        goto exit;
+    }
+
+    if (!dpif_netlink_upcall_per_cpu(dpif)) {
+        error = vport_add_channel(dpif, *port_nop, sock);
+        if (error) {
+            VLOG_INFO("%s: could not add channel for port %s",
+                        dpif_name(&dpif->dpif), name);
+
+            /* Delete the port. */
+            dpif_netlink_vport_init(&request);
+            request.cmd = OVS_VPORT_CMD_DEL;
+            request.dp_ifindex = dpif->dp_ifindex;
+            request.port_no = *port_nop;
+            dpif_netlink_vport_transact(&request, NULL, NULL);
+            close_nl_sock(sock);
+            goto exit;
+        }
+    }
+
+exit:
+    ofpbuf_delete(buf);
+
+    return error;
+}
+
+int
+dpif_port_add(struct dpif *dpif, struct netdev *netdev, odp_port_t *port_nop)
+{
+    const char *netdev_name = netdev_get_name(netdev);
+    odp_port_t port_no = ODPP_NONE;
+    int error;
+
+    COVERAGE_INC(dpif_port_add);
+
+    if (port_nop) {
+        port_no = *port_nop;
+    }
+
+    error = dpif->dpif_class->port_add(dpif, netdev, &port_no);
+    if (!error) {
+        VLOG_DBG_RL(&dpmsg_rl, "%s: added %s as port %"PRIu32,
+                    dpif_name(dpif), netdev_name, port_no);
+
+        if (!dpif_is_tap_port(netdev_get_type(netdev))) {
+
+            const char *dpif_type_str = dpif_normalize_type(dpif_type(dpif));
+            struct dpif_port dpif_port;
+
+            dpif_port.type = CONST_CAST(char *, netdev_get_type(netdev));
+            dpif_port.name = CONST_CAST(char *, netdev_name);
+            dpif_port.port_no = port_no;
+            netdev_ports_insert(netdev, dpif_type_str, &dpif_port);
+        }
+    } else {
+        VLOG_WARN_RL(&error_rl, "%s: failed to add %s as port: %s",
+                     dpif_name(dpif), netdev_name, ovs_strerror(error));
+        port_no = ODPP_NONE;
+    }
+    if (port_nop) {
+        *port_nop = port_no;
+    }
+    return error;
+}
+
+static int
+dpctl_add_dp(int argc, const char *argv[],
+             struct dpctl_params *dpctl_p)
+{
+    struct dpif *dpif;
+    int error;
+
+    error = parsed_dpif_open(argv[1], true, &dpif);
+    if (error) {
+        dpctl_error(dpctl_p, error, "add_dp");
+        return error;
+    }
+    dpif_close(dpif);
+    if (argc > 2) {
+        error = dpctl_add_if(argc, argv, dpctl_p);
+    }
+    return error;
+}
+
+///////////////////////
+
+static const struct dpctl_command all_commands[] = {
+    { "add-dp", "dp [iface...]", 1, INT_MAX, dpctl_add_dp, DP_RW },
+    { "del-dp", "dp", 1, 1, dpctl_del_dp, DP_RW },
+    { "add-if", "dp iface...", 2, INT_MAX, dpctl_add_if, DP_RW },
+    { "del-if", "dp iface...", 2, INT_MAX, dpctl_del_if, DP_RW },
+    { "set-if", "dp iface...", 2, INT_MAX, dpctl_set_if, DP_RW },
+    { "dump-dps", "", 0, 0, dpctl_dump_dps, DP_RO },
+    { "show", "[dp...]", 0, INT_MAX, dpctl_show, DP_RO },
+    { "dump-flows", "[dp] [filter=..] [type=..]",
+      0, 3, dpctl_dump_flows, DP_RO },
+    { "add-flow", "[dp] flow actions", 2, 3, dpctl_add_flow, DP_RW },
+    { "mod-flow", "[dp] flow actions", 2, 3, dpctl_mod_flow, DP_RW },
+    { "get-flow", "[dp] ufid", 1, 2, dpctl_get_flow, DP_RO },
+    { "del-flow", "[dp] flow", 1, 2, dpctl_del_flow, DP_RW },
+    { "del-flows", "[dp]", 0, 1, dpctl_del_flows, DP_RW },
+    { "dump-conntrack", "[dp] [zone=N]", 0, 2, dpctl_dump_conntrack, DP_RO },
+    { "flush-conntrack", "[dp] [zone=N] [ct-tuple]", 0, 3,
+      dpctl_flush_conntrack, DP_RW },
+    { "ct-stats-show", "[dp] [zone=N]",
+      0, 3, dpctl_ct_stats_show, DP_RO },
+    { "ct-bkts", "[dp] [gt=N]", 0, 2, dpctl_ct_bkts, DP_RO },
+    { "ct-set-maxconns", "[dp] maxconns", 1, 2, dpctl_ct_set_maxconns,
+       DP_RW },
+    { "ct-get-maxconns", "[dp]", 0, 1, dpctl_ct_get_maxconns, DP_RO },
+    { "ct-get-nconns", "[dp]", 0, 1, dpctl_ct_get_nconns, DP_RO },
+    { "ct-enable-tcp-seq-chk", "[dp]", 0, 1, dpctl_ct_enable_tcp_seq_chk,
+       DP_RW },
+    { "ct-disable-tcp-seq-chk", "[dp]", 0, 1, dpctl_ct_disable_tcp_seq_chk,
+       DP_RW },
+    { "ct-get-tcp-seq-chk", "[dp]", 0, 1, dpctl_ct_get_tcp_seq_chk, DP_RO },
+    { "ct-set-limits", "[dp] [default=L] [zone=N,limit=L]...", 1, INT_MAX,
+        dpctl_ct_set_limits, DP_RO },
+    { "ct-del-limits", "[dp] zone=N1[,N2]...", 1, 2, dpctl_ct_del_limits,
+        DP_RO },
+    { "ct-get-limits", "[dp] [zone=N1[,N2]...]", 0, 2, dpctl_ct_get_limits,
+        DP_RO },
+    { "ipf-set-enabled", "[dp] v4|v6", 1, 2, dpctl_ipf_set_enabled, DP_RW },
+    { "ipf-set-disabled", "[dp] v4|v6", 1, 2, dpctl_ipf_set_disabled, DP_RW },
+    { "ipf-set-min-frag", "[dp] v4|v6 minfragment", 2, 3,
+       dpctl_ipf_set_min_frag, DP_RW },
+    { "ipf-set-max-nfrags", "[dp] maxfrags", 1, 2,
+       dpctl_ipf_set_max_nfrags, DP_RW },
+    { "ipf-get-status", "[dp]", 0, 1, dpctl_ct_ipf_get_status,
+       DP_RO },
+    { "help", "", 0, INT_MAX, dpctl_help, DP_RO },
+    { "list-commands", "", 0, INT_MAX, dpctl_list_commands, DP_RO },
+
+    /* Undocumented commands for testing. */
+    { "parse-actions", "actions", 1, INT_MAX, dpctl_parse_actions, DP_RO },
+    { "normalize-actions", "actions",
+      2, INT_MAX, dpctl_normalize_actions, DP_RO },
+
+    { NULL, NULL, 0, 0, NULL, DP_RO },
+};
+
+解析add-flow
+
+static int
+dpctl_add_flow(int argc, const char *argv[], struct dpctl_params *dpctl_p)
+{
+    return dpctl_put_flow(argc, argv, DPIF_FP_CREATE, dpctl_p);
+}
+
+static int
+dpctl_put_flow(int argc, const char *argv[], enum dpif_flow_put_flags flags,
+               struct dpctl_params *dpctl_p)
+{
+    const char *key_s = argv[argc - 2];
+    const char *actions_s = argv[argc - 1];
+    struct dpif_flow_stats stats;
+    struct dpif_port dpif_port;
+    struct dpif_port_dump port_dump;
+    struct ofpbuf actions;
+    struct ofpbuf key;
+    struct ofpbuf mask;
+    struct dpif *dpif;
+    ovs_u128 ufid;
+    bool ufid_present;
+    struct simap port_names;
+    int n, error;
+
+    error = opt_dpif_open(argc, argv, dpctl_p, 4, &dpif);
+    if (error) {
+        return error;
+    }
+
+    ufid_present = false;
+    n = odp_ufid_from_string(key_s, &ufid);
+    if (n < 0) {
+        dpctl_error(dpctl_p, -n, "parsing flow ufid");
+        return -n;
+    } else if (n) {
+        key_s += n;
+        ufid_present = true;
+    }
+
+    simap_init(&port_names);
+    DPIF_PORT_FOR_EACH (&dpif_port, &port_dump, dpif) {
+        simap_put(&port_names, dpif_port.name, odp_to_u32(dpif_port.port_no));
+    }
+
+    ofpbuf_init(&key, 0);
+    ofpbuf_init(&mask, 0);
+    char *error_s;
+    error = odp_flow_from_string(key_s, &port_names, &key, &mask, &error_s);
+    simap_destroy(&port_names);
+    if (error) {
+        dpctl_error(dpctl_p, error, "parsing flow key (%s)", error_s);
+        free(error_s);
+        goto out_freekeymask;
+    }
+
+    ofpbuf_init(&actions, 0);
+    error = odp_actions_from_string(actions_s, NULL, &actions);
+    if (error) {
+        dpctl_error(dpctl_p, error, "parsing actions");
+        goto out_freeactions;
+    }
+
+    if (!ufid_present && dpctl_p->is_appctl) {
+        /* Generating UFID for this flow so it could be offloaded to HW.  We're
+         * not doing that if invoked from ovs-dpctl utility because
+         * odp_flow_key_hash() uses randomly generated base for flow hashes
+         * that will be different for each invocation.  And, anyway, offloading
+         * is only available via appctl. */
+        odp_flow_key_hash(key.data, key.size, &ufid);
+        ufid_present = true;
+    }
+
+    /* The flow will be added on all pmds currently in the datapath. */
+    error = dpif_flow_put(dpif, flags,
+                          key.data, key.size,
+                          mask.size == 0 ? NULL : mask.data,
+                          mask.size, actions.data,
+                          actions.size, ufid_present ? &ufid : NULL,
+                          PMD_ID_NULL,
+                          dpctl_p->print_statistics ? &stats : NULL);
+
+    if (error) {
+        dpctl_error(dpctl_p, error, "updating flow table");
+        goto out_freeactions;
+    }
+
+    if (dpctl_p->print_statistics) {
+        struct ds s;
+
+        ds_init(&s);
+        dpif_flow_stats_format(&stats, &s);
+        dpctl_print(dpctl_p, "%s\n", ds_cstr(&s));
+        ds_destroy(&s);
+    }
+
+out_freeactions:
+    ofpbuf_uninit(&actions);
+out_freekeymask:
+    ofpbuf_uninit(&mask);
+    ofpbuf_uninit(&key);
+    dpif_close(dpif);
+    return error;
+}
+
+/* A dpif_operate() wrapper for performing a single DPIF_OP_FLOW_PUT. */
+int
+dpif_flow_put(struct dpif *dpif, enum dpif_flow_put_flags flags,
+              const struct nlattr *key, size_t key_len,
+              const struct nlattr *mask, size_t mask_len,
+              const struct nlattr *actions, size_t actions_len,
+              const ovs_u128 *ufid, const unsigned pmd_id,
+              struct dpif_flow_stats *stats)
+{
+    struct dpif_op *opp;
+    struct dpif_op op;
+
+    op.type = DPIF_OP_FLOW_PUT;
+    op.flow_put.flags = flags;
+    op.flow_put.key = key;
+    op.flow_put.key_len = key_len;
+    op.flow_put.mask = mask;
+    op.flow_put.mask_len = mask_len;
+    op.flow_put.actions = actions;
+    op.flow_put.actions_len = actions_len;
+    op.flow_put.ufid = ufid;
+    op.flow_put.pmd_id = pmd_id;
+    op.flow_put.stats = stats;
+
+    opp = &op;
+    dpif_operate(dpif, &opp, 1, DPIF_OFFLOAD_AUTO);
+
+    return op.error;
+}
+
+解析add-dp和add-if
+
+static int
+dpctl_add_dp(int argc, const char *argv[],
+             struct dpctl_params *dpctl_p)
+{
+    struct dpif *dpif;
+    int error;
+
+    error = parsed_dpif_open(argv[1], true, &dpif);
+    if (error) {
+        dpctl_error(dpctl_p, error, "add_dp");
+        return error;
+    }
+    dpif_close(dpif);
+    if (argc > 2) {
+        error = dpctl_add_if(argc, argv, dpctl_p);
+    }
+    return error;
+}
+
+static int
+dpctl_add_if(int argc OVS_UNUSED, const char *argv[],
+             struct dpctl_params *dpctl_p)
+{
+    struct dpif *dpif;
+    int i, error, lasterror = 0;
+
+    error = parsed_dpif_open(argv[1], false, &dpif);
+    if (error) {
+        dpctl_error(dpctl_p, error, "opening datapath");
+        return error;
+    }
+    for (i = 2; i < argc; i++) {
+        const char *name, *type;
+        char *save_ptr = NULL, *argcopy;
+        struct netdev *netdev = NULL;
+        struct smap args;
+        odp_port_t port_no = ODPP_NONE;
+        char *option;
+
+        argcopy = xstrdup(argv[i]);
+        name = strtok_r(argcopy, ",", &save_ptr);
+        type = "system";
+
+        if (!name) {
+            dpctl_error(dpctl_p, 0, "%s is not a valid network device name",
+                        argv[i]);
+            error = EINVAL;
+            goto next;
+        }
+
+        smap_init(&args);
+        while ((option = strtok_r(NULL, ",", &save_ptr)) != NULL) {
+            char *save_ptr_2 = NULL;
+            char *key, *value;
+
+            key = strtok_r(option, "=", &save_ptr_2);
+            value = strtok_r(NULL, "", &save_ptr_2);
+            if (!value) {
+                value = "";
+            }
+
+            if (!strcmp(key, "type")) {
+                type = value;
+            } else if (!strcmp(key, "port_no")) {
+                port_no = u32_to_odp(atoi(value));
+            } else if (!smap_add_once(&args, key, value)) {
+                dpctl_error(dpctl_p, 0, "duplicate \"%s\" option", key);
+            }
+        }
+
+        error = netdev_open(name, type, &netdev);
+        if (error) {
+            dpctl_error(dpctl_p, error, "%s: failed to open network device",
+                        name);
+            goto next_destroy_args;
+        }
+
+        error = netdev_set_config(netdev, &args, NULL);
+        if (error) {
+            goto next_destroy_args;
+        }
+
+        error = dpif_port_add(dpif, netdev, &port_no);
+        if (error) {
+            dpctl_error(dpctl_p, error, "adding %s to %s failed", name,
+                        argv[1]);
+            goto next_destroy_args;
+        }
+
+        error = if_up(netdev);
+        if (error) {
+            dpctl_error(dpctl_p, error, "%s: failed bringing interface up",
+                        name);
+        }
+
+next_destroy_args:
+        netdev_close(netdev);
+        smap_destroy(&args);
+next:
+        free(argcopy);
+        if (error) {
+            lasterror = error;
+        }
+    }
+    dpif_close(dpif);
+
+    return lasterror;
+}
+
+
+int
+dpif_port_add(struct dpif *dpif, struct netdev *netdev, odp_port_t *port_nop)
+{
+    const char *netdev_name = netdev_get_name(netdev);
+    odp_port_t port_no = ODPP_NONE;
+    int error;
+
+    COVERAGE_INC(dpif_port_add);
+
+    if (port_nop) {
+        port_no = *port_nop;
+    }
+
+    error = dpif->dpif_class->port_add(dpif, netdev, &port_no);
+    if (!error) {
+        VLOG_DBG_RL(&dpmsg_rl, "%s: added %s as port %"PRIu32,
+                    dpif_name(dpif), netdev_name, port_no);
+
+        if (!dpif_is_tap_port(netdev_get_type(netdev))) {
+
+            const char *dpif_type_str = dpif_normalize_type(dpif_type(dpif));
+            struct dpif_port dpif_port;
+
+            dpif_port.type = CONST_CAST(char *, netdev_get_type(netdev));
+            dpif_port.name = CONST_CAST(char *, netdev_name);
+            dpif_port.port_no = port_no;
+            netdev_ports_insert(netdev, dpif_type_str, &dpif_port);
+        }
+    } else {
+        VLOG_WARN_RL(&error_rl, "%s: failed to add %s as port: %s",
+                     dpif_name(dpif), netdev_name, ovs_strerror(error));
+        port_no = ODPP_NONE;
+    }
+    if (port_nop) {
+        *port_nop = port_no;
+    }
+    return error;
+}
+
+解析ct-set-limits
+
+static int
+dpctl_ct_set_limits(int argc, const char *argv[],
+                    struct dpctl_params *dpctl_p)
+{
+    struct dpif *dpif;
+    struct ds ds = DS_EMPTY_INITIALIZER;
+    int i =  dp_arg_exists(argc, argv) ? 2 : 1;
+    uint32_t default_limit, *p_default_limit = NULL;
+    struct ovs_list zone_limits = OVS_LIST_INITIALIZER(&zone_limits);
+
+    int error = opt_dpif_open(argc, argv, dpctl_p, INT_MAX, &dpif);
+    if (error) {
+        return error;
+    }
+
+    /* Parse default limit */
+    if (!strncmp(argv[i], "default=", 8)) {
+        if (ovs_scan(argv[i], "default=%"SCNu32, &default_limit)) {
+            p_default_limit = &default_limit;
+            i++;
+        } else {
+            ds_put_cstr(&ds, "invalid default limit");
+            error = EINVAL;
+            goto error;
+        }
+    }
+
+    /* Parse ct zone limit tuples */
+    while (i < argc) {
+        uint16_t zone;
+        uint32_t limit;
+        if (!ct_dpif_parse_zone_limit_tuple(argv[i++], &zone, &limit, &ds)) {
+            error = EINVAL;
+            goto error;
+        }
+        ct_dpif_push_zone_limit(&zone_limits, zone, limit, 0);
+    }
+
+    error = ct_dpif_set_limits(dpif, p_default_limit, &zone_limits);
+    if (!error) {
+        ct_dpif_free_zone_limits(&zone_limits);
+        dpif_close(dpif);
+        return 0;
+    } else {
+        ds_put_cstr(&ds, "failed to set conntrack limit");
+    }
+
+error:
+    dpctl_error(dpctl_p, error, "%s", ds_cstr(&ds));
+    ds_destroy(&ds);
+    ct_dpif_free_zone_limits(&zone_limits);
+    dpif_close(dpif);
+    return error;
+}
+
+int
+ct_dpif_set_limits(struct dpif *dpif, const uint32_t *default_limit,
+                   const struct ovs_list *zone_limits)
+{
+    return (dpif->dpif_class->ct_set_limits
+            ? dpif->dpif_class->ct_set_limits(dpif, default_limit,
+                                              zone_limits)
+            : EOPNOTSUPP);
+}
+
+所有的dpctl命令都会调用opt_dpif_open(argc, argv, dpctl_p, 4, &dpif);获取struct dpif *dpif对象
+然后调用dpif->dpif_class->XXXX进行设置
+
+dpif_class 是一个抽象接口，它包含一组函数指针的定义。当前版本 OVS 有两个结构实现了这个接口：dpif_netlink 和 dpif_netdev
+
+dpif_class类型一dpif_netlink_class(netlink) 内核版
+
+const struct dpif_class dpif_netlink_class = {
+    "system",
+    false,                      /* cleanup_required */
+    false,                      /* synced_dp_layers */
+    NULL,                       /* init */
+    dpif_netlink_enumerate,
+    NULL,
+    dpif_netlink_open,
+    dpif_netlink_close,
+    dpif_netlink_destroy,
+    dpif_netlink_run,
+    NULL,                       /* wait */
+    dpif_netlink_get_stats,
+    dpif_netlink_set_features,
+    dpif_netlink_port_add,
+    dpif_netlink_port_del,
+    NULL,                       /* port_set_config */
+    dpif_netlink_port_query_by_number,
+    dpif_netlink_port_query_by_name,
+    dpif_netlink_port_get_pid,
+    dpif_netlink_port_dump_start,
+    dpif_netlink_port_dump_next,
+    dpif_netlink_port_dump_done,
+    dpif_netlink_port_poll,
+    dpif_netlink_port_poll_wait,
+    dpif_netlink_flow_flush,
+    dpif_netlink_flow_dump_create,
+    dpif_netlink_flow_dump_destroy,
+    dpif_netlink_flow_dump_thread_create,
+    dpif_netlink_flow_dump_thread_destroy,
+    dpif_netlink_flow_dump_next,
+    dpif_netlink_operate,
+    NULL,                       /* offload_stats_get */
+    dpif_netlink_recv_set,
+    dpif_netlink_handlers_set,
+    dpif_netlink_number_handlers_required,
+    NULL,                       /* set_config */
+    dpif_netlink_queue_to_priority,
+    dpif_netlink_recv,
+    dpif_netlink_recv_wait,
+    dpif_netlink_recv_purge,
+    NULL,                       /* register_dp_purge_cb */
+    NULL,                       /* register_upcall_cb */
+    NULL,                       /* enable_upcall */
+    NULL,                       /* disable_upcall */
+    dpif_netlink_get_datapath_version, /* get_datapath_version */
+    dpif_netlink_ct_dump_start,
+    dpif_netlink_ct_dump_next,
+    dpif_netlink_ct_dump_done,
+    NULL,                       /* ct_exp_dump_start */
+    NULL,                       /* ct_exp_dump_next */
+    NULL,                       /* ct_exp_dump_done */
+    dpif_netlink_ct_flush,
+    NULL,                       /* ct_set_maxconns */
+    NULL,                       /* ct_get_maxconns */
+    NULL,                       /* ct_get_nconns */
+    NULL,                       /* ct_set_tcp_seq_chk */
+    NULL,                       /* ct_get_tcp_seq_chk */
+    NULL,                       /* ct_set_sweep_interval */
+    NULL,                       /* ct_get_sweep_interval */
+    dpif_netlink_ct_set_limits,
+    dpif_netlink_ct_get_limits,
+    dpif_netlink_ct_del_limits,
+    dpif_netlink_ct_set_timeout_policy,
+    dpif_netlink_ct_get_timeout_policy,
+    dpif_netlink_ct_del_timeout_policy,
+    dpif_netlink_ct_timeout_policy_dump_start,
+    dpif_netlink_ct_timeout_policy_dump_next,
+    dpif_netlink_ct_timeout_policy_dump_done,
+    dpif_netlink_ct_get_timeout_policy_name,
+    dpif_netlink_ct_get_features,
+    NULL,                       /* ipf_set_enabled */
+    NULL,                       /* ipf_set_min_frag */
+    NULL,                       /* ipf_set_max_nfrags */
+    NULL,                       /* ipf_get_status */
+    NULL,                       /* ipf_dump_start */
+    NULL,                       /* ipf_dump_next */
+    NULL,                       /* ipf_dump_done */
+    dpif_netlink_meter_get_features,
+    dpif_netlink_meter_set,
+    dpif_netlink_meter_get,
+    dpif_netlink_meter_del,
+    NULL,                       /* bond_add */
+    NULL,                       /* bond_del */
+    NULL,                       /* bond_stats_get */
+    dpif_netlink_cache_get_supported_levels,
+    dpif_netlink_cache_get_name,
+    dpif_netlink_cache_get_size,
+    dpif_netlink_cache_set_size,
+};
+
+dpif_class 类型二dpif_netdev_class(netdev) DPDK版
+
+const struct dpif_class dpif_netdev_class = {
+    "netdev",
+    true,                       /* cleanup_required */
+    true,                       /* synced_dp_layers */
+    dpif_netdev_init,
+    dpif_netdev_enumerate,
+    dpif_netdev_port_open_type,
+    dpif_netdev_open,
+    dpif_netdev_close,
+    dpif_netdev_destroy,
+    dpif_netdev_run,
+    dpif_netdev_wait,
+    dpif_netdev_get_stats,
+    NULL,                      /* set_features */
+    dpif_netdev_port_add,
+    dpif_netdev_port_del,
+    dpif_netdev_port_set_config,
+    dpif_netdev_port_query_by_number,
+    dpif_netdev_port_query_by_name,
+    NULL,                       /* port_get_pid */
+    dpif_netdev_port_dump_start,
+    dpif_netdev_port_dump_next,
+    dpif_netdev_port_dump_done,
+    dpif_netdev_port_poll,
+    dpif_netdev_port_poll_wait,
+    dpif_netdev_flow_flush,
+    dpif_netdev_flow_dump_create,
+    dpif_netdev_flow_dump_destroy,
+    dpif_netdev_flow_dump_thread_create,
+    dpif_netdev_flow_dump_thread_destroy,
+    dpif_netdev_flow_dump_next,
+    dpif_netdev_operate,
+    dpif_netdev_offload_stats_get,
+    NULL,                       /* recv_set */
+    NULL,                       /* handlers_set */
+    NULL,                       /* number_handlers_required */
+    dpif_netdev_set_config,
+    dpif_netdev_queue_to_priority,
+    NULL,                       /* recv */
+    NULL,                       /* recv_wait */
+    NULL,                       /* recv_purge */
+    dpif_netdev_register_dp_purge_cb,
+    dpif_netdev_register_upcall_cb,
+    dpif_netdev_enable_upcall,
+    dpif_netdev_disable_upcall,
+    dpif_netdev_get_datapath_version,
+    dpif_netdev_ct_dump_start,
+    dpif_netdev_ct_dump_next,
+    dpif_netdev_ct_dump_done,
+    dpif_netdev_ct_exp_dump_start,
+    dpif_netdev_ct_exp_dump_next,
+    dpif_netdev_ct_exp_dump_done,
+    dpif_netdev_ct_flush,
+    dpif_netdev_ct_set_maxconns,
+    dpif_netdev_ct_get_maxconns,
+    dpif_netdev_ct_get_nconns,
+    dpif_netdev_ct_set_tcp_seq_chk,
+    dpif_netdev_ct_get_tcp_seq_chk,
+    dpif_netdev_ct_set_sweep_interval,
+    dpif_netdev_ct_get_sweep_interval,
+    dpif_netdev_ct_set_limits,
+    dpif_netdev_ct_get_limits,
+    dpif_netdev_ct_del_limits,
+    dpif_netdev_ct_set_timeout_policy,
+    dpif_netdev_ct_get_timeout_policy,
+    dpif_netdev_ct_del_timeout_policy,
+    NULL,                       /* ct_timeout_policy_dump_start */
+    NULL,                       /* ct_timeout_policy_dump_next */
+    NULL,                       /* ct_timeout_policy_dump_done */
+    dpif_netdev_ct_get_timeout_policy_name,
+    dpif_netdev_ct_get_features,
+    dpif_netdev_ipf_set_enabled,
+    dpif_netdev_ipf_set_min_frag,
+    dpif_netdev_ipf_set_max_nfrags,
+    dpif_netdev_ipf_get_status,
+    dpif_netdev_ipf_dump_start,
+    dpif_netdev_ipf_dump_next,
+    dpif_netdev_ipf_dump_done,
+    dpif_netdev_meter_get_features,
+    dpif_netdev_meter_set,
+    dpif_netdev_meter_get,
+    dpif_netdev_meter_del,
+    dpif_netdev_bond_add,
+    dpif_netdev_bond_del,
+    dpif_netdev_bond_stats_get,
+    NULL,                       /* cache_get_supported_levels */
+    NULL,                       /* cache_get_name */
+    NULL,                       /* cache_get_size */
+    NULL,                       /* cache_set_size */
+};
+
+解析meter_set
+
+int (*meter_set)(struct dpif *, ofproto_meter_id meter_id,
+                     struct ofputil_meter_config *);
+
+int
+dpif_meter_set(struct dpif *dpif, ofproto_meter_id meter_id,
+               struct ofputil_meter_config *config)
+{
+    COVERAGE_INC(dpif_meter_set);
+
+    if (!(config->flags & (OFPMF13_KBPS | OFPMF13_PKTPS))) {
+        return EBADF; /* Rate unit type not set. */
+    }
+
+    if ((config->flags & OFPMF13_KBPS) && (config->flags & OFPMF13_PKTPS)) {
+        return EBADF; /* Both rate units may not be set. */
+    }
+
+    if (config->n_bands == 0) {
+        return EINVAL;
+    }
+
+    for (size_t i = 0; i < config->n_bands; i++) {
+        if (config->bands[i].rate == 0) {
+            return EDOM; /* Rate must be non-zero */
+        }
+    }
+
+    int error = dpif->dpif_class->meter_set(dpif, meter_id, config);
+    if (!error) {
+        VLOG_DBG_RL(&dpmsg_rl, "%s: DPIF meter %"PRIu32" set",
+                    dpif_name(dpif), meter_id.uint32);
+    } else {
+        VLOG_WARN_RL(&error_rl, "%s: failed to set DPIF meter %"PRIu32": %s",
+                     dpif_name(dpif), meter_id.uint32, ovs_strerror(error));
+    }
+    return error;
+}
+
+static enum ofperr
+meter_set(struct ofproto *ofproto_, ofproto_meter_id *meter_id,
+          struct ofputil_meter_config *config)
+{
+    struct ofproto_dpif *ofproto = ofproto_dpif_cast(ofproto_);
+
+    /* Provider ID unknown. Use backer to allocate a new DP meter */
+    if (meter_id->uint32 == UINT32_MAX) {
+        if (!ofproto->backer->meter_ids) {
+            return OFPERR_OFPMMFC_OUT_OF_METERS; /* Meters not supported. */
+        }
+
+        if(!id_pool_alloc_id(ofproto->backer->meter_ids, &meter_id->uint32)) {
+            return OFPERR_OFPMMFC_OUT_OF_METERS; /* Can't allocate meter. */
+        }
+    }
+
+    switch (dpif_meter_set(ofproto->backer->dpif, *meter_id, config)) {
+    case 0:
+        return 0;
+    case EFBIG: /* meter_id out of range */
+    case ENOMEM: /* Cannot allocate meter */
+        return OFPERR_OFPMMFC_OUT_OF_METERS;
+    case EBADF: /* Unsupported flags */
+        return OFPERR_OFPMMFC_BAD_FLAGS;
+    case EINVAL: /* Too many bands */
+        return OFPERR_OFPMMFC_OUT_OF_BANDS;
+    case ENODEV: /* Unsupported band type */
+        return OFPERR_OFPMMFC_BAD_BAND;
+    case EDOM: /* Rate must be non-zero */
+        return OFPERR_OFPMMFC_BAD_RATE;
+    default:
+        return OFPERR_OFPMMFC_UNKNOWN;
+    }
+}
+
+static enum ofperr
+handle_add_meter(struct ofproto *ofproto, struct ofputil_meter_mod *mm)
+{
+    ofproto_meter_id provider_meter_id = { UINT32_MAX };
+    struct meter *meter = ofproto_get_meter(ofproto, mm->meter.meter_id);
+    enum ofperr error;
+
+    if (meter) {
+        return OFPERR_OFPMMFC_METER_EXISTS;
+    }
+
+    error = ofproto->ofproto_class->meter_set(ofproto, &provider_meter_id,
+                                              &mm->meter);
+    if (!error) {
+        ovs_assert(provider_meter_id.uint32 != UINT32_MAX);
+        meter = meter_create(&mm->meter, provider_meter_id);
+        ofproto_add_meter(ofproto, meter);
+    }
+    return error;
+}
+
+static enum ofperr
+handle_modify_meter(struct ofproto *ofproto, struct ofputil_meter_mod *mm)
+{
+    struct meter *meter = ofproto_get_meter(ofproto, mm->meter.meter_id);
+    enum ofperr error;
+    uint32_t provider_meter_id;
+
+    if (!meter) {
+        return OFPERR_OFPMMFC_UNKNOWN_METER;
+    }
+
+    provider_meter_id = meter->provider_meter_id.uint32;
+    error = ofproto->ofproto_class->meter_set(ofproto,
+                                              &meter->provider_meter_id,
+                                              &mm->meter);
+    ovs_assert(meter->provider_meter_id.uint32 == provider_meter_id);
+    if (!error) {
+        meter_update(meter, &mm->meter);
+    }
+    return error;
+}
+
+//////////////将对内核datapath的配置放在ovs-dpctl中
+
+https://www.man7.org/linux/man-pages/man8/ovs-dpctl.8.html
+
+The ovs-dpctl program can create, modify, and delete Open vSwitch
+       datapaths.  A single machine may host any number of datapaths.
+
+       This program works only with datapaths that are implemented
+       outside of ovs-vswitchd itself, such as the Linux and Windows
+       kernel-based datapaths.  To manage datapaths that are integrated
+       into ovs-vswitchd, such as the userspace (netdev) datapath, use
+       ovs-appctl(8) to invoke the dpctl/* commands, which are
+       documented in ovs-vswitchd(8).
+
+https://www.man7.org/linux/man-pages/man8/ovs-vswitchd.8.html
+
+DPCTL DATAPATH DEBUGGING COMMANDS
+       The primary way to configure ovs-vswitchd is through the Open
+       vSwitch database, e.g. using ovs-vsctl(8).  These commands
+       provide a debugging interface for managing datapaths.  They
+       implement the same features (and syntax) as ovs-dpctl(8).  Unlike
+       ovs-dpctl(8), these commands work with datapaths that are
+       integrated into ovs-vswitchd (e.g. the netdev datapath type).
+
+       Do not use commands to add or remove or modify datapaths if
+       ovs-vswitchd is running because this interferes with
+       ovs-vswitchd's own datapath management.
+
+       dpctl/add-dp dp [netdev[,option]...]
+       dpctl/del-dp dp
+       dpctl/add-if dp netdev[,option]...
+
+[root@testovs ~]# ovs-dpctl show
+system@ovs-system:
+  lookups: hit:400 missed:141 lost:0
+  flows: 0
+  masks: hit:430 total:0 hit/pkt:0.79
+  port 0: ovs-system (internal)
+  port 1: br-int (internal)
+  port 2: vnic1-br-int
+  port 3: vnic0-br-int
+[root@testovs ~]# ovs-appctl dpctl/show
+system@ovs-system:
+  lookups: hit:400 missed:141 lost:0
+  flows: 0
+  masks: hit:430 total:0 hit/pkt:0.79
+  port 0: ovs-system (internal)
+  port 1: br-int (internal)
+  port 2: vnic1-br-int
+  port 3: vnic0-br-int
+
+
+[root@testovs ~]# ovs-dpctl dump-flows ovs-system
+2024-04-05T09:13:35Z|00001|odp_util|INFO|format_odp_handle_gw_action
+recirc_id(0),in_port(2),eth(),eth_type(0x0800),ipv4(frag=no), packets:2, bytes:196, used:4.342s, actions:handle_gw(pipeline1=1000000,pipeline2=2000000,pipeline3=3000000,pipeline4=4000000,pipeline5=5000000),3
+2024-04-05T09:13:35Z|00002|odp_util|INFO|format_odp_config_gw_action
+recirc_id(0),in_port(3),eth(),eth_type(0x0800),ipv4(frag=no), packets:2, bytes:196, used:4.343s, actions:config_gw(param1=1,param2=2000000,param3=8e:e4:45:55:eb:ba,param4=4,param5=5000000,param6=8e:e4:45:55:eb:ba,param7=7,param8=8000000,param9=8e:e4:45:55:eb:ba),2
+2024-04-05T09:13:35Z|00003|odp_util|INFO|format_odp_handle_gw_action
+recirc_id(0),in_port(2),eth(),eth_type(0x0806), packets:0, bytes:0, used:never, actions:handle_gw(pipeline1=1000000,pipeline2=2000000,pipeline3=3000000,pipeline4=4000000,pipeline5=5000000),3
+2024-04-05T09:13:35Z|00004|odp_util|INFO|format_odp_config_gw_action
+recirc_id(0),in_port(3),eth(),eth_type(0x0806), packets:1, bytes:42, used:1.082s, actions:config_gw(param1=1,param2=2000000,param3=8e:e4:45:55:eb:ba,param4=4,param5=5000000,param6=8e:e4:45:55:eb:ba,param7=7,param8=8000000,param9=8e:e4:45:55:eb:ba),2
+[root@testovs ~]# ovs-appctl dpctl/dump-flows
+recirc_id(0),in_port(2),eth(),eth_type(0x0800),ipv4(frag=no), packets:2, bytes:196, used:7.340s, actions:handle_gw(pipeline1=1000000,pipeline2=2000000,pipeline3=3000000,pipeline4=4000000,pipeline5=5000000),3
+recirc_id(0),in_port(3),eth(),eth_type(0x0800),ipv4(frag=no), packets:2, bytes:196, used:7.341s, actions:config_gw(param1=1,param2=2000000,param3=8e:e4:45:55:eb:ba,param4=4,param5=5000000,param6=8e:e4:45:55:eb:ba,param7=7,param8=8000000,param9=8e:e4:45:55:eb:ba),2
+recirc_id(0),in_port(2),eth(),eth_type(0x0806), packets:0, bytes:0, used:never, actions:handle_gw(pipeline1=1000000,pipeline2=2000000,pipeline3=3000000,pipeline4=4000000,pipeline5=5000000),3
+recirc_id(0),in_port(3),eth(),eth_type(0x0806), packets:1, bytes:42, used:4.080s, actions:config_gw(param1=1,param2=2000000,param3=8e:e4:45:55:eb:ba,param4=4,param5=5000000,param6=8e:e4:45:55:eb:ba,param7=7,param8=8000000,param9=8e:e4:45:55:eb:ba),2
+
+lib\dpctl.c
+
+添加一行
+
+static const struct dpctl_command all_commands[] = {
+    { "add-dp", "dp [iface...]", 1, INT_MAX, dpctl_add_dp, DP_RW },
+    { "del-dp", "dp", 1, 1, dpctl_del_dp, DP_RW },
+    { "add-if", "dp iface...", 2, INT_MAX, dpctl_add_if, DP_RW },
+    { "del-if", "dp iface...", 2, INT_MAX, dpctl_del_if, DP_RW },
+    { "set-if", "dp iface...", 2, INT_MAX, dpctl_set_if, DP_RW },
+    { "dump-dps", "", 0, 0, dpctl_dump_dps, DP_RO },
+    { "show", "[dp...]", 0, INT_MAX, dpctl_show, DP_RO },
+    { "dump-flows", "[dp] [filter=..] [type=..]",
+      0, 3, dpctl_dump_flows, DP_RO },
+    { "add-flow", "[dp] flow actions", 2, 3, dpctl_add_flow, DP_RW },
+    { "mod-flow", "[dp] flow actions", 2, 3, dpctl_mod_flow, DP_RW },
+    { "get-flow", "[dp] ufid", 1, 2, dpctl_get_flow, DP_RO },
+    { "del-flow", "[dp] flow", 1, 2, dpctl_del_flow, DP_RW },
+    { "del-flows", "[dp]", 0, 1, dpctl_del_flows, DP_RW },
+    { "dump-conntrack", "[dp] [zone=N]", 0, 2, dpctl_dump_conntrack, DP_RO },
+    { "flush-conntrack", "[dp] [zone=N] [ct-tuple]", 0, 3,
+      dpctl_flush_conntrack, DP_RW },
+    { "ct-stats-show", "[dp] [zone=N]",
+      0, 3, dpctl_ct_stats_show, DP_RO },
+    { "ct-bkts", "[dp] [gt=N]", 0, 2, dpctl_ct_bkts, DP_RO },
+    { "ct-set-maxconns", "[dp] maxconns", 1, 2, dpctl_ct_set_maxconns,
+       DP_RW },
+    { "ct-get-maxconns", "[dp]", 0, 1, dpctl_ct_get_maxconns, DP_RO },
+    { "ct-get-nconns", "[dp]", 0, 1, dpctl_ct_get_nconns, DP_RO },
+    { "ct-enable-tcp-seq-chk", "[dp]", 0, 1, dpctl_ct_enable_tcp_seq_chk,
+       DP_RW },
+    { "ct-disable-tcp-seq-chk", "[dp]", 0, 1, dpctl_ct_disable_tcp_seq_chk,
+       DP_RW },
+    { "ct-get-tcp-seq-chk", "[dp]", 0, 1, dpctl_ct_get_tcp_seq_chk, DP_RO },
+    { "ct-set-limits", "[dp] [default=L] [zone=N,limit=L]...", 1, INT_MAX,
+        dpctl_ct_set_limits, DP_RO },
+    { "ct-del-limits", "[dp] zone=N1[,N2]...", 1, 2, dpctl_ct_del_limits,
+        DP_RO },
+    { "ct-get-limits", "[dp] [zone=N1[,N2]...]", 0, 2, dpctl_ct_get_limits,
+        DP_RO },
+    { "ipf-set-enabled", "[dp] v4|v6", 1, 2, dpctl_ipf_set_enabled, DP_RW },
+    { "ipf-set-disabled", "[dp] v4|v6", 1, 2, dpctl_ipf_set_disabled, DP_RW },
+    { "ipf-set-min-frag", "[dp] v4|v6 minfragment", 2, 3,
+       dpctl_ipf_set_min_frag, DP_RW },
+    { "ipf-set-max-nfrags", "[dp] maxfrags", 1, 2,
+       dpctl_ipf_set_max_nfrags, DP_RW },
+    { "ipf-get-status", "[dp]", 0, 1, dpctl_ct_ipf_get_status,
+       DP_RO },
+    { "help", "", 0, INT_MAX, dpctl_help, DP_RO },
+    { "list-commands", "", 0, INT_MAX, dpctl_list_commands, DP_RO },
+
+    /* Undocumented commands for testing. */
+    { "parse-actions", "actions", 1, INT_MAX, dpctl_parse_actions, DP_RO },
+    { "normalize-actions", "actions",
+      2, INT_MAX, dpctl_normalize_actions, DP_RO },
+    { "set-gateway-params", "[dp] [operation=L] [param1=uint32_t,param2=ovs_be32,param3=mac_addr]...", 1, INT_MAX,
+        dpctl_set_gateway_params, DP_RW },
+
+    { NULL, NULL, 0, 0, NULL, DP_RO },
+};
+
+参照
+static int
+dpctl_ct_set_limits(int argc, const char *argv[],
+                    struct dpctl_params *dpctl_p)
+{
+    struct dpif *dpif;
+    struct ds ds = DS_EMPTY_INITIALIZER;
+    int i =  dp_arg_exists(argc, argv) ? 2 : 1;
+    uint32_t default_limit, *p_default_limit = NULL;
+    struct ovs_list zone_limits = OVS_LIST_INITIALIZER(&zone_limits);
+
+    int error = opt_dpif_open(argc, argv, dpctl_p, INT_MAX, &dpif);
+    if (error) {
+        return error;
+    }
+
+    /* Parse default limit */
+    if (!strncmp(argv[i], "default=", 8)) {
+        if (ovs_scan(argv[i], "default=%"SCNu32, &default_limit)) {
+            p_default_limit = &default_limit;
+            i++;
+        } else {
+            ds_put_cstr(&ds, "invalid default limit");
+            error = EINVAL;
+            goto error;
+        }
+    }
+
+    /* Parse ct zone limit tuples */
+    while (i < argc) {
+        uint16_t zone;
+        uint32_t limit;
+        if (!ct_dpif_parse_zone_limit_tuple(argv[i++], &zone, &limit, &ds)) {
+            error = EINVAL;
+            goto error;
+        }
+        ct_dpif_push_zone_limit(&zone_limits, zone, limit, 0);
+    }
+
+    error = ct_dpif_set_limits(dpif, p_default_limit, &zone_limits);
+    if (!error) {
+        ct_dpif_free_zone_limits(&zone_limits);
+        dpif_close(dpif);
+        return 0;
+    } else {
+        ds_put_cstr(&ds, "failed to set conntrack limit");
+    }
+
+error:
+    dpctl_error(dpctl_p, error, "%s", ds_cstr(&ds));
+    ds_destroy(&ds);
+    ct_dpif_free_zone_limits(&zone_limits);
+    dpif_close(dpif);
+    return error;
+}
+实现
+static int
+dpctl_set_gateway_params(int argc, const char *argv[],
+                    struct dpctl_params *dpctl_p)
+{
+    struct dpif *dpif;
+    struct ds ds = DS_EMPTY_INITIALIZER;
+    int i =  dp_arg_exists(argc, argv) ? 2 : 1;
+    uint32_t operation, *p_operation = NULL;
+    struct ovs_list params_list = OVS_LIST_INITIALIZER(&params_list);
+
+    int error = opt_dpif_open(argc, argv, dpctl_p, INT_MAX, &dpif);
+    if (error) {
+        return error;
+    }
+
+    /* Parse default limit */
+    if (!strncmp(argv[i], "operation=", 10)) {
+        if (ovs_scan(argv[i], "default=%"SCNu32, &operation)) {
+            p_operation = &operation;
+            i++;
+        } else {
+            ds_put_cstr(&ds, "invalid operation");
+            error = EINVAL;
+            goto error;
+        }
+    }
+
+    /* Parse param list */
+    while (i < argc) {
+        struct dp_config_gw dp_config_gw;
+        if (!gw_dpif_parse_params(argv[i++], &dp_config_gw, &ds)) {
+            error = EINVAL;
+            goto error;
+        }
+        gw_dpif_push_params(&params_list, dp_config_gw, 0);
+    }
+
+    error = gw_dpif_set_params(dpif, p_operation, &params_list);
+    if (!error) {
+        ct_dpif_free_zone_limits(&zone_limits);
+        dpif_close(dpif);
+        return 0;
+    } else {
+        ds_put_cstr(&ds, "failed to set conntrack limit");
+    }
+
+error:
+    dpctl_error(dpctl_p, error, "%s", ds_cstr(&ds));
+    ds_destroy(&ds);
+    ct_dpif_free_zone_limits(&zone_limits);
+    dpif_close(dpif);
+    return error;
+}
+
+模仿
+bool
+ct_dpif_parse_zone_limit_tuple(const char *s, uint16_t *pzone,
+                               uint32_t *plimit, struct ds *ds)
+{
+    char *pos, *key, *value, *copy, *err;
+    bool parsed_limit = false, parsed_zone = false;
+
+    pos = copy = xstrdup(s);
+    while (ofputil_parse_key_value(&pos, &key, &value)) {
+        if (!*value) {
+            ds_put_format(ds, "field %s missing value", key);
+            goto error;
+        }
+
+        if (!strcmp(key, "zone")) {
+            err = str_to_u16(value, key, pzone);
+            if (err) {
+                free(err);
+                goto error_with_msg;
+            }
+            parsed_zone = true;
+        }  else if (!strcmp(key, "limit")) {
+            err = str_to_u32(value, plimit);
+            if (err) {
+                free(err);
+                goto error_with_msg;
+            }
+            parsed_limit = true;
+        } else {
+            ds_put_format(ds, "invalid zone limit field: %s", key);
+            goto error;
+        }
+    }
+
+    if (!parsed_zone || !parsed_limit) {
+        ds_put_format(ds, "failed to parse zone limit");
+        goto error;
+    }
+
+    free(copy);
+    return true;
+
+error_with_msg:
+    ds_put_format(ds, "failed to parse field %s", key);
+error:
+    free(copy);
+    return false;
+}
+实现
+
+struct dp_config_gw {
+    uint32_t param1;
+    ovs_be32 param2;
+    struct eth_addr param3;
+};
+
+bool
+gw_dpif_parse_params(const char *s, struct dp_config_gw *dp_config_gw, struct ds *ds)
+{
+    char *pos, *key, *value, *copy, *err;
+
+    pos = copy = xstrdup(s);
+    while (ofputil_parse_key_value(&pos, &key, &value)) {
+        if (!*value) {
+            ds_put_format(ds, "field %s missing value", key);
+            goto error;
+        }
+        if (!strcmp(name, "param1")) {
+            dp_config_gw->param1 = atoi(value);
+        } else if (!strcmp(name, "param2")) {
+            dp_config_gw->param2 = atoi(value);
+        } else if (!strcmp(name, "param3")) {
+            error = str_to_mac(value, &ethaddr);
+            if (error) {
+                free(error);
+                goto error_with_msg;
+            }
+            dp_config_gw->param3 = ethaddr;
+        } else {
+            ds_put_format(ds, "invalid field: %s", key);
+            goto error;
+        }
+    }
+
+    free(copy);
+    return true;
+
+error_with_msg:
+    ds_put_format(ds, "failed to parse field %s", key);
+error:
+    free(copy);
+    return false;
+}
+
+模仿
+void
+ct_dpif_push_zone_limit(struct ovs_list *zone_limits, uint16_t zone,
+                        uint32_t limit, uint32_t count)
+{
+    struct ct_dpif_zone_limit *zone_limit = xmalloc(sizeof *zone_limit);
+    zone_limit->zone = zone;
+    zone_limit->limit = limit;
+    zone_limit->count = count;
+    ovs_list_push_back(zone_limits, &zone_limit->node);
+}
+
+实现
+
+struct gw_dpif_params {
+    struct dp_config_gw dp_config_gw;
+    struct ovs_list node;
+};
+
+void
+gw_dpif_push_params(struct ovs_list *params_list, struct dp_config_gw dp_config_gw, uint32_t count)
+{
+    struct gw_dpif_params *gw_params = xmalloc(sizeof *gw_params);
+    gw_params->dp_config_gw = dp_config_gw;
+    ovs_list_push_back(params_list, &gw_params->node);
+}
+
+模仿
+int
+ct_dpif_set_limits(struct dpif *dpif, const uint32_t *default_limit,
+                   const struct ovs_list *zone_limits)
+{
+    return (dpif->dpif_class->ct_set_limits
+            ? dpif->dpif_class->ct_set_limits(dpif, default_limit,
+                                              zone_limits)
+            : EOPNOTSUPP);
+}
+
+实现
+int
+gw_dpif_set_params(struct dpif *dpif, const uint32_t *operation,
+                   const struct ovs_list *params_list)
+{
+    return (dpif->dpif_class->gw_set_params
+            ? dpif->dpif_class->gw_set_params(dpif, operation,
+                                              params_list)
+            : EOPNOTSUPP);
+}
+
+在lib\dpif-provider.h里面定义
+
+struct dpif_class {
+    /* Type of dpif in this class, e.g. "system", "netdev", etc.
+     *
+     * One of the providers should supply a "system" type, since this is
+     * the type assumed if no type is specified when opening a dpif. */
+    const char *type;
+
+    /* If 'true', datapath ports should be destroyed on ofproto destruction.
+     *
+     * This is used by the vswitch at exit, so that it can clean any
+     * datapaths that can not exist without it (e.g. netdev datapath).  */
+    bool cleanup_required;
+
+    /* Called when the dpif provider is registered, typically at program
+     * startup.  Returning an error from this function will prevent any
+     * datapath with this class from being created.
+     *
+     * This function may be set to null if a datapath class needs no
+     * initialization at registration time. */
+    int (*init)(void);
+
+    /* Enumerates the names of all known created datapaths (of class
+     * 'dpif_class'), if possible, into 'all_dps'.  The caller has already
+     * initialized 'all_dps' and other dpif classes might already have added
+     * names to it.
+     *
+     * This is used by the vswitch at startup, so that it can delete any
+     * datapaths that are not configured.
+     *
+     * Some kinds of datapaths might not be practically enumerable, in which
+     * case this function may be a null pointer. */
+    int (*enumerate)(struct sset *all_dps, const struct dpif_class *dpif_class);
+
+    /* Returns the type to pass to netdev_open() when a dpif of class
+     * 'dpif_class' has a port of type 'type', for a few special cases
+     * when a netdev type differs from a port type.  For example, when
+     * using the userspace datapath, a port of type "internal" needs to
+     * be opened as "tap".
+     *
+     * Returns either 'type' itself or a string literal, which must not
+     * be freed. */
+    const char *(*port_open_type)(const struct dpif_class *dpif_class,
+                                  const char *type);
+
+    /* Attempts to open an existing dpif called 'name', if 'create' is false,
+     * or to open an existing dpif or create a new one, if 'create' is true.
+     *
+     * 'dpif_class' is the class of dpif to open.
+     *
+     * If successful, stores a pointer to the new dpif in '*dpifp', which must
+     * have class 'dpif_class'.  On failure there are no requirements on what
+     * is stored in '*dpifp'. */
+    int (*open)(const struct dpif_class *dpif_class,
+                const char *name, bool create, struct dpif **dpifp);
+
+    /* Closes 'dpif' and frees associated memory. */
+    void (*close)(struct dpif *dpif);
+
+    /* Attempts to destroy the dpif underlying 'dpif'.
+     *
+     * If successful, 'dpif' will not be used again except as an argument for
+     * the 'close' member function. */
+    int (*destroy)(struct dpif *dpif);
+
+    /* Performs periodic work needed by 'dpif', if any is necessary.
+     * Returns true if need to revalidate. */
+    bool (*run)(struct dpif *dpif);
+
+    /* Arranges for poll_block() to wake up if the "run" member function needs
+     * to be called for 'dpif'. */
+    void (*wait)(struct dpif *dpif);
+
+    /* Retrieves statistics for 'dpif' into 'stats'. */
+    int (*get_stats)(const struct dpif *dpif, struct dpif_dp_stats *stats);
+
+    int (*set_features)(struct dpif *dpif, uint32_t user_features);
+
+    /* Adds 'netdev' as a new port in 'dpif'.  If '*port_no' is not
+     * ODPP_NONE, attempts to use that as the port's port number.
+     *
+     * If port is successfully added, sets '*port_no' to the new port's
+     * port number.  Returns EBUSY if caller attempted to choose a port
+     * number, and it was in use. */
+    int (*port_add)(struct dpif *dpif, struct netdev *netdev,
+                    odp_port_t *port_no);
+
+    /* Removes port numbered 'port_no' from 'dpif'. */
+    int (*port_del)(struct dpif *dpif, odp_port_t port_no);
+
+    /* Refreshes configuration of 'dpif's port. The implementation might
+     * postpone applying the changes until run() is called. */
+    int (*port_set_config)(struct dpif *dpif, odp_port_t port_no,
+                           const struct smap *cfg);
+
+    /* Queries 'dpif' for a port with the given 'port_no' or 'devname'.
+     * If 'port' is not null, stores information about the port into
+     * '*port' if successful.
+     *
+     * If the port doesn't exist, the provider must return ENODEV.  Other
+     * error numbers means that something wrong happened and will be
+     * treated differently by upper layers.
+     *
+     * If 'port' is not null, the caller takes ownership of data in
+     * 'port' and must free it with dpif_port_destroy() when it is no
+     * longer needed. */
+    int (*port_query_by_number)(const struct dpif *dpif, odp_port_t port_no,
+                                struct dpif_port *port);
+    int (*port_query_by_name)(const struct dpif *dpif, const char *devname,
+                              struct dpif_port *port);
+
+    /* Returns the Netlink PID value to supply in OVS_ACTION_ATTR_USERSPACE
+     * actions as the OVS_USERSPACE_ATTR_PID attribute's value, for use in
+     * flows whose packets arrived on port 'port_no'.
+     *
+     * A 'port_no' of UINT32_MAX should be treated as a special case.  The
+     * implementation should return a reserved PID, not allocated to any port,
+     * that the client may use for special purposes.
+     *
+     * The return value only needs to be meaningful when DPIF_UC_ACTION has
+     * been enabled in the 'dpif''s listen mask, and it is allowed to change
+     * when DPIF_UC_ACTION is disabled and then re-enabled.
+     *
+     * A dpif provider that doesn't have meaningful Netlink PIDs can use NULL
+     * for this function.  This is equivalent to always returning 0. */
+    uint32_t (*port_get_pid)(const struct dpif *dpif, odp_port_t port_no);
+
+    /* Attempts to begin dumping the ports in a dpif.  On success, returns 0
+     * and initializes '*statep' with any data needed for iteration.  On
+     * failure, returns a positive errno value. */
+    int (*port_dump_start)(const struct dpif *dpif, void **statep);
+
+    /* Attempts to retrieve another port from 'dpif' for 'state', which was
+     * initialized by a successful call to the 'port_dump_start' function for
+     * 'dpif'.  On success, stores a new dpif_port into 'port' and returns 0.
+     * Returns EOF if the end of the port table has been reached, or a positive
+     * errno value on error.  This function will not be called again once it
+     * returns nonzero once for a given iteration (but the 'port_dump_done'
+     * function will be called afterward).
+     *
+     * The dpif provider retains ownership of the data stored in 'port'.  It
+     * must remain valid until at least the next call to 'port_dump_next' or
+     * 'port_dump_done' for 'state'. */
+    int (*port_dump_next)(const struct dpif *dpif, void *state,
+                          struct dpif_port *port);
+
+    /* Releases resources from 'dpif' for 'state', which was initialized by a
+     * successful call to the 'port_dump_start' function for 'dpif'.  */
+    int (*port_dump_done)(const struct dpif *dpif, void *state);
+
+    /* Polls for changes in the set of ports in 'dpif'.  If the set of ports in
+     * 'dpif' has changed, then this function should do one of the
+     * following:
+     *
+     * - Preferably: store the name of the device that was added to or deleted
+     *   from 'dpif' in '*devnamep' and return 0.  The caller is responsible
+     *   for freeing '*devnamep' (with free()) when it no longer needs it.
+     *
+     * - Alternatively: return ENOBUFS, without indicating the device that was
+     *   added or deleted.
+     *
+     * Occasional 'false positives', in which the function returns 0 while
+     * indicating a device that was not actually added or deleted or returns
+     * ENOBUFS without any change, are acceptable.
+     *
+     * If the set of ports in 'dpif' has not changed, returns EAGAIN.  May also
+     * return other positive errno values to indicate that something has gone
+     * wrong. */
+    int (*port_poll)(const struct dpif *dpif, char **devnamep);
+
+    /* Arranges for the poll loop to wake up when 'port_poll' will return a
+     * value other than EAGAIN. */
+    void (*port_poll_wait)(const struct dpif *dpif);
+
+    /* Deletes all flows from 'dpif' and clears all of its queues of received
+     * packets. */
+    int (*flow_flush)(struct dpif *dpif);
+
+    /* Flow dumping interface.
+     *
+     * This is the back-end for the flow dumping interface described in
+     * dpif.h.  Please read the comments there first, because this code
+     * closely follows it.
+     *
+     * 'flow_dump_create' and 'flow_dump_thread_create' must always return an
+     * initialized and usable data structure and defer error return until
+     * flow_dump_destroy().  This hasn't been a problem for the dpifs that
+     * exist so far.
+     *
+     * 'flow_dump_create' and 'flow_dump_thread_create' must initialize the
+     * structures that they return with dpif_flow_dump_init() and
+     * dpif_flow_dump_thread_init(), respectively.
+     *
+     * If 'terse' is true, then only UID and statistics will
+     * be returned in the dump. Otherwise, all fields will be returned.
+     *
+     * If 'types' isn't null, dumps only the flows of the passed types. */
+    struct dpif_flow_dump *(*flow_dump_create)(
+        const struct dpif *dpif,
+        bool terse,
+        struct dpif_flow_dump_types *types);
+    int (*flow_dump_destroy)(struct dpif_flow_dump *dump);
+
+    struct dpif_flow_dump_thread *(*flow_dump_thread_create)(
+        struct dpif_flow_dump *dump);
+    void (*flow_dump_thread_destroy)(struct dpif_flow_dump_thread *thread);
+
+    int (*flow_dump_next)(struct dpif_flow_dump_thread *thread,
+                          struct dpif_flow *flows, int max_flows);
+    /* Executes each of the 'n_ops' operations in 'ops' on 'dpif', in the order
+     * in which they are specified, placing each operation's results in the
+     * "output" members documented in comments and the 'error' member of each
+     * dpif_op. The offload_type argument tells the provider if 'ops' should
+     * be submitted to to a netdev (only offload) or to the kernel datapath
+     * (never offload) or to both (offload if possible; software fallback). */
+    void (*operate)(struct dpif *dpif, struct dpif_op **ops, size_t n_ops,
+                    enum dpif_offload_type offload_type);
+
+    /* Enables or disables receiving packets with dpif_recv() for 'dpif'.
+     * Turning packet receive off and then back on is allowed to change Netlink
+     * PID assignments (see ->port_get_pid()).  The client is responsible for
+     * updating flows as necessary if it does this. */
+    int (*recv_set)(struct dpif *dpif, bool enable);
+
+    /* Refreshes the poll loops and Netlink sockets associated to each port,
+     * when the number of upcall handlers (upcall receiving thread) is changed
+     * to 'n_handlers' and receiving packets for 'dpif' is enabled by
+     * recv_set().
+     *
+     * Since multiple upcall handlers can read upcalls simultaneously from
+     * 'dpif', each port can have multiple Netlink sockets, one per upcall
+     * handler.  So, handlers_set() is responsible for the following tasks:
+     *
+     *    When receiving upcall is enabled, extends or creates the
+     *    configuration to support:
+     *
+     *        - 'n_handlers' Netlink sockets for each port.
+     *
+     *        - 'n_handlers' poll loops, one for each upcall handler.
+     *
+     *        - registering the Netlink sockets for the same upcall handler to
+     *          the corresponding poll loop.
+     * */
+    int (*handlers_set)(struct dpif *dpif, uint32_t n_handlers);
+
+    /* Pass custom configuration options to the datapath.  The implementation
+     * might postpone applying the changes until run() is called. */
+    int (*set_config)(struct dpif *dpif, const struct smap *other_config);
+
+    /* Translates OpenFlow queue ID 'queue_id' (in host byte order) into a
+     * priority value used for setting packet priority. */
+    int (*queue_to_priority)(const struct dpif *dpif, uint32_t queue_id,
+                             uint32_t *priority);
+
+    /* Polls for an upcall from 'dpif' for an upcall handler.  Since there
+     * can be multiple poll loops (see ->handlers_set()), 'handler_id' is
+     * needed as index to identify the corresponding poll loop.  If
+     * successful, stores the upcall into '*upcall', using 'buf' for
+     * storage.  Should only be called if 'recv_set' has been used to enable
+     * receiving packets from 'dpif'.
+     *
+     * The implementation should point 'upcall->key' and 'upcall->userdata'
+     * (if any) into data in the caller-provided 'buf'.  The implementation may
+     * also use 'buf' for storing the data of 'upcall->packet'.  If necessary
+     * to make room, the implementation may reallocate the data in 'buf'.
+     *
+     * The caller owns the data of 'upcall->packet' and may modify it.  If
+     * packet's headroom is exhausted as it is manipulated, 'upcall->packet'
+     * will be reallocated.  This requires the data of 'upcall->packet' to be
+     * released with ofpbuf_uninit() before 'upcall' is destroyed.  However,
+     * when an error is returned, the 'upcall->packet' may be uninitialized
+     * and should not be released.
+     *
+     * This function must not block.  If no upcall is pending when it is
+     * called, it should return EAGAIN without blocking. */
+    int (*recv)(struct dpif *dpif, uint32_t handler_id,
+                struct dpif_upcall *upcall, struct ofpbuf *buf);
+
+    /* Arranges for the poll loop for an upcall handler to wake up when 'dpif'
+     * has a message queued to be received with the recv member functions.
+     * Since there can be multiple poll loops (see ->handlers_set()),
+     * 'handler_id' is needed as index to identify the corresponding poll loop.
+     * */
+    void (*recv_wait)(struct dpif *dpif, uint32_t handler_id);
+
+    /* Throws away any queued upcalls that 'dpif' currently has ready to
+     * return. */
+    void (*recv_purge)(struct dpif *dpif);
+
+    /* When 'dpif' is about to purge the datapath, the higher layer may want
+     * to be notified so that it could try reacting accordingly (e.g. grabbing
+     * all flow stats before they are gone).
+     *
+     * Registers an upcall callback function with 'dpif'.  This is only used
+     * if 'dpif' needs to notify the purging of datapath.  'aux' is passed to
+     * the callback on invocation. */
+    void (*register_dp_purge_cb)(struct dpif *, dp_purge_callback *, void *aux);
+
+    /* For datapaths that run in userspace (i.e. dpif-netdev), threads polling
+     * for incoming packets can directly call upcall functions instead of
+     * offloading packet processing to separate handler threads. Datapaths
+     * that directly call upcall functions should use the functions below to
+     * to register an upcall function and enable / disable upcalls.
+     *
+     * Registers an upcall callback function with 'dpif'. This is only used
+     * if 'dpif' directly executes upcall functions. 'aux' is passed to the
+     * callback on invocation. */
+    void (*register_upcall_cb)(struct dpif *, upcall_callback *, void *aux);
+
+    /* Enables upcalls if 'dpif' directly executes upcall functions. */
+    void (*enable_upcall)(struct dpif *);
+
+    /* Disables upcalls if 'dpif' directly executes upcall functions. */
+    void (*disable_upcall)(struct dpif *);
+
+    /* Get datapath version. Caller is responsible for freeing the string
+     * returned.  */
+    char *(*get_datapath_version)(void);
+
+    /* Conntrack entry dumping interface.
+     *
+     * These functions are used by ct-dpif.c to provide a datapath-agnostic
+     * dumping interface to the connection trackers provided by the
+     * datapaths.
+     *
+     * ct_dump_start() should put in '*state' a pointer to a newly allocated
+     * stucture that will be passed by the caller to ct_dump_next() and
+     * ct_dump_done(). If 'zone' is not NULL, only the entries in '*zone'
+     * should be dumped.
+     *
+     * ct_dump_next() should fill 'entry' with information from a connection
+     * and prepare to dump the next one on a subsequest invocation.
+     *
+     * ct_dump_done() should perform any cleanup necessary (including
+     * deallocating the 'state' structure, if applicable). */
+    int (*ct_dump_start)(struct dpif *, struct ct_dpif_dump_state **state,
+                         const uint16_t *zone, int *);
+    int (*ct_dump_next)(struct dpif *, struct ct_dpif_dump_state *state,
+                        struct ct_dpif_entry *entry);
+    int (*ct_dump_done)(struct dpif *, struct ct_dpif_dump_state *state);
+
+    /* Flushes the connection tracking tables.  The arguments have the
+     * following behavior:
+     *
+     *   - If both 'zone' and 'tuple' are NULL, flush all the conntrack
+     *     entries.
+     *   - If 'zone' is not NULL, and 'tuple' is NULL, flush all the
+     *     conntrack entries in '*zone'.
+     *   - If 'tuple' is not NULL, flush the conntrack entry specified by
+     *     'tuple' in '*zone'. If 'zone' is NULL, use the default zone
+     *     (zone 0). */
+    int (*ct_flush)(struct dpif *, const uint16_t *zone,
+                    const struct ct_dpif_tuple *tuple);
+    /* Set max connections allowed. */
+    int (*ct_set_maxconns)(struct dpif *, uint32_t maxconns);
+    /* Get max connections allowed. */
+    int (*ct_get_maxconns)(struct dpif *, uint32_t *maxconns);
+    /* Get number of connections tracked. */
+    int (*ct_get_nconns)(struct dpif *, uint32_t *nconns);
+    /* Enable or disable TCP sequence checking. */
+    int (*ct_set_tcp_seq_chk)(struct dpif *, bool enabled);
+    /* Get the TCP sequence checking configuration. */
+    int (*ct_get_tcp_seq_chk)(struct dpif *, bool *enabled);
+
+
+    /* Connection tracking per zone limit */
+
+    /* Per zone conntrack limit sets the maximum allowed connections in zones
+     * to provide resource isolation.  If a per zone limit for a particular
+     * zone is not available in the datapath, it defaults to the default
+     * per zone limit.  Initially, the default per zone limit is
+     * unlimited (0). */
+
+    /* Sets the max connections allowed per zone according to 'zone_limits',
+     * a list of 'struct ct_dpif_zone_limit' entries (the 'count' member
+     * is not used when setting limits).  If 'default_limit' is not NULL,
+     * modifies the default limit to '*default_limit'. */
+    int (*ct_set_limits)(struct dpif *, const uint32_t *default_limit,
+                         const struct ovs_list *zone_limits);
+
+    /* Looks up the default per zone limit and stores that in
+     * 'default_limit'.  Look up the per zone limits for all zones in
+     * the 'zone_limits_in' list of 'struct ct_dpif_zone_limit' entries
+     * (the 'limit' and 'count' members are not used), and stores the
+     * reply that includes the zone, the per zone limit, and the number
+     * of connections in the zone into 'zone_limits_out' list. */
+    int (*ct_get_limits)(struct dpif *, uint32_t *default_limit,
+                         const struct ovs_list *zone_limits_in,
+                         struct ovs_list *zone_limits_out);
+
+    /* Deletes per zone limit of all zones specified in 'zone_limits', a
+     * list of 'struct ct_dpif_zone_limit' entries. */
+    int (*ct_del_limits)(struct dpif *, const struct ovs_list *zone_limits);
+
+    /* Connection tracking timeout policy */
+
+    /* A connection tracking timeout policy contains a list of timeout
+     * attributes that specify timeout values on various connection states.
+     * In a datapath, the timeout policy is identified by a 4-byte unsigned
+     * integer.  Unsupported timeout attributes are ignored.  When a
+     * connection is committed it can be associated with a timeout
+     * policy, or it defaults to the datapath's default timeout policy. */
+
+    /* Sets timeout policy '*tp' into the datapath. */
+    int (*ct_set_timeout_policy)(struct dpif *,
+                                 const struct ct_dpif_timeout_policy *tp);
+    /* Gets a timeout policy specified by tp_id and stores it into '*tp'. */
+    int (*ct_get_timeout_policy)(struct dpif *, uint32_t tp_id,
+                                 struct ct_dpif_timeout_policy *tp);
+    /* Deletes a timeout policy identified by 'tp_id'. */
+    int (*ct_del_timeout_policy)(struct dpif *, uint32_t tp_id);
+
+    /* Conntrack timeout policy dumping interface.
+     *
+     * These functions provide a datapath-agnostic dumping interface
+     * to the conntrack timeout policy provided by the datapaths.
+     *
+     * ct_timeout_policy_dump_start() should put in '*statep' a pointer to
+     * a newly allocated structure that will be passed by the caller to
+     * ct_timeout_policy_dump_next() and ct_timeout_policy_dump_done().
+     *
+     * ct_timeout_policy_dump_next() attempts to retrieve another timeout
+     * policy from 'dpif' for 'state', which was initialized by a successful
+     * call to ct_timeout_policy_dump_start().  On success, stores a new
+     * timeout policy into 'tp' and returns 0.  Returns EOF if the last
+     * timeout policy has been dumped, or a positive errno value on error.
+     * This function will not be called again once it returns nonzero once
+     * for a given iteration (but the ct_timeout_policy_dump_done() will
+     * be called afterward).
+     *
+     * ct_timeout_policy_dump_done() should perform any cleanup necessary
+     * (including deallocating the 'state' structure, if applicable). */
+    int (*ct_timeout_policy_dump_start)(struct dpif *, void **statep);
+    int (*ct_timeout_policy_dump_next)(struct dpif *, void *state,
+                                       struct ct_dpif_timeout_policy *tp);
+    int (*ct_timeout_policy_dump_done)(struct dpif *, void *state);
+
+    /* Gets timeout policy based on 'tp_id', 'dl_type' and 'nw_proto'.
+     * On success, returns 0, stores the timeout policy name in 'tp_name',
+     * and sets 'is_generic'. 'is_generic' is false if the returned timeout
+     * policy in the 'dpif' is specific to 'dl_type' and 'nw_proto' in the
+     * datapath (e.g., the Linux kernel datapath).  Sets 'is_generic' to
+     * true, if the timeout policy supports all OVS supported L3/L4
+     * protocols.
+     *
+     * The caller is responsible for freeing 'tp_name'. */
+    int (*ct_get_timeout_policy_name)(struct dpif *, uint32_t tp_id,
+                                      uint16_t dl_type, uint8_t nw_proto,
+                                      char **tp_name, bool *is_generic);
+
+    /* IP Fragmentation. */
+
+    /* Disables or enables conntrack fragment reassembly.  The default
+     * setting is enabled. */
+    int (*ipf_set_enabled)(struct dpif *, bool v6, bool enabled);
+
+    /* Set minimum fragment allowed. */
+    int (*ipf_set_min_frag)(struct dpif *, bool v6, uint32_t min_frag);
+
+    /* Set maximum number of fragments tracked. */
+    int (*ipf_set_max_nfrags)(struct dpif *, uint32_t max_nfrags);
+
+    /* Get fragmentation configuration status and counters. */
+    int (*ipf_get_status)(struct dpif *,
+                          struct dpif_ipf_status *dpif_ipf_status);
+
+    /* The following 3 apis find and print ipf lists by creating a string
+     * representation of the state of an ipf list, to which 'dump' is pointed
+     * to.  'ipf_dump_start()' allocates memory for 'ipf_dump_ctx'.
+     * 'ipf_dump_next()' finds the next ipf list and copies it's
+     * characteristics to a string, which is freed by the caller.
+     * 'ipf_dump_done()' frees the 'ipf_dump_ctx' that was allocated in
+     * 'ipf_dump_start'. */
+    int (*ipf_dump_start)(struct dpif *, struct ipf_dump_ctx **ipf_dump_ctx);
+    int (*ipf_dump_next)(struct dpif *, void *ipf_dump_ctx, char **dump);
+    int (*ipf_dump_done)(struct dpif *, void *ipf_dump_ctx);
+
+    /* Meters */
+
+    /* Queries 'dpif' for supported meter features.
+     * NULL pointer means no meter features are supported. */
+    void (*meter_get_features)(const struct dpif *,
+                               struct ofputil_meter_features *);
+
+    /* Adds or modifies the meter in 'dpif' with the given 'meter_id'
+     * and the configuration in 'config'.
+     *
+     * The meter id specified through 'config->meter_id' is ignored. */
+    int (*meter_set)(struct dpif *, ofproto_meter_id meter_id,
+                     struct ofputil_meter_config *);
+
+    /* Queries 'dpif' for meter stats with the given 'meter_id'.  Stores
+     * maximum of 'n_bands' meter statistics, returning the number of band
+     * stats returned in 'stats->n_bands' if successful. */
+    int (*meter_get)(const struct dpif *, ofproto_meter_id meter_id,
+                     struct ofputil_meter_stats *, uint16_t n_bands);
+
+    /* Removes meter 'meter_id' from 'dpif'. Stores meter and band statistics
+     * (for maximum of 'n_bands', returning the number of band stats returned
+     * in 'stats->n_bands' if successful.  'stats' may be passed in as NULL if
+     * no stats are needed, in which case 'n_bands' must be passed in as
+     * zero. */
+    int (*meter_del)(struct dpif *, ofproto_meter_id meter_id,
+                     struct ofputil_meter_stats *, uint16_t n_bands);
+
+    /* Adds a bond with 'bond_id' and the slave-map to 'dpif'. */
+    int (*bond_add)(struct dpif *dpif, uint32_t bond_id,
+                    odp_port_t *slave_map);
+
+    /* Removes bond identified by 'bond_id' from 'dpif'. */
+    int (*bond_del)(struct dpif *dpif, uint32_t bond_id);
+
+    /* Reads bond stats from 'dpif'.  'n_bytes' should be an array with size
+     * sufficient to store BOND_BUCKETS number of elements. */
+    int (*bond_stats_get)(struct dpif *dpif, uint32_t bond_id,
+                          uint64_t *n_bytes);
+};

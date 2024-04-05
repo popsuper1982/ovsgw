@@ -4415,6 +4415,7 @@ parse_CONFIG_GW(const char *arg, const struct ofpact_parse_params *pp)
         } else if (!strcmp(name, "param3")) {
             error = str_to_mac(value, &ethaddr);
             if (error) {
+                free(error);
                 return error;
             }
             config_gw->param3 = ethaddr;
@@ -4425,6 +4426,7 @@ parse_CONFIG_GW(const char *arg, const struct ofpact_parse_params *pp)
         } else if (!strcmp(name, "param6")) {
             error = str_to_mac(value, &ethaddr);
             if (error) {
+                free(error);
                 return error;
             }
             config_gw->param6 = ethaddr;
@@ -4435,6 +4437,7 @@ parse_CONFIG_GW(const char *arg, const struct ofpact_parse_params *pp)
         } else if (!strcmp(name, "param9")) {
             error = str_to_mac(value, &ethaddr);
             if (error) {
+                free(error);
                 return error;
             }
             config_gw->param9 = ethaddr;
