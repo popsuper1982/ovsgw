@@ -1629,10 +1629,46 @@ static void ovs_dp_reset_user_features(struct sk_buff *skb, struct genl_info *in
 	dp->user_features = 0;
 }
 
+static void ovs_gw_set_params(uint32_t operation, struct nlattr *nla_gw_params)
+{
+    struct ovs_dp_config_gw *req_dp_config_gw;
+    int rem;
+    u16 zone;
+
+    rem = NLA_ALIGN(nla_len(nla_gw_params));
+    req_dp_config_gw = (struct ovs_dp_config_gw *)nla_data(nla_gw_params);
+
+    while (rem >= sizeof(*req_dp_config_gw)) {
+        pr_info("ovs_dp_change, param1 = %s", req_dp_config_gw->param1);
+        pr_info("ovs_dp_change, param2 = %s", req_dp_config_gw->param2);
+        pr_info("ovs_dp_change, param3 = %s"ETH_ADDR_FMT, ETH_ADDR_ARGS(req_dp_config_gw->param3)); 
+        rem -= NLA_ALIGN(sizeof(*req_dp_config_gw));
+        req_dp_config_gw = (struct req_dp_config_gw *)((u8 *)req_dp_config_gw +
+                NLA_ALIGN(sizeof(*req_dp_config_gw)));
+    }
+
+    if (rem)
+        OVS_NLERR(true, "ovs_gw_set_params has %d unknown bytes", rem);
+
+    return 0;
+}
+
+
 static void ovs_dp_change(struct datapath *dp, struct nlattr *a[])
 {
-	if (a[OVS_DP_ATTR_USER_FEATURES])
-		dp->user_features = nla_get_u32(a[OVS_DP_ATTR_USER_FEATURES]);
+    uint32_t operation;
+
+    if (a[OVS_DP_ATTR_USER_FEATURES]) {
+        dp->user_features = nla_get_u32(a[OVS_DP_ATTR_USER_FEATURES]);
+    } 
+
+    if(a[OVS_DP_ATTR_GW_OPERATIONS]){
+        operation = nla_get_u32(a[OVS_DP_ATTR_GW_OPERATIONS]);
+        pr_info("ovs_dp_change, operation = %s", operation);
+        if(a[OVS_DP_ATTR_GW_PARAMS]){
+            ovs_gw_set_params(operation, a[OVS_DP_ATTR_GW_PARAMS]);
+        }
+    } 
 }
 
 static int ovs_dp_cmd_new(struct sk_buff *skb, struct genl_info *info)

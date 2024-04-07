@@ -628,6 +628,9 @@ struct dpif_class {
      * sufficient to store BOND_BUCKETS number of elements. */
     int (*bond_stats_get)(struct dpif *dpif, uint32_t bond_id,
                           uint64_t *n_bytes);
+
+    int (*gw_set_params)(struct dpif *dpif, const uint32_t *operation,
+                   const struct ovs_list *params_list);
 };
 
 extern const struct dpif_class dpif_netlink_class;

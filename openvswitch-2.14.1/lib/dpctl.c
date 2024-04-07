@@ -2513,6 +2513,139 @@ out:
 
     return error;
 }
+
+struct dp_config_gw {
+    uint32_t param1;
+    ovs_be32 param2;
+    struct eth_addr param3;
+};
+
+struct gw_dpif_params {
+    struct dp_config_gw dp_config_gw;
+    struct ovs_list node;
+};
+
+void
+gw_dpif_push_params(struct ovs_list *params_list, struct dp_config_gw dp_config_gw, uint32_t count)
+{
+    struct gw_dpif_params *gw_params = xmalloc(sizeof *gw_params);
+    gw_params->dp_config_gw = dp_config_gw;
+    ovs_list_push_back(params_list, &gw_params->node);
+}
+
+void
+gw_dpif_free_params(struct ovs_list *params_list)
+{
+    while (!ovs_list_is_empty(params_list)) {
+        struct ovs_list *entry = ovs_list_pop_front(params_list);
+        struct gw_dpif_params *gw_params;
+        gw_params = CONTAINER_OF(entry, struct gw_dpif_params, node);
+        free(gw_dpif_params);
+    }
+}
+
+bool
+gw_dpif_parse_params(const char *s, struct dp_config_gw *dp_config_gw, struct ds *ds)
+{
+    char *pos, *key, *value, *copy, *err;
+
+    pos = copy = xstrdup(s);
+    while (ofputil_parse_key_value(&pos, &key, &value)) {
+        if (!*value) {
+            ds_put_format(ds, "field %s missing value", key);
+            goto error;
+        }
+        if (!strcmp(name, "param1")) {
+            dp_config_gw->param1 = atoi(value);
+        } else if (!strcmp(name, "param2")) {
+            dp_config_gw->param2 = atoi(value);
+        } else if (!strcmp(name, "param3")) {
+            error = str_to_mac(value, &ethaddr);
+            if (error) {
+                free(error);
+                goto error_with_msg;
+            }
+            dp_config_gw->param3 = ethaddr;
+        } else {
+            ds_put_format(ds, "invalid field: %s", key);
+            goto error;
+        }
+    }
+
+    free(copy);
+    return true;
+
+error_with_msg:
+    ds_put_format(ds, "failed to parse field %s", key);
+error:
+    free(copy);
+    return false;
+}
+
+int
+gw_dpif_set_params(struct dpif *dpif, const uint32_t *operation,
+                   const struct ovs_list *params_list)
+{
+    return (dpif->dpif_class->gw_set_params
+            ? dpif->dpif_class->gw_set_params(dpif, operation,
+                                              params_list)
+            : EOPNOTSUPP);
+}
+
+static int
+dpctl_set_gateway_params(int argc, const char *argv[],
+                    struct dpctl_params *dpctl_p)
+{
+    struct dpif *dpif;
+    struct ds ds = DS_EMPTY_INITIALIZER;
+    int i =  dp_arg_exists(argc, argv) ? 2 : 1;
+    uint32_t operation, *p_operation = NULL;
+    struct ovs_list params_list = OVS_LIST_INITIALIZER(&params_list);
+
+    int error = opt_dpif_open(argc, argv, dpctl_p, INT_MAX, &dpif);
+    if (error) {
+        return error;
+    }
+
+    /* Parse default limit */
+    if (!strncmp(argv[i], "operation=", 10)) {
+        if (ovs_scan(argv[i], "default=%"SCNu32, &operation)) {
+            p_operation = &operation;
+            i++;
+        } else {
+            ds_put_cstr(&ds, "invalid operation");
+            error = EINVAL;
+            goto error;
+        }
+    }
+
+    /* Parse param list */
+    while (i < argc) {
+        struct dp_config_gw dp_config_gw;
+        if (!gw_dpif_parse_params(argv[i++], &dp_config_gw, &ds)) {
+            error = EINVAL;
+            goto error;
+        }
+        gw_dpif_push_params(&params_list, dp_config_gw, 0);
+    }
+
+    error = gw_dpif_set_params(dpif, p_operation, &params_list);
+    if (!error) {
+        gw_dpif_free_params(&zone_limits);
+        dpif_close(dpif);
+        return 0;
+    } else {
+        ds_put_cstr(&ds, "failed to set conntrack limit");
+    }
+
+error:
+    dpctl_error(dpctl_p, error, "%s", ds_cstr(&ds));
+    ds_destroy(&ds);
+    gw_dpif_free_params(&zone_limits);
+    dpif_close(dpif);
+    return error;
+}
+
 
 static const struct dpctl_command all_commands[] = {
     { "add-dp", "dp [iface...]", 1, INT_MAX, dpctl_add_dp, DP_RW },
@@ -2565,7 +2698,7 @@ static const struct dpctl_command all_commands[] = {
     { "parse-actions", "actions", 1, INT_MAX, dpctl_parse_actions, DP_RO },
     { "normalize-actions", "actions",
       2, INT_MAX, dpctl_normalize_actions, DP_RO },
-    { "set-gateway-params", "[dp] [operation=L] [param1=N,value=L]...", 1, INT_MAX,
+    { "set-gateway-params", "[dp] [operation=L] [param1=uint32_t,param2=ovs_be32,param3=mac_addr]...", 1, INT_MAX,
         dpctl_set_gateway_params, DP_RW },
 
     { NULL, NULL, 0, 0, NULL, DP_RO },

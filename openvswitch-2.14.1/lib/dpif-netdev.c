@@ -8462,6 +8462,7 @@ const struct dpif_class dpif_netdev_class = {
     dpif_netdev_bond_add,
     dpif_netdev_bond_del,
     dpif_netdev_bond_stats_get,
+    NULL,                       /* gw_set_params */
 };
 
 static void
