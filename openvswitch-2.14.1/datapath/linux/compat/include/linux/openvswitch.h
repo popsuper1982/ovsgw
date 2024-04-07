@@ -139,12 +139,6 @@ struct ovs_vport_stats {
 	__u64   tx_dropped;		/* no space available in linux  */
 };
 
-struct ovs_dp_config_gw {
-    uint32_t param1;
-    __be32 param2;
-    struct ovs_eth_addr param3;
-};
-
 /* Allow last Netlink attribute to be unaligned */
 #define OVS_DP_F_UNALIGNED	(1 << 0)
 
@@ -965,6 +959,12 @@ struct ovs_action_handle_gw {
     uint32_t pipeline3;
     uint32_t pipeline4;
     uint32_t pipeline5;
+};
+
+struct ovs_dp_config_gw {
+    uint32_t param1;
+    __be32 param2;
+    struct ovs_eth_addr param3;
 };
 
 //XXXXXXXX 4.define datapath action
