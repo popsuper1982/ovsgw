@@ -1640,7 +1640,7 @@ static void ovs_gw_set_params(uint32_t operation, struct nlattr *nla_gw_params)
     while (rem >= sizeof(*req_dp_config_gw)) {
         pr_info("ovs_dp_change, param1 = %s", req_dp_config_gw->param1);
         pr_info("ovs_dp_change, param2 = %s", req_dp_config_gw->param2);
-        pr_info("ovs_dp_change, param3 = %s"ETH_ADDR_FMT, ETH_ADDR_ARGS(req_dp_config_gw->param3)); 
+        pr_info("ovs_dp_change, param3 = "ETH_ADDR_FMT, ETH_ADDR_ARGS(req_dp_config_gw->param3)); 
         rem -= NLA_ALIGN(sizeof(*req_dp_config_gw));
         req_dp_config_gw = (struct req_dp_config_gw *)((u8 *)req_dp_config_gw +
                 NLA_ALIGN(sizeof(*req_dp_config_gw)));
