@@ -4662,3 +4662,53 @@ report_loss(struct dpif_netlink *dpif, struct dpif_channel *ch, uint32_t ch_idx,
               dpif_name(&dpif->dpif), ch_idx, handler_id);
     ds_destroy(&s);
 }
+
+struct ovs_dp_config_gw {
+    uint32_t param1;
+    ovs_be32 param2;
+    struct eth_addr param3;
+};
+
+static int
+dpif_netlink_gw_set_params(struct dpif *dpif_,
+                           const uint32_t *operation,
+                           const struct ovs_list *params_list)
+{
+    struct dpif_netlink *dpif = dpif_netlink_cast(dpif_);
+    struct ovs_dp_config_gw req_dp_config_gw;
+
+    if (ovs_datapath_family < 0) {
+        return EOPNOTSUPP;
+    }
+
+    struct ofpbuf *request = ofpbuf_new(NL_DUMP_BUFSIZE);
+    nl_msg_put_genlmsghdr(request, 0, ovs_datapath_family,
+                          NLM_F_REQUEST | NLM_F_ECHO, OVS_DP_CMD_SET,
+                          OVS_DATAPATH_VERSION);
+
+    struct ovs_header *ovs_header;
+    ovs_header = ofpbuf_put_uninit(request, sizeof *ovs_header);
+    ovs_header->dp_ifindex = dpif->dp_ifindex;
+
+    size_t opt_offset;
+    opt_offset = nl_msg_start_nested(request, OVS_DP_ATTR_GW_PARAMS);
+    if (operation) {
+        nl_msg_put_u32(request, OVS_DP_ATTR_GW_OPERATIONS, *operation);
+    }
+
+    if (!ovs_list_is_empty(params_list)) {
+        struct gw_dpif_params *gw_params;
+
+        LIST_FOR_EACH (gw_params, node, params_list) {
+            req_dp_config_gw.param1 = gw_params->param1;
+            req_dp_config_gw.param2 = gw_params->param2;
+            req_dp_config_gw.param3 = gw_params->param3;
+            nl_msg_put(request, &req_dp_config_gw, sizeof req_dp_config_gw);
+        }
+    }
+    nl_msg_end_nested(request, opt_offset);
+
+    int err = nl_transact(NETLINK_GENERIC, request, NULL);
+    ofpbuf_delete(request);
+    return err;
+}

@@ -104,6 +104,8 @@ enum ovs_datapath_attr {
 	OVS_DP_ATTR_STATS,		/* struct ovs_dp_stats */
 	OVS_DP_ATTR_MEGAFLOW_STATS,	/* struct ovs_dp_megaflow_stats */
 	OVS_DP_ATTR_USER_FEATURES,	/* OVS_DP_F_*  */
+    OVS_DP_ATTR_GW_OPERATIONS,
+    OVS_DP_ATTR_GW_PARAMS,
 	OVS_DP_ATTR_PAD,
 	__OVS_DP_ATTR_MAX
 };

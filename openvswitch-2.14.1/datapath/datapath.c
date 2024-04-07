@@ -1928,6 +1928,8 @@ static const struct nla_policy datapath_policy[OVS_DP_ATTR_MAX + 1] = {
 	[OVS_DP_ATTR_NAME] = { .type = NLA_NUL_STRING, .len = IFNAMSIZ - 1 },
 	[OVS_DP_ATTR_UPCALL_PID] = { .type = NLA_U32 },
 	[OVS_DP_ATTR_USER_FEATURES] = { .type = NLA_U32 },
+    [OVS_DP_ATTR_GW_OPERATIONS] = { .type = NLA_U32 },
+    [OVS_DP_ATTR_GW_PARAMS] = { .type = NLA_NESTED },
 };
 
 static const struct genl_ops dp_datapath_genl_ops[] = {
