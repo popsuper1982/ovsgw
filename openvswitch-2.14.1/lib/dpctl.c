@@ -51,6 +51,7 @@
 #include "util.h"
 #include "openvswitch/ofp-flow.h"
 #include "openvswitch/ofp-port.h"
+#include "openvswitch/ofp-parse.h"
 
 typedef int dpctl_command_handler(int argc, const char *argv[],
                                   struct dpctl_params *);
@@ -2514,19 +2515,8 @@ out:
     return error;
 }
 
-struct dp_config_gw {
-    uint32_t param1;
-    ovs_be32 param2;
-    struct eth_addr param3;
-};
-
-struct gw_dpif_params {
-    struct dp_config_gw dp_config_gw;
-    struct ovs_list node;
-};
-
 void
-gw_dpif_push_params(struct ovs_list *params_list, struct dp_config_gw dp_config_gw, uint32_t count)
+gw_dpif_push_params(struct ovs_list *params_list, struct dp_config_gw dp_config_gw)
 {
     struct gw_dpif_params *gw_params = xmalloc(sizeof *gw_params);
     gw_params->dp_config_gw = dp_config_gw;
@@ -2540,14 +2530,15 @@ gw_dpif_free_params(struct ovs_list *params_list)
         struct ovs_list *entry = ovs_list_pop_front(params_list);
         struct gw_dpif_params *gw_params;
         gw_params = CONTAINER_OF(entry, struct gw_dpif_params, node);
-        free(gw_dpif_params);
+        free(gw_params);
     }
 }
 
 bool
 gw_dpif_parse_params(const char *s, struct dp_config_gw *dp_config_gw, struct ds *ds)
 {
-    char *pos, *key, *value, *copy, *err;
+    char *pos, *key, *value, *copy, *error;
+    struct eth_addr ethaddr;
 
     pos = copy = xstrdup(s);
     while (ofputil_parse_key_value(&pos, &key, &value)) {
@@ -2555,11 +2546,11 @@ gw_dpif_parse_params(const char *s, struct dp_config_gw *dp_config_gw, struct ds
             ds_put_format(ds, "field %s missing value", key);
             goto error;
         }
-        if (!strcmp(name, "param1")) {
+        if (!strcmp(key, "param1")) {
             dp_config_gw->param1 = atoi(value);
-        } else if (!strcmp(name, "param2")) {
+        } else if (!strcmp(key, "param2")) {
             dp_config_gw->param2 = atoi(value);
-        } else if (!strcmp(name, "param3")) {
+        } else if (!strcmp(key, "param3")) {
             error = str_to_mac(value, &ethaddr);
             if (error) {
                 free(error);
@@ -2626,12 +2617,12 @@ dpctl_set_gateway_params(int argc, const char *argv[],
             error = EINVAL;
             goto error;
         }
-        gw_dpif_push_params(&params_list, dp_config_gw, 0);
+        gw_dpif_push_params(&params_list, dp_config_gw);
     }
 
     error = gw_dpif_set_params(dpif, p_operation, &params_list);
     if (!error) {
-        gw_dpif_free_params(&zone_limits);
+        gw_dpif_free_params(&params_list);
         dpif_close(dpif);
         return 0;
     } else {
@@ -2641,7 +2632,7 @@ dpctl_set_gateway_params(int argc, const char *argv[],
 error:
     dpctl_error(dpctl_p, error, "%s", ds_cstr(&ds));
     ds_destroy(&ds);
-    gw_dpif_free_params(&zone_limits);
+    gw_dpif_free_params(&params_list);
     dpif_close(dpif);
     return error;
 }

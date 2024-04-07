@@ -19,7 +19,6 @@
 #ifndef DATAPATH_H
 #define DATAPATH_H 1
 
-#include <inttypes.h>
 #include <asm/page.h>
 #include <linux/kernel.h>
 #include <linux/mutex.h>
@@ -38,12 +37,6 @@
 #define DP_MAX_PORTS           USHRT_MAX
 #define DP_VPORT_HASH_BUCKETS  1024
 
-#define ETH_ADDR_FMT                                                    \
-    "%02"PRIx8":%02"PRIx8":%02"PRIx8":%02"PRIx8":%02"PRIx8":%02"PRIx8
-#define ETH_ADDR_ARGS(EA) ETH_ADDR_BYTES_ARGS((EA).ea)
-#define ETH_ADDR_BYTES_ARGS(EAB) \
-         (EAB)[0], (EAB)[1], (EAB)[2], (EAB)[3], (EAB)[4], (EAB)[5]
-#define ETH_ADDR_STRLEN 17
 /**
  * struct dp_stats_percpu - per-cpu packet processing statistics for a given
  * datapath.

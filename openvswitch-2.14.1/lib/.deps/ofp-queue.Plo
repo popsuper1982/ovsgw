@@ -57,10 +57,10 @@ lib/ofp-queue.lo: lib/ofp-queue.c /usr/include/stdc-predef.h config.h \
  include/openvswitch/version.h include/openflow/nicira-ext.h \
  include/openvswitch/flow.h include/openvswitch/packets.h \
  include/openvswitch/tun-metadata.h include/openvswitch/geneve.h \
- lib/packets.h include/openvswitch/nsh.h include/odp-netlink.h \
- include/openvswitch/types.h lib/random.h lib/hash.h lib/tun-metadata.h \
- include/openvswitch/dynamic-string.h lib/netlink.h \
- lib/netlink-protocol.h include/linux/netlink.h \
+ include/openvswitch/list.h lib/packets.h include/openvswitch/nsh.h \
+ include/odp-netlink.h include/openvswitch/types.h lib/random.h \
+ lib/hash.h lib/tun-metadata.h include/openvswitch/dynamic-string.h \
+ lib/netlink.h lib/netlink-protocol.h include/linux/netlink.h \
  /usr/include/linux/netlink.h /usr/include/linux/kernel.h \
  /usr/include/linux/sysinfo.h /usr/include/linux/types.h \
  /usr/include/asm/types.h /usr/include/asm-generic/types.h \
@@ -69,7 +69,7 @@ lib/ofp-queue.lo: lib/ofp-queue.c /usr/include/stdc-predef.h config.h \
  /usr/include/linux/stddef.h /usr/include/asm/posix_types.h \
  /usr/include/asm/posix_types_64.h /usr/include/asm-generic/posix_types.h \
  /usr/include/linux/socket.h /usr/include/linux/genetlink.h \
- include/openvswitch/ofpbuf.h include/openvswitch/list.h lib/unaligned.h \
+ include/openvswitch/ofpbuf.h lib/unaligned.h \
  include/openvswitch/type-props.h lib/timeval.h /usr/include/time.h \
  /usr/include/bits/time.h /usr/include/bits/timex.h \
  /usr/include/bits/types/struct_tm.h \
@@ -302,6 +302,8 @@ include/openvswitch/tun-metadata.h:
 
 include/openvswitch/geneve.h:
 
+include/openvswitch/list.h:
+
 lib/packets.h:
 
 include/openvswitch/nsh.h:
@@ -357,8 +359,6 @@ include/linux/netlink.h:
 /usr/include/linux/genetlink.h:
 
 include/openvswitch/ofpbuf.h:
-
-include/openvswitch/list.h:
 
 lib/unaligned.h:
 

@@ -86,12 +86,12 @@ utilities/ovs-ofctl.o: utilities/ovs-ofctl.c /usr/include/stdc-predef.h \
  include/openflow/openflow-1.3.h include/openflow/openflow-1.4.h \
  include/openflow/openflow-1.5.h include/openvswitch/packets.h \
  include/openvswitch/tun-metadata.h include/openvswitch/geneve.h \
- include/openvswitch/meta-flow.h /usr/include/netinet/ip6.h \
- include/openvswitch/ofp-errors.h include/openvswitch/ofp-protocol.h \
- lib/pvector.h lib/rculist.h include/openvswitch/type-props.h \
- lib/versions.h lib/command-line.h lib/daemon.h lib/colors.h \
- lib/compiler.h lib/dirs.h lib/dp-packet.h lib/netdev-afxdp.h \
- lib/netdev-dpdk.h include/openvswitch/list.h lib/packets.h \
+ include/openvswitch/list.h include/openvswitch/meta-flow.h \
+ /usr/include/netinet/ip6.h include/openvswitch/ofp-errors.h \
+ include/openvswitch/ofp-protocol.h lib/pvector.h lib/rculist.h \
+ include/openvswitch/type-props.h lib/versions.h lib/command-line.h \
+ lib/daemon.h lib/colors.h lib/compiler.h lib/dirs.h lib/dp-packet.h \
+ lib/netdev-afxdp.h lib/netdev-dpdk.h lib/packets.h \
  include/openvswitch/nsh.h include/odp-netlink.h \
  include/openvswitch/types.h lib/random.h lib/hash.h lib/tun-metadata.h \
  include/openvswitch/dynamic-string.h lib/netlink.h \
@@ -465,6 +465,8 @@ include/openvswitch/tun-metadata.h:
 
 include/openvswitch/geneve.h:
 
+include/openvswitch/list.h:
+
 include/openvswitch/meta-flow.h:
 
 /usr/include/netinet/ip6.h:
@@ -496,8 +498,6 @@ lib/dp-packet.h:
 lib/netdev-afxdp.h:
 
 lib/netdev-dpdk.h:
-
-include/openvswitch/list.h:
 
 lib/packets.h:
 

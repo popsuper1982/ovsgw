@@ -20,6 +20,7 @@
 #include <sys/types.h>
 #include <netinet/in.h>
 #include "openvswitch/tun-metadata.h"
+#include "openvswitch/list.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -87,6 +88,17 @@ struct ovs_key_nsh {
     uint8_t np;
     ovs_be32 path_hdr;
     ovs_be32 context[4];
+};
+
+struct dp_config_gw {
+    uint32_t param1;
+    ovs_be32 param2;
+    struct eth_addr param3;
+};
+
+struct gw_dpif_params {
+    struct dp_config_gw dp_config_gw;
+    struct ovs_list node;
 };
 
 /* NSH flags */

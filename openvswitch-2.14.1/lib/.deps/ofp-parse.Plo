@@ -46,8 +46,8 @@ lib/ofp-parse.lo: lib/ofp-parse.c /usr/include/stdc-predef.h config.h \
  include/openvswitch/match.h include/openvswitch/flow.h \
  include/openflow/nicira-ext.h include/openvswitch/packets.h \
  include/openvswitch/tun-metadata.h include/openvswitch/geneve.h \
- include/openvswitch/util.h include/openvswitch/version.h \
- include/openvswitch/meta-flow.h \
+ include/openvswitch/list.h include/openvswitch/util.h \
+ include/openvswitch/version.h include/openvswitch/meta-flow.h \
  /usr/lib/gcc/x86_64-linux-gnu/7.3.0/include/limits.h \
  /usr/lib/gcc/x86_64-linux-gnu/7.3.0/include/syslimits.h \
  /usr/include/limits.h /usr/include/bits/posix1_lim.h \
@@ -62,12 +62,11 @@ lib/ofp-parse.lo: lib/ofp-parse.c /usr/include/stdc-predef.h config.h \
  /usr/include/bits/waitstatus.h /usr/include/bits/floatn.h \
  /usr/include/bits/floatn-common.h /usr/include/alloca.h \
  /usr/include/bits/stdlib-bsearch.h /usr/include/bits/stdlib-float.h \
- include/openvswitch/dynamic-string.h include/openvswitch/list.h \
- include/openvswitch/ofp-flow.h include/openvswitch/ofp-match.h \
- include/openvswitch/ofp-table.h include/openvswitch/ofp-port.h \
- include/openvswitch/hmap.h include/openvswitch/netdev.h \
- include/openvswitch/namemap.h lib/packets.h lib/compiler.h \
- include/openvswitch/nsh.h include/odp-netlink.h \
+ include/openvswitch/dynamic-string.h include/openvswitch/ofp-flow.h \
+ include/openvswitch/ofp-match.h include/openvswitch/ofp-table.h \
+ include/openvswitch/ofp-port.h include/openvswitch/hmap.h \
+ include/openvswitch/netdev.h include/openvswitch/namemap.h lib/packets.h \
+ lib/compiler.h include/openvswitch/nsh.h include/odp-netlink.h \
  include/openvswitch/types.h lib/random.h lib/hash.h lib/util.h \
  lib/tun-metadata.h lib/netlink.h lib/netlink-protocol.h \
  include/linux/netlink.h /usr/include/linux/netlink.h \
@@ -264,6 +263,8 @@ include/openvswitch/tun-metadata.h:
 
 include/openvswitch/geneve.h:
 
+include/openvswitch/list.h:
+
 include/openvswitch/util.h:
 
 include/openvswitch/version.h:
@@ -325,8 +326,6 @@ include/openvswitch/ofpbuf.h:
 /usr/include/bits/stdlib-float.h:
 
 include/openvswitch/dynamic-string.h:
-
-include/openvswitch/list.h:
 
 include/openvswitch/ofp-flow.h:
 

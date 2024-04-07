@@ -41,8 +41,10 @@ lib/netlink-conntrack.lo: lib/netlink-conntrack.c \
  /usr/include/bits/types/locale_t.h /usr/include/bits/types/__locale_t.h \
  /usr/include/strings.h include/openvswitch/geneve.h \
  include/openvswitch/packets.h include/openvswitch/tun-metadata.h \
- include/openvswitch/nsh.h include/odp-netlink.h \
- include/openvswitch/types.h lib/random.h lib/hash.h lib/util.h \
+ include/openvswitch/list.h include/openvswitch/util.h \
+ include/openvswitch/version.h include/openvswitch/nsh.h \
+ include/odp-netlink.h include/openvswitch/types.h lib/random.h \
+ lib/hash.h lib/util.h \
  /usr/lib/gcc/x86_64-linux-gnu/7.3.0/include/limits.h \
  /usr/lib/gcc/x86_64-linux-gnu/7.3.0/include/syslimits.h \
  /usr/include/limits.h /usr/include/bits/posix1_lim.h \
@@ -60,20 +62,18 @@ lib/netlink-conntrack.lo: lib/netlink-conntrack.c \
  /usr/include/bits/waitflags.h /usr/include/bits/waitstatus.h \
  /usr/include/bits/floatn.h /usr/include/bits/floatn-common.h \
  /usr/include/alloca.h /usr/include/bits/stdlib-bsearch.h \
- /usr/include/bits/stdlib-float.h include/openvswitch/util.h \
- include/openvswitch/version.h lib/tun-metadata.h \
+ /usr/include/bits/stdlib-float.h lib/tun-metadata.h \
  include/openvswitch/dynamic-string.h lib/netlink.h \
  lib/netlink-protocol.h include/linux/netlink.h \
  /usr/include/linux/netlink.h /usr/include/linux/kernel.h \
  /usr/include/linux/sysinfo.h /usr/include/linux/socket.h \
  /usr/include/linux/genetlink.h include/openvswitch/ofpbuf.h \
- include/openvswitch/list.h include/openflow/openflow.h \
- include/openflow/openflow-1.0.h include/openflow/openflow-common.h \
- include/openflow/openflow-1.1.h include/openflow/openflow-1.2.h \
- include/openflow/openflow-1.3.h include/openflow/openflow-1.4.h \
- include/openflow/openflow-1.5.h lib/unaligned.h \
- include/openvswitch/type-props.h lib/timeval.h /usr/include/time.h \
- /usr/include/bits/time.h /usr/include/bits/timex.h \
+ include/openflow/openflow.h include/openflow/openflow-1.0.h \
+ include/openflow/openflow-common.h include/openflow/openflow-1.1.h \
+ include/openflow/openflow-1.2.h include/openflow/openflow-1.3.h \
+ include/openflow/openflow-1.4.h include/openflow/openflow-1.5.h \
+ lib/unaligned.h include/openvswitch/type-props.h lib/timeval.h \
+ /usr/include/time.h /usr/include/bits/time.h /usr/include/bits/timex.h \
  /usr/include/bits/types/struct_tm.h \
  /usr/include/bits/types/struct_itimerspec.h include/openvswitch/hmap.h \
  lib/unixctl.h /usr/include/errno.h /usr/include/bits/errno.h \
@@ -259,6 +259,12 @@ include/openvswitch/packets.h:
 
 include/openvswitch/tun-metadata.h:
 
+include/openvswitch/list.h:
+
+include/openvswitch/util.h:
+
+include/openvswitch/version.h:
+
 include/openvswitch/nsh.h:
 
 include/odp-netlink.h:
@@ -331,10 +337,6 @@ lib/stdio.h:
 
 /usr/include/bits/stdlib-float.h:
 
-include/openvswitch/util.h:
-
-include/openvswitch/version.h:
-
 lib/tun-metadata.h:
 
 include/openvswitch/dynamic-string.h:
@@ -356,8 +358,6 @@ include/linux/netlink.h:
 /usr/include/linux/genetlink.h:
 
 include/openvswitch/ofpbuf.h:
-
-include/openvswitch/list.h:
 
 include/openflow/openflow.h:
 

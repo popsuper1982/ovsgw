@@ -36,9 +36,11 @@ ofproto/libofproto_la-ofproto-dpif-monitor.lo: \
  /usr/include/asm-generic/socket.h /usr/include/asm/sockios.h \
  /usr/include/asm-generic/sockios.h \
  /usr/include/bits/types/struct_osockaddr.h /usr/include/bits/in.h \
- include/openvswitch/tun-metadata.h include/openvswitch/nsh.h \
- include/odp-netlink.h include/openvswitch/types.h lib/random.h \
- lib/hash.h lib/util.h /usr/include/arpa/inet.h \
+ include/openvswitch/tun-metadata.h include/openvswitch/list.h \
+ include/openvswitch/util.h include/openvswitch/version.h \
+ include/openvswitch/nsh.h include/odp-netlink.h \
+ include/openvswitch/types.h lib/random.h lib/hash.h lib/util.h \
+ /usr/include/arpa/inet.h \
  /usr/lib/gcc/x86_64-linux-gnu/7.3.0/include/limits.h \
  /usr/lib/gcc/x86_64-linux-gnu/7.3.0/include/syslimits.h \
  /usr/include/limits.h /usr/include/bits/posix1_lim.h \
@@ -56,8 +58,7 @@ ofproto/libofproto_la-ofproto-dpif-monitor.lo: \
  /usr/include/bits/waitflags.h /usr/include/bits/waitstatus.h \
  /usr/include/bits/floatn.h /usr/include/bits/floatn-common.h \
  /usr/include/alloca.h /usr/include/bits/stdlib-bsearch.h \
- /usr/include/bits/stdlib-float.h include/openvswitch/util.h \
- include/openvswitch/version.h lib/tun-metadata.h \
+ /usr/include/bits/stdlib-float.h lib/tun-metadata.h \
  include/openvswitch/dynamic-string.h lib/netlink.h \
  lib/netlink-protocol.h include/linux/netlink.h \
  /usr/include/linux/netlink.h /usr/include/linux/kernel.h \
@@ -68,9 +69,9 @@ ofproto/libofproto_la-ofproto-dpif-monitor.lo: \
  /usr/include/linux/stddef.h /usr/include/asm/posix_types.h \
  /usr/include/asm/posix_types_64.h /usr/include/asm-generic/posix_types.h \
  /usr/include/linux/socket.h /usr/include/linux/genetlink.h \
- include/openvswitch/ofpbuf.h include/openvswitch/list.h lib/unaligned.h \
- lib/byte-order.h include/openvswitch/type-props.h lib/timeval.h \
- /usr/include/time.h /usr/include/bits/time.h /usr/include/bits/timex.h \
+ include/openvswitch/ofpbuf.h lib/unaligned.h lib/byte-order.h \
+ include/openvswitch/type-props.h lib/timeval.h /usr/include/time.h \
+ /usr/include/bits/time.h /usr/include/bits/timex.h \
  /usr/include/bits/types/struct_tm.h \
  /usr/include/bits/types/struct_itimerspec.h lib/bfd.h lib/packets.h \
  lib/cfm.h include/openvswitch/hmap.h lib/dp-packet.h lib/netdev-afxdp.h \
@@ -246,6 +247,12 @@ include/openvswitch/packets.h:
 
 include/openvswitch/tun-metadata.h:
 
+include/openvswitch/list.h:
+
+include/openvswitch/util.h:
+
+include/openvswitch/version.h:
+
 include/openvswitch/nsh.h:
 
 include/odp-netlink.h:
@@ -320,10 +327,6 @@ lib/stdio.h:
 
 /usr/include/bits/stdlib-float.h:
 
-include/openvswitch/util.h:
-
-include/openvswitch/version.h:
-
 lib/tun-metadata.h:
 
 include/openvswitch/dynamic-string.h:
@@ -367,8 +370,6 @@ include/linux/netlink.h:
 /usr/include/linux/genetlink.h:
 
 include/openvswitch/ofpbuf.h:
-
-include/openvswitch/list.h:
 
 lib/unaligned.h:
 

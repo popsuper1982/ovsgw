@@ -35,8 +35,9 @@ lib/ofp-packet.lo: lib/ofp-packet.c /usr/include/stdc-predef.h config.h \
  /usr/include/asm-generic/sockios.h \
  /usr/include/bits/types/struct_osockaddr.h /usr/include/bits/in.h \
  include/openvswitch/tun-metadata.h include/openvswitch/geneve.h \
- include/openvswitch/util.h include/openvswitch/version.h \
- include/openvswitch/ofp-protocol.h include/openvswitch/type-props.h \
+ include/openvswitch/list.h include/openvswitch/util.h \
+ include/openvswitch/version.h include/openvswitch/ofp-protocol.h \
+ include/openvswitch/type-props.h \
  /usr/lib/gcc/x86_64-linux-gnu/7.3.0/include/limits.h \
  /usr/lib/gcc/x86_64-linux-gnu/7.3.0/include/syslimits.h \
  /usr/include/limits.h /usr/include/bits/posix1_lim.h \
@@ -45,11 +46,10 @@ lib/ofp-packet.lo: lib/ofp-packet.c /usr/include/stdc-predef.h config.h \
  /usr/include/bits/uio_lim.h include/openvswitch/uuid.h lib/string.h \
  /usr/include/string.h /usr/include/bits/types/locale_t.h \
  /usr/include/bits/types/__locale_t.h /usr/include/strings.h \
- lib/dp-packet.h lib/netdev-afxdp.h lib/netdev-dpdk.h \
- include/openvswitch/list.h lib/packets.h /usr/include/inttypes.h \
- lib/compiler.h include/openvswitch/nsh.h include/odp-netlink.h \
- include/openvswitch/types.h lib/random.h lib/hash.h lib/util.h \
- /usr/include/arpa/inet.h \
+ lib/dp-packet.h lib/netdev-afxdp.h lib/netdev-dpdk.h lib/packets.h \
+ /usr/include/inttypes.h lib/compiler.h include/openvswitch/nsh.h \
+ include/odp-netlink.h include/openvswitch/types.h lib/random.h \
+ lib/hash.h lib/util.h /usr/include/arpa/inet.h \
  /usr/lib/gcc/x86_64-linux-gnu/7.3.0/include/stdarg.h lib/stdio.h \
  /usr/include/stdio.h /usr/include/bits/types/__fpos_t.h \
  /usr/include/bits/types/__mbstate_t.h \
@@ -219,6 +219,8 @@ include/openvswitch/tun-metadata.h:
 
 include/openvswitch/geneve.h:
 
+include/openvswitch/list.h:
+
 include/openvswitch/util.h:
 
 include/openvswitch/version.h:
@@ -262,8 +264,6 @@ lib/dp-packet.h:
 lib/netdev-afxdp.h:
 
 lib/netdev-dpdk.h:
-
-include/openvswitch/list.h:
 
 lib/packets.h:
 
