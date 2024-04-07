@@ -19,6 +19,7 @@
 #ifndef DATAPATH_H
 #define DATAPATH_H 1
 
+#include <inttypes.h>
 #include <asm/page.h>
 #include <linux/kernel.h>
 #include <linux/mutex.h>
