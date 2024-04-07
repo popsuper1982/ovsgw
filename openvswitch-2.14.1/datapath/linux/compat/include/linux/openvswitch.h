@@ -141,8 +141,8 @@ struct ovs_vport_stats {
 
 struct ovs_dp_config_gw {
     uint32_t param1;
-    ovs_be32 param2;
-    struct eth_addr param3;
+    __be32 param2;
+    struct ovs_eth_addr param3;
 };
 
 /* Allow last Netlink attribute to be unaligned */
