@@ -1633,7 +1633,6 @@ static void ovs_gw_set_params(uint32_t operation, struct nlattr *nla_gw_params)
 {
     struct ovs_dp_config_gw *req_dp_config_gw;
     int rem;
-    u16 zone;
 
     rem = NLA_ALIGN(nla_len(nla_gw_params));
     req_dp_config_gw = (struct ovs_dp_config_gw *)nla_data(nla_gw_params);
@@ -1649,8 +1648,6 @@ static void ovs_gw_set_params(uint32_t operation, struct nlattr *nla_gw_params)
 
     if (rem)
         OVS_NLERR(true, "ovs_gw_set_params has %d unknown bytes", rem);
-
-    return 0;
 }
 
 

@@ -139,6 +139,12 @@ struct ovs_vport_stats {
 	__u64   tx_dropped;		/* no space available in linux  */
 };
 
+struct ovs_dp_config_gw {
+    uint32_t param1;
+    ovs_be32 param2;
+    struct eth_addr param3;
+};
+
 /* Allow last Netlink attribute to be unaligned */
 #define OVS_DP_F_UNALIGNED	(1 << 0)
 

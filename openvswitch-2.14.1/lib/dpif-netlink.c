@@ -4663,12 +4663,6 @@ report_loss(struct dpif_netlink *dpif, struct dpif_channel *ch, uint32_t ch_idx,
     ds_destroy(&s);
 }
 
-struct ovs_dp_config_gw {
-    uint32_t param1;
-    ovs_be32 param2;
-    struct eth_addr param3;
-};
-
 static int
 dpif_netlink_gw_set_params(struct dpif *dpif_,
                            const uint32_t *operation,
