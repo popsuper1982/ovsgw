@@ -2515,6 +2515,7 @@ out:
     return error;
 }
 
+/* XXXXXXXX dpctl */
 void
 gw_dpif_push_params(struct ovs_list *params_list, struct dp_config_gw dp_config_gw)
 {
@@ -2600,7 +2601,7 @@ dpctl_set_gateway_params(int argc, const char *argv[],
 
     /* Parse default limit */
     if (!strncmp(argv[i], "operation=", 10)) {
-        if (ovs_scan(argv[i], "default=%"SCNu32, &operation)) {
+        if (ovs_scan(argv[i], "operation=%"SCNu32, &operation)) {
             p_operation = &operation;
             i++;
         } else {
@@ -2636,6 +2637,8 @@ error:
     dpif_close(dpif);
     return error;
 }
+
+/* XXXXXXXX dpctl */
 
 
 static const struct dpctl_command all_commands[] = {

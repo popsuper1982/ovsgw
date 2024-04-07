@@ -1629,6 +1629,7 @@ static void ovs_dp_reset_user_features(struct sk_buff *skb, struct genl_info *in
 	dp->user_features = 0;
 }
 
+/* XXXXXXXX dpctl */
 static void ovs_gw_set_params(uint32_t operation, struct nlattr *nla_gw_params)
 {
     struct ovs_dp_config_gw *req_dp_config_gw;
@@ -1650,7 +1651,7 @@ static void ovs_gw_set_params(uint32_t operation, struct nlattr *nla_gw_params)
         OVS_NLERR(true, "ovs_gw_set_params has %d unknown bytes", rem);
 }
 
-
+/* XXXXXXXX dpctl */
 static void ovs_dp_change(struct datapath *dp, struct nlattr *a[])
 {
     uint32_t operation;
@@ -1920,6 +1921,8 @@ static int ovs_dp_cmd_dump(struct sk_buff *skb, struct netlink_callback *cb)
 
 	return skb->len;
 }
+
+/* XXXXXXXX dpctl */
 
 static const struct nla_policy datapath_policy[OVS_DP_ATTR_MAX + 1] = {
 	[OVS_DP_ATTR_NAME] = { .type = NLA_NUL_STRING, .len = IFNAMSIZ - 1 },

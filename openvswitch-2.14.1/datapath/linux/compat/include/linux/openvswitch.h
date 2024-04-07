@@ -78,6 +78,8 @@ enum ovs_datapath_cmd {
 	OVS_DP_CMD_SET
 };
 
+/* XXXXXXXX dpctl */
+
 /**
  * enum ovs_datapath_attr - attributes for %OVS_DP_* commands.
  * @OVS_DP_ATTR_NAME: Name of the network device that serves as the "local
@@ -960,6 +962,8 @@ struct ovs_action_handle_gw {
     uint32_t pipeline4;
     uint32_t pipeline5;
 };
+
+/* XXXXXXXX dpctl */
 
 struct ovs_dp_config_gw {
     uint32_t param1;

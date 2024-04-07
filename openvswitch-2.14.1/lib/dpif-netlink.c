@@ -3936,6 +3936,8 @@ probe_broken_meters(struct dpif *dpif)
     return broken_meters;
 }
 
+/* XXXXXXXX dpctl */
+
 static int
 dpif_netlink_gw_set_params(struct dpif *dpif_,
                            const uint32_t *operation,
@@ -3979,6 +3981,8 @@ dpif_netlink_gw_set_params(struct dpif *dpif_,
     ofpbuf_delete(request);
     return err;
 }
+
+/* XXXXXXXX dpctl */
 
 
 const struct dpif_class dpif_netlink_class = {

@@ -8386,6 +8386,8 @@ dpif_netdev_bond_stats_get(struct dpif *dpif, uint32_t bond_id,
     return 0;
 }
 
+/* XXXXXXXX dpctl */
+
 const struct dpif_class dpif_netdev_class = {
     "netdev",
     true,                       /* cleanup_required */

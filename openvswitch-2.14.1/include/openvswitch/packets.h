@@ -90,6 +90,7 @@ struct ovs_key_nsh {
     ovs_be32 context[4];
 };
 
+/* XXXXXXXX dpctl */
 struct dp_config_gw {
     uint32_t param1;
     ovs_be32 param2;

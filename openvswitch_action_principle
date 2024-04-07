@@ -10481,12 +10481,56 @@ static void ovs_gw_set_params(uint32_t operation, struct nlattr *nla_gw_params)
         pr_info("ovs_dp_change, param2 = %s", req_dp_config_gw->param2);
         pr_info("ovs_dp_change, param3 = %s"ETH_ADDR_FMT, ETH_ADDR_ARGS(req_dp_config_gw->param3)); 
         rem -= NLA_ALIGN(sizeof(*req_dp_config_gw));
-        req_dp_config_gw = (struct req_dp_config_gw *)((u8 *)req_dp_config_gw +
+        req_dp_config_gw = (struct ovs_dp_config_gw *)((u8 *)req_dp_config_gw +
                 NLA_ALIGN(sizeof(*req_dp_config_gw)));
     }
 
     if (rem)
         OVS_NLERR(true, "ovs_gw_set_params has %d unknown bytes", rem);
+
+    return 0;
+}
+
+static int ovs_ct_limit_set_zone_limit(struct nlattr *nla_zone_limit,
+                       struct ovs_ct_limit_info *info)
+{
+    struct ovs_zone_limit *zone_limit;
+    int rem;
+    u16 zone;
+
+    rem = NLA_ALIGN(nla_len(nla_zone_limit));
+    zone_limit = (struct ovs_zone_limit *)nla_data(nla_zone_limit);
+
+    while (rem >= sizeof(*zone_limit)) {
+        if (unlikely(zone_limit->zone_id ==
+                OVS_ZONE_LIMIT_DEFAULT_ZONE)) {
+            ovs_lock();
+            info->default_limit = zone_limit->limit;
+            ovs_unlock();
+        } else if (unlikely(!check_zone_id(
+                zone_limit->zone_id, &zone))) {
+            OVS_NLERR(true, "zone id is out of range");
+        } else {
+            struct ovs_ct_limit *ct_limit;
+
+            ct_limit = kmalloc(sizeof(*ct_limit), GFP_KERNEL);
+            if (!ct_limit)
+                return -ENOMEM;
+
+            ct_limit->zone = zone;
+            ct_limit->limit = zone_limit->limit;
+
+            ovs_lock();
+            ct_limit_set(info, ct_limit);
+            ovs_unlock();
+        }
+        rem -= NLA_ALIGN(sizeof(*zone_limit));
+        zone_limit = (struct ovs_zone_limit *)((u8 *)zone_limit +
+                NLA_ALIGN(sizeof(*zone_limit)));
+    }
+
+    if (rem)
+        OVS_NLERR(true, "set zone limit has %d unknown bytes", rem);
 
     return 0;
 }

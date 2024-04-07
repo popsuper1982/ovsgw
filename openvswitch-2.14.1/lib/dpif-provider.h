@@ -103,6 +103,8 @@ struct dpif_ipf_status {
    unsigned int nfrag_max;
 };
 
+/* XXXXXXXX dpctl */
+
 /* Datapath interface class structure, to be defined by each implementation of
  * a datapath interface.
  *
