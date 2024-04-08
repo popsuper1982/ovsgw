@@ -33,7 +33,7 @@ systemctl status ovs
 
 echo "" > /etc/ld.so.preload
 
-ovs-dpctl set-gateway-params system@ovs-system operation=1 param1=2,param2=3,param3=06:92:57:3f:6a:c8
+ovs-dpctl set-gateway-params ovs-system operation=1 param1=2,param2=3,param3=06:92:57:3f:6a:c8
 
 搭建环境
 
