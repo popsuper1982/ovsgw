@@ -3961,13 +3961,14 @@ dpif_netlink_gw_set_params(struct dpif *dpif_,
     ovs_header = ofpbuf_put_uninit(request, sizeof *ovs_header);
     ovs_header->dp_ifindex = dpif->dp_ifindex;
 
-    size_t opt_offset;
-    opt_offset = nl_msg_start_nested(request, OVS_DP_ATTR_GW_PARAMS);
     if (operation) {
         nl_msg_put_u32(request, OVS_DP_ATTR_GW_OPERATIONS, *operation);
     }
 
     if (!ovs_list_is_empty(params_list)) {
+        size_t opt_offset;
+        opt_offset = nl_msg_start_nested(request, OVS_DP_ATTR_GW_PARAMS);
+
         struct gw_dpif_params *gw_params;
 
         LIST_FOR_EACH (gw_params, node, params_list) {
@@ -3976,9 +3977,10 @@ dpif_netlink_gw_set_params(struct dpif *dpif_,
             req_dp_config_gw.param3.eth = gw_params->dp_config_gw.param3;
             nl_msg_put(request, &req_dp_config_gw, sizeof req_dp_config_gw);
         }
-    }
-    nl_msg_end_nested(request, opt_offset);
 
+        nl_msg_end_nested(request, opt_offset);
+    }
+    
     int err = nl_transact(NETLINK_GENERIC, request, NULL);
     ofpbuf_delete(request);
     return err;
