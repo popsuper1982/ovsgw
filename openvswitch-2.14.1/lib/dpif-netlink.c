@@ -3950,6 +3950,8 @@ dpif_netlink_gw_set_params(struct dpif *dpif_,
         return EOPNOTSUPP;
     }
 
+    VLOG_INFO("dpif_netlink_gw_set_params");
+
     struct ofpbuf *request = ofpbuf_new(NL_DUMP_BUFSIZE);
     nl_msg_put_genlmsghdr(request, 0, ovs_datapath_family,
                           NLM_F_REQUEST | NLM_F_ECHO, OVS_DP_CMD_SET,

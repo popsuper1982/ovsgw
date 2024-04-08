@@ -2519,6 +2519,7 @@ out:
 void
 gw_dpif_push_params(struct ovs_list *params_list, struct dp_config_gw dp_config_gw)
 {
+    OVS_PRINTF_FORMAT("gw_dpif_push_params");
     struct gw_dpif_params *gw_params = xmalloc(sizeof *gw_params);
     gw_params->dp_config_gw = dp_config_gw;
     ovs_list_push_back(params_list, &gw_params->node);
@@ -2527,6 +2528,7 @@ gw_dpif_push_params(struct ovs_list *params_list, struct dp_config_gw dp_config_
 void
 gw_dpif_free_params(struct ovs_list *params_list)
 {
+    OVS_PRINTF_FORMAT("gw_dpif_free_params");
     while (!ovs_list_is_empty(params_list)) {
         struct ovs_list *entry = ovs_list_pop_front(params_list);
         struct gw_dpif_params *gw_params;
@@ -2541,6 +2543,7 @@ gw_dpif_parse_params(const char *s, struct dp_config_gw *dp_config_gw, struct ds
     char *pos, *key, *value, *copy, *error;
     struct eth_addr ethaddr;
 
+    OVS_PRINTF_FORMAT("gw_dpif_parse_params");
     pos = copy = xstrdup(s);
     while (ofputil_parse_key_value(&pos, &key, &value)) {
         if (!*value) {
@@ -2578,6 +2581,7 @@ int
 gw_dpif_set_params(struct dpif *dpif, const uint32_t *operation,
                    const struct ovs_list *params_list)
 {
+    OVS_PRINTF_FORMAT("gw_dpif_set_params");
     return (dpif->dpif_class->gw_set_params
             ? dpif->dpif_class->gw_set_params(dpif, operation,
                                               params_list)
@@ -2594,6 +2598,7 @@ dpctl_set_gateway_params(int argc, const char *argv[],
     uint32_t operation, *p_operation = NULL;
     struct ovs_list params_list = OVS_LIST_INITIALIZER(&params_list);
 
+    OVS_PRINTF_FORMAT("dpctl_set_gateway_params");
     int error = opt_dpif_open(argc, argv, dpctl_p, INT_MAX, &dpif);
     if (error) {
         return error;

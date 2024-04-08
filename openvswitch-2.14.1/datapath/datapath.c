@@ -1634,7 +1634,7 @@ static void ovs_gw_set_params(uint32_t operation, struct nlattr *nla_gw_params)
 {
     struct ovs_dp_config_gw *req_dp_config_gw;
     int rem;
-
+    pr_info("ovs_gw_set_params");
     rem = NLA_ALIGN(nla_len(nla_gw_params));
     req_dp_config_gw = (struct ovs_dp_config_gw *)nla_data(nla_gw_params);
 
@@ -1659,6 +1659,8 @@ static void ovs_dp_change(struct datapath *dp, struct nlattr *a[])
     if (a[OVS_DP_ATTR_USER_FEATURES]) {
         dp->user_features = nla_get_u32(a[OVS_DP_ATTR_USER_FEATURES]);
     } 
+
+    pr_info("ovs_dp_change");
 
     if(a[OVS_DP_ATTR_GW_OPERATIONS]){
         operation = nla_get_u32(a[OVS_DP_ATTR_GW_OPERATIONS]);
