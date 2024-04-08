@@ -33,8 +33,6 @@ systemctl status ovs
 
 echo "" > /etc/ld.so.preload
 
-ovs-dpctl set-gateway-params ovs-system operation=1 param1=2,param2=3,param3=06:92:57:3f:6a:c8
-
 搭建环境
 
 ovs-vsctl add-br br-int
@@ -150,7 +148,7 @@ ovs-ofctl add-flow sdmn_br "hard_timeout=0 idle_timeout=0 priority=1 table=0 dl_
 2024-04-03T06:52:02Z|00003|ofp_actions|INFO|encode_HANDLE_GW
 
 
-
+ovs-dpctl set-gateway-params ovs-system operation=1 param1=2,param2=3,param3=06:92:57:3f:6a:c8
 
 -----------------------
 

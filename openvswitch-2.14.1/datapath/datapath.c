@@ -1639,9 +1639,11 @@ static void ovs_gw_set_params(uint32_t operation, struct nlattr *nla_gw_params)
     req_dp_config_gw = (struct ovs_dp_config_gw *)nla_data(nla_gw_params);
 
     while (rem >= sizeof(*req_dp_config_gw)) {
+    	pr_info("ovs_dp_change-----------");
         pr_info("ovs_dp_change, param1 = %u", req_dp_config_gw->param1);
         pr_info("ovs_dp_change, param2 = %u", req_dp_config_gw->param2);
         pr_info("ovs_dp_change, param3 = %pM", req_dp_config_gw->param3.eth); 
+        pr_info("ovs_dp_change-----------");
         rem -= NLA_ALIGN(sizeof(*req_dp_config_gw));
         req_dp_config_gw = (struct ovs_dp_config_gw *)((u8 *)req_dp_config_gw +
                 NLA_ALIGN(sizeof(*req_dp_config_gw)));

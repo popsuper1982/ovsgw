@@ -9648,6 +9648,10 @@ const struct dpif_class dpif_netlink_class = {
     dpif_netlink_gw_set_params,
 };
 
+            VLOG_INFO("Generic Netlink family '%s' does not exist. "
+                      "The Open vSwitch kernel module is probably not loaded.",
+                      OVS_DATAPATH_FAMILY);
+
 在lib\dpif-netdev.c中添加
 
 const struct dpif_class dpif_netdev_class = {
