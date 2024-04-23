@@ -1,0 +1,37 @@
+SNAT conntrack implementation
+
+流程函数即注册在worker框架下的一系列钩子函数，它们实现了natgw的主体功能，主要包括：
+QoS：igw_qos_run
+连接状态跟踪： conntrack_in	conntrack_confirm
+SNAT/DNAT：	igw_nat_run
+VPC路由查找：	igw_route_run
+
+
+void conntrack_init(void)
+{
+	int tid;
+
+	/* hash bucket size is CT_SESSION_MAX/2. so session must be power of 2 */
+	//BUILD_BUG_ON((CT_SESSION_MAX & (CT_SESSION_MAX - 1)) != 0);
+
+	PAL_FOR_EACH_WORKER(tid) {
+		pal_remote_launch(ct_table_init, NULL, tid);
+		pal_wait_thread(tid);
+	}
+
+	if (pal_cleanup_register("conntrack_cleanup", conntrack_cleanup, PIPELINE_PRIORITY_CT_IN, NULL) < 0)
+		PAL_PANIC("conntrack: register pipeline function failed\n");
+
+	if (pal_pipeline_register("conntrack_in", conntrack_in, PIPELINE_PRIORITY_CT_IN, NULL) < 0)
+		PAL_PANIC("conntrack: register pipeline function failed\n");
+
+	if (pal_pipeline_register("conntrack_confirm", conntrack_confirm, PIPELINE_PRIORITY_CT_CONFIRM, NULL) < 0)
+		PAL_PANIC("conntrack: register pipeline function failed\n");
+
+    if (ct_sync_init()) {
+		PAL_PANIC("conntrack: ct_sync_init failed\n");
+	}
+	
+	return;
+}
+
