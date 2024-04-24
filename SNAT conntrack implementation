@@ -35,3 +35,1767 @@ void conntrack_init(void)
 	return;
 }
 
+DPDK是创建N个线程，每个线程在一个CPU上跑，每个CPU上有一个per cpu变量来保存session。
+
+内核版本不能这样，需要参考内核中对于流表的访问方式。
+
+    /* Check if this is a duplicate flow */
+    if (ovs_identifier_is_ufid(&new_flow->id))
+        flow = ovs_flow_tbl_lookup_ufid(&dp->table, &new_flow->id);
+    if (!flow)
+        flow = ovs_flow_tbl_lookup(&dp->table, &new_flow->key); //查找当前的流表table中是否已经有这条流表
+    if (likely(!flow)) {
+        rcu_assign_pointer(new_flow->sf_acts, acts);//更新这条流表的actions
+
+        /* Put flow in bucket. */
+        error = ovs_flow_tbl_insert(&dp->table, new_flow, &mask);//将流表加入到流表table中
+        if (unlikely(error)) {
+            acts = NULL;
+            goto err_unlock_ovs;
+        }
+
+        if (unlikely(reply)) {
+            error = ovs_flow_cmd_fill_info(new_flow,
+                               ovs_header->dp_ifindex,
+                               reply, info->snd_portid,
+                               info->snd_seq, 0,
+                               OVS_FLOW_CMD_NEW,
+                               ufid_flags);
+            BUG_ON(error < 0);
+        }
+        ovs_unlock();
+    } 
+
+查找是否存在，如果不存在则插入，这里如何保护这个共享的数据结构？
+
+我们先来分析一下ovs在内核对于session的实现
+
+ (flow #1)
+ $ ovs-ofctl add-flow br0 \
+    "table=0, priority=50, ct_state=-trk, tcp, in_port=veth_l0, actions=ct(table=0)"
+
+(flow #2)
+$ ovs-ofctl add-flow br0 \
+    "table=0, priority=50, ct_state=+trk+new, tcp, in_port=veth_l0, actions=ct(commit),veth_r0"
+
+(flow #3)
+$ ovs-ofctl add-flow br0 \
+    "table=0, priority=50, ct_state=-trk, tcp, in_port=veth_r0, actions=ct(table=0)"
+
+(flow #4)
+$ ovs-ofctl add-flow br0 \
+    "table=0, priority=50, ct_state=+trk+est, tcp, in_port=veth_r0, actions=veth_l0"
+
+(flow #5)
+$ ovs-ofctl add-flow br0 \
+"table=0, priority=50, ct_state=+trk+est, tcp, in_port=veth_l0, actions=veth_r0"
+
+static int do_execute_actions(struct datapath *dp, struct sk_buff *skb,
+			      struct sw_flow_key *key,
+			      const struct nlattr *attr, int len)
+
+		case OVS_ACTION_ATTR_CT:
+			if (!is_flow_key_valid(key)) {
+				err = ovs_flow_key_update(skb, key);
+				if (err)
+					return err;
+			}
+
+			err = ovs_ct_execute(ovs_dp_get_net(dp), skb, key,
+					     nla_data(a));
+
+			/* Hide stolen IP fragments from user space. */
+			if (err)
+				return err == -EINPROGRESS ? 0 : err;
+			break;
+
+		case OVS_ACTION_ATTR_CT_CLEAR:
+			err = ovs_ct_clear(skb, key);
+			break;
+
+/* Conntrack action context for execution. */
+struct ovs_conntrack_info {
+	struct nf_conntrack_helper *helper;
+	struct nf_conntrack_zone zone;
+	struct nf_conn *ct;
+	u8 commit : 1;
+	u8 nat : 3;                 /* enum ovs_ct_nat */
+	u8 random_fully_compat : 1; /* bool */
+	u8 force : 1;
+	u8 have_eventmask : 1;
+	u16 family;
+	u32 eventmask;              /* Mask of 1 << IPCT_*. */
+	struct md_mark mark;
+	struct md_labels labels;
+	char timeout[CTNL_TIMEOUT_NAME_MAX];
+	struct nf_ct_timeout *nf_ct_timeout;
+#if IS_ENABLED(CONFIG_NF_NAT_NEEDED)
+	struct nf_nat_range2 range;  /* Only present for SRC NAT and DST NAT. */
+#endif
+};
+
+static int __ovs_nla_copy_actions(struct net *net, const struct nlattr *attr,
+                  const struct sw_flow_key *key,
+                  struct sw_flow_actions **sfa,
+                  __be16 eth_type, __be16 vlan_tci,
+                  u32 mpls_label_count, bool log)
+        case OVS_ACTION_ATTR_CT:
+            err = ovs_ct_copy_action(net, a, key, sfa, log);
+            if (err)
+                return err;
+            skip_copy = true;
+            break;
+
+        case OVS_ACTION_ATTR_CT_CLEAR:
+            break;
+
+int ovs_ct_copy_action(struct net *net, const struct nlattr *attr,
+		       const struct sw_flow_key *key,
+		       struct sw_flow_actions **sfa,  bool log)
+{
+	struct ovs_conntrack_info ct_info;
+	const char *helper = NULL;
+	u16 family;
+	int err;
+
+	family = key_to_nfproto(key);
+	if (family == NFPROTO_UNSPEC) {
+		OVS_NLERR(log, "ct family unspecified");
+		return -EINVAL;
+	}
+
+	memset(&ct_info, 0, sizeof(ct_info));
+	ct_info.family = family;
+
+	nf_ct_zone_init(&ct_info.zone, NF_CT_DEFAULT_ZONE_ID,
+			NF_CT_DEFAULT_ZONE_DIR, 0);
+
+	err = parse_ct(attr, &ct_info, &helper, log);
+	if (err)
+		return err;
+
+	/* Set up template for tracking connections in specific zones. */
+	ct_info.ct = nf_ct_tmpl_alloc(net, &ct_info.zone, GFP_KERNEL);
+	if (!ct_info.ct) {
+		OVS_NLERR(log, "Failed to allocate conntrack template");
+		return -ENOMEM;
+	}
+
+	if (ct_info.timeout[0]) {
+		if (nf_ct_set_timeout(net, ct_info.ct, family, key->ip.proto,
+				      ct_info.timeout))
+			pr_info_ratelimited("Failed to associated timeout "
+					    "policy `%s'\n", ct_info.timeout);
+		else
+			ct_info.nf_ct_timeout = rcu_dereference(
+				nf_ct_timeout_find(ct_info.ct)->timeout);
+
+	}
+
+	if (helper) {
+		err = ovs_ct_add_helper(&ct_info, helper, key, log);
+		if (err)
+			goto err_free_ct;
+	}
+
+	err = ovs_nla_add_action(sfa, OVS_ACTION_ATTR_CT, &ct_info,
+				 sizeof(ct_info), log);
+	if (err)
+		goto err_free_ct;
+
+	__set_bit(IPS_CONFIRMED_BIT, &ct_info.ct->status);
+	nf_conntrack_get(&ct_info.ct->ct_general);
+	return 0;
+err_free_ct:
+	__ovs_ct_free_action(&ct_info);
+	return err;
+}
+
+static int parse_ct(const struct nlattr *attr, struct ovs_conntrack_info *info,
+		    const char **helper, bool log)
+{
+	struct nlattr *a;
+	int rem;
+
+	nla_for_each_nested(a, attr, rem) {
+		int type = nla_type(a);
+		int maxlen;
+		int minlen;
+
+		if (type > OVS_CT_ATTR_MAX) {
+			OVS_NLERR(log,
+				  "Unknown conntrack attr (type=%d, max=%d)",
+				  type, OVS_CT_ATTR_MAX);
+			return -EINVAL;
+		}
+
+		maxlen = ovs_ct_attr_lens[type].maxlen;
+		minlen = ovs_ct_attr_lens[type].minlen;
+		if (nla_len(a) < minlen || nla_len(a) > maxlen) {
+			OVS_NLERR(log,
+				  "Conntrack attr type has unexpected length (type=%d, length=%d, expected=%d)",
+				  type, nla_len(a), maxlen);
+			return -EINVAL;
+		}
+
+		switch (type) {
+		case OVS_CT_ATTR_FORCE_COMMIT:
+			info->force = true;
+			/* fall through. */
+		case OVS_CT_ATTR_COMMIT:
+			info->commit = true;
+			break;
+#ifdef CONFIG_NF_CONNTRACK_ZONES
+		case OVS_CT_ATTR_ZONE:
+			info->zone.id = nla_get_u16(a);
+			break;
+#endif
+#ifdef CONFIG_NF_CONNTRACK_MARK
+		case OVS_CT_ATTR_MARK: {
+			struct md_mark *mark = nla_data(a);
+
+			if (!mark->mask) {
+				OVS_NLERR(log, "ct_mark mask cannot be 0");
+				return -EINVAL;
+			}
+			info->mark = *mark;
+			break;
+		}
+#endif
+#ifdef CONFIG_NF_CONNTRACK_LABELS
+		case OVS_CT_ATTR_LABELS: {
+			struct md_labels *labels = nla_data(a);
+
+			if (!labels_nonzero(&labels->mask)) {
+				OVS_NLERR(log, "ct_labels mask cannot be 0");
+				return -EINVAL;
+			}
+			info->labels = *labels;
+			break;
+		}
+#endif
+		case OVS_CT_ATTR_HELPER:
+			*helper = nla_data(a);
+			if (!memchr(*helper, '\0', nla_len(a))) {
+				OVS_NLERR(log, "Invalid conntrack helper");
+				return -EINVAL;
+			}
+			break;
+#if IS_ENABLED(CONFIG_NF_NAT_NEEDED)
+		case OVS_CT_ATTR_NAT: {
+			int err = parse_nat(a, info, log);
+
+			if (err)
+				return err;
+			break;
+		}
+#endif
+		case OVS_CT_ATTR_EVENTMASK:
+			info->have_eventmask = true;
+			info->eventmask = nla_get_u32(a);
+			break;
+#ifdef CONFIG_NF_CONNTRACK_TIMEOUT
+		case OVS_CT_ATTR_TIMEOUT:
+			memcpy(info->timeout, nla_data(a), nla_len(a));
+			if (!memchr(info->timeout, '\0', nla_len(a))) {
+				OVS_NLERR(log, "Invalid conntrack timeout");
+				return -EINVAL;
+			}
+			break;
+#endif
+
+		default:
+			OVS_NLERR(log, "Unknown conntrack attr (%d)",
+				  type);
+			return -EINVAL;
+		}
+	}
+
+#ifdef CONFIG_NF_CONNTRACK_MARK
+	if (!info->commit && info->mark.mask) {
+		OVS_NLERR(log,
+			  "Setting conntrack mark requires 'commit' flag.");
+		return -EINVAL;
+	}
+#endif
+#ifdef CONFIG_NF_CONNTRACK_LABELS
+	if (!info->commit && labels_nonzero(&info->labels.mask)) {
+		OVS_NLERR(log,
+			  "Setting conntrack labels requires 'commit' flag.");
+		return -EINVAL;
+	}
+#endif
+	if (rem > 0) {
+		OVS_NLERR(log, "Conntrack attr has %d unknown bytes", rem);
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+/* Returns 0 on success, -EINPROGRESS if 'skb' is stolen, or other nonzero
+ * value if 'skb' is freed.
+ */
+int ovs_ct_execute(struct net *net, struct sk_buff *skb,
+		   struct sw_flow_key *key,
+		   const struct ovs_conntrack_info *info)
+{
+	int nh_ofs;
+	int err;
+
+	/* The conntrack module expects to be working at L3. */
+	nh_ofs = skb_network_offset(skb);
+	skb_pull_rcsum(skb, nh_ofs);
+
+	err = ovs_skb_network_trim(skb);
+	if (err)
+		return err;
+
+	if (key->ip.frag != OVS_FRAG_TYPE_NONE) {
+		err = handle_fragments(net, key, info->zone.id, skb);
+		if (err)
+			return err;
+	}
+
+	if (info->commit)
+		err = ovs_ct_commit(net, key, info, skb);
+	else
+		err = ovs_ct_lookup(net, key, info, skb);
+
+	skb_push(skb, nh_ofs);
+	skb_postpush_rcsum(skb, skb->data, nh_ofs);
+	if (err)
+		kfree_skb(skb);
+	return err;
+}
+
+/* Lookup connection and read fields into key. */
+static int ovs_ct_lookup(struct net *net, struct sw_flow_key *key,
+			 const struct ovs_conntrack_info *info,
+			 struct sk_buff *skb)
+{
+	struct nf_conntrack_expect *exp;
+
+	/* If we pass an expected packet through nf_conntrack_in() the
+	 * expectation is typically removed, but the packet could still be
+	 * lost in upcall processing.  To prevent this from happening we
+	 * perform an explicit expectation lookup.  Expected connections are
+	 * always new, and will be passed through conntrack only when they are
+	 * committed, as it is OK to remove the expectation at that time.
+	 */
+	exp = ovs_ct_expect_find(net, &info->zone, info->family, skb);
+	if (exp) {
+		u8 state;
+
+		/* NOTE: New connections are NATted and Helped only when
+		 * committed, so we are not calling into NAT here.
+		 */
+		state = OVS_CS_F_TRACKED | OVS_CS_F_NEW | OVS_CS_F_RELATED;
+		__ovs_ct_update_key(key, state, &info->zone, exp->master);
+	} else {
+		struct nf_conn *ct;
+		int err;
+
+		err = __ovs_ct_lookup(net, key, info, skb);
+		if (err)
+			return err;
+
+		ct = (struct nf_conn *)skb_nfct(skb);
+		if (ct)
+			nf_ct_deliver_cached_events(ct);
+	}
+
+	return 0;
+}
+
+/* Lookup connection and confirm if unconfirmed. */
+static int ovs_ct_commit(struct net *net, struct sw_flow_key *key,
+			 const struct ovs_conntrack_info *info,
+			 struct sk_buff *skb)
+{
+	enum ip_conntrack_info ctinfo;
+	struct nf_conn *ct;
+	int err;
+
+	err = __ovs_ct_lookup(net, key, info, skb);
+	if (err)
+		return err;
+
+	/* The connection could be invalid, in which case this is a no-op.*/
+	/* 
+		这里使用的是netfilter内核的能力
+		include/net/netfilter/nf_conntrack.h 
+
+		/* Return conntrack_info and tuple hash for given skb. */
+		static inline struct nf_conn *
+		nf_ct_get(const struct sk_buff *skb, enum ip_conntrack_info *ctinfo)
+		{
+			unsigned long nfct = skb_get_nfct(skb);
+
+			*ctinfo = nfct & NFCT_INFOMASK;
+			return (struct nf_conn *)(nfct & NFCT_PTRMASK);
+		}
+	*/
+	ct = nf_ct_get(skb, &ctinfo);
+	if (!ct)
+		return 0;
+
+#if	IS_ENABLED(CONFIG_NETFILTER_CONNCOUNT)
+	if (static_branch_unlikely(&ovs_ct_limit_enabled)) {
+		if (!nf_ct_is_confirmed(ct)) {
+			err = ovs_ct_check_limit(net, info,
+				&ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple);
+			if (err) {
+				net_warn_ratelimited("openvswitch: zone: %u "
+					"exceeds conntrack limit\n",
+					info->zone.id);
+				return err;
+			}
+		}
+	}
+#endif
+
+	/* Set the conntrack event mask if given.  NEW and DELETE events have
+	 * their own groups, but the NFNLGRP_CONNTRACK_UPDATE group listener
+	 * typically would receive many kinds of updates.  Setting the event
+	 * mask allows those events to be filtered.  The set event mask will
+	 * remain in effect for the lifetime of the connection unless changed
+	 * by a further CT action with both the commit flag and the eventmask
+	 * option. */
+	if (info->have_eventmask) {
+		struct nf_conntrack_ecache *cache = nf_ct_ecache_find(ct);
+
+		if (cache)
+			cache->ctmask = info->eventmask;
+	}
+
+	/* Apply changes before confirming the connection so that the initial
+	 * conntrack NEW netlink event carries the values given in the CT
+	 * action.
+	 */
+	if (info->mark.mask) {
+		err = ovs_ct_set_mark(ct, key, info->mark.value,
+				      info->mark.mask);
+		if (err)
+			return err;
+	}
+	/*
+		这里使用的是netfilter内核的能力
+		include/net/netfilter/nf_conntrack.h 
+		/* It's confirmed if it is, or has been in the hash table. */
+		static inline int nf_ct_is_confirmed(const struct nf_conn *ct)
+		{
+			return test_bit(IPS_CONFIRMED_BIT, &ct->status);
+		}
+	*/
+	if (!nf_ct_is_confirmed(ct)) {
+		err = ovs_ct_init_labels(ct, key, &info->labels.value,
+					 &info->labels.mask);
+		if (err)
+			return err;
+	} else if (IS_ENABLED(CONFIG_NF_CONNTRACK_LABELS) &&
+		   labels_nonzero(&info->labels.mask)) {
+		err = ovs_ct_set_labels(ct, key, &info->labels.value,
+					&info->labels.mask);
+		if (err)
+			return err;
+	}
+	/* This will take care of sending queued events even if the connection
+	 * is already confirmed.
+	 */
+	/*
+		这里使用的是netfilter内核的能力
+		include/net/netfilter/nf_conntrack_core.h
+		/* Confirm a connection: returns NF_DROP if packet must be dropped. */
+		static inline int nf_conntrack_confirm(struct sk_buff *skb)
+		{
+			struct nf_conn *ct = (struct nf_conn *)skb_nfct(skb);
+			int ret = NF_ACCEPT;
+
+			if (ct) {
+				if (!nf_ct_is_confirmed(ct))
+					ret = __nf_conntrack_confirm(skb);
+				if (likely(ret == NF_ACCEPT))
+					nf_ct_deliver_cached_events(ct);
+			}
+			return ret;
+		}
+	*/
+	if (nf_conntrack_confirm(skb) != NF_ACCEPT)
+		return -EINVAL;
+
+	return 0;
+}
+
+
+/* Pass 'skb' through conntrack in 'net', using zone configured in 'info', if
+ * not done already.  Update key with new CT state after passing the packet
+ * through conntrack.
+ * Note that if the packet is deemed invalid by conntrack, skb->_nfct will be
+ * set to NULL and 0 will be returned.
+ */
+static int __ovs_ct_lookup(struct net *net, struct sw_flow_key *key,
+			   const struct ovs_conntrack_info *info,
+			   struct sk_buff *skb)
+{
+	/* If we are recirculating packets to match on conntrack fields and
+	 * committing with a separate conntrack action,  then we don't need to
+	 * actually run the packet through conntrack twice unless it's for a
+	 * different zone.
+	 */
+	bool cached = skb_nfct_cached(net, key, info, skb);
+	enum ip_conntrack_info ctinfo;
+	struct nf_conn *ct;
+
+	if (!cached) {
+		struct nf_hook_state state = {
+			.hook = NF_INET_PRE_ROUTING,
+			.pf = info->family,
+			.net = net,
+		};
+		struct nf_conn *tmpl = info->ct;
+		int err;
+
+		/* Associate skb with specified zone. */
+		if (tmpl) {
+			if (skb_nfct(skb))
+				nf_conntrack_put(skb_nfct(skb));
+			nf_conntrack_get(&tmpl->ct_general);
+			nf_ct_set(skb, tmpl, IP_CT_NEW);
+		}
+
+		err = nf_conntrack_in(skb, &state);
+		if (err != NF_ACCEPT)
+			return -ENOENT;
+
+		/* Clear CT state NAT flags to mark that we have not yet done
+		 * NAT after the nf_conntrack_in() call.  We can actually clear
+		 * the whole state, as it will be re-initialized below.
+		 */
+		key->ct_state = 0;
+
+		/* Update the key, but keep the NAT flags. */
+		ovs_ct_update_key(skb, info, key, true, true);
+	}
+
+	ct = nf_ct_get(skb, &ctinfo);
+	if (ct) {
+		bool add_helper = false;
+
+		/* Packets starting a new connection must be NATted before the
+		 * helper, so that the helper knows about the NAT.  We enforce
+		 * this by delaying both NAT and helper calls for unconfirmed
+		 * connections until the committing CT action.  For later
+		 * packets NAT and Helper may be called in either order.
+		 *
+		 * NAT will be done only if the CT action has NAT, and only
+		 * once per packet (per zone), as guarded by the NAT bits in
+		 * the key->ct_state.
+		 */
+		if (info->nat && !(key->ct_state & OVS_CS_F_NAT_MASK) &&
+		    (nf_ct_is_confirmed(ct) || info->commit) &&
+		    ovs_ct_nat(net, key, info, skb, ct, ctinfo) != NF_ACCEPT) {
+			return -EINVAL;
+		}
+
+		/* Userspace may decide to perform a ct lookup without a helper
+		 * specified followed by a (recirculate and) commit with one,
+		 * or attach a helper in a later commit.  Therefore, for
+		 * connections which we will commit, we may need to attach
+		 * the helper here.
+		 */
+		if (info->commit && info->helper && !nfct_help(ct)) {
+			int err = __nf_ct_try_assign_helper(ct, info->ct,
+							    GFP_ATOMIC);
+			if (err)
+				return err;
+			add_helper = true;
+
+			/* helper installed, add seqadj if NAT is required */
+			if (info->nat && !nfct_seqadj(ct)) {
+				if (!nfct_seqadj_ext_add(ct))
+					return -EINVAL;
+			}
+		}
+
+		/* Call the helper only if:
+		 * - nf_conntrack_in() was executed above ("!cached") or a
+		 *   helper was just attached ("add_helper") for a confirmed
+		 *   connection, or
+		 * - When committing an unconfirmed connection.
+		 */
+		if ((nf_ct_is_confirmed(ct) ? !cached || add_helper :
+					      info->commit) &&
+		    ovs_ct_helper(skb, info->family) != NF_ACCEPT) {
+			return -EINVAL;
+		}
+	}
+
+	return 0;
+}
+
+/* Initialize labels for a new, yet to be committed conntrack entry.  Note that
+ * since the new connection is not yet confirmed, and thus no-one else has
+ * access to it's labels, we simply write them over.
+ */
+static int ovs_ct_init_labels(struct nf_conn *ct, struct sw_flow_key *key,
+			      const struct ovs_key_ct_labels *labels,
+			      const struct ovs_key_ct_labels *mask)
+{
+	struct nf_conn_labels *cl, *master_cl;
+	bool have_mask = labels_nonzero(mask);
+
+	/* Inherit master's labels to the related connection? */
+	master_cl = ct->master ? nf_ct_labels_find(ct->master) : NULL;
+
+	if (!master_cl && !have_mask)
+		return 0;   /* Nothing to do. */
+
+	cl = ovs_ct_get_conn_labels(ct);
+	if (!cl)
+		return -ENOSPC;
+
+	/* Inherit the master's labels, if any.  Must use memcpy for backport
+	 * as struct assignment only copies the length field in older
+	 * kernels.
+	 */
+	if (master_cl)
+		memcpy(cl->bits, master_cl->bits, OVS_CT_LABELS_LEN);
+
+	if (have_mask) {
+		u32 *dst = (u32 *)cl->bits;
+		int i;
+
+		for (i = 0; i < OVS_CT_LABELS_LEN_32; i++)
+			dst[i] = (dst[i] & ~mask->ct_labels_32[i]) |
+				(labels->ct_labels_32[i]
+				 & mask->ct_labels_32[i]);
+	}
+
+	/* Labels are included in the IPCTNL_MSG_CT_NEW event only if the
+	 * IPCT_LABEL bit is set in the event cache.
+	 */
+	nf_conntrack_event_cache(IPCT_LABEL, ct);
+
+	memcpy(&key->ct.labels, cl->bits, OVS_CT_LABELS_LEN);
+
+	return 0;
+}
+
+从这里可以看出，ovs内核对于session的存储用的就是netfilter
+
+接下来我们来看清理线程如何做的
+
+创建datapath时，会启动专门的线程 clean_thread_main 清除超期的conntrack表项，这里是清理DPDK模式的用户态的表项的
+
+////////////////////lib\conntrack.c
+
+static int
+create_dp_netdev(const char *name, const struct dpif_class *class,
+                 struct dp_netdev **dpp)
+    OVS_REQUIRES(dp_netdev_mutex)
+{
+    static struct ovsthread_once tsc_freq_check = OVSTHREAD_ONCE_INITIALIZER;
+    struct dp_netdev *dp;
+    int error;
+
+    /* Avoid estimating TSC frequency for dummy datapath to not slow down
+     * unit tests. */
+    if (!dpif_netdev_class_is_dummy(class)
+        && ovsthread_once_start(&tsc_freq_check)) {
+        pmd_perf_estimate_tsc_frequency();
+        ovsthread_once_done(&tsc_freq_check);
+    }
+
+    dp = xzalloc(sizeof *dp);
+    shash_add(&dp_netdevs, name, dp);
+
+    *CONST_CAST(const struct dpif_class **, &dp->class) = class;
+    *CONST_CAST(const char **, &dp->name) = xstrdup(name);
+    ovs_refcount_init(&dp->ref_cnt);
+    atomic_flag_clear(&dp->destroyed);
+
+    ovs_mutex_init_recursive(&dp->port_mutex);
+    hmap_init(&dp->ports);
+    dp->port_seq = seq_create();
+    ovs_mutex_init(&dp->bond_mutex);
+    cmap_init(&dp->tx_bonds);
+
+    fat_rwlock_init(&dp->upcall_rwlock);
+
+    dp->reconfigure_seq = seq_create();
+    dp->last_reconfigure_seq = seq_read(dp->reconfigure_seq);
+
+    for (int i = 0; i < N_METER_LOCKS; ++i) {
+        ovs_mutex_init_adaptive(&dp->meter_locks[i]);
+    }
+
+    /* Disable upcalls by default. */
+    dp_netdev_disable_upcall(dp);
+    dp->upcall_aux = NULL;
+    dp->upcall_cb = NULL;
+
+    dp->conntrack = conntrack_init();
+
+    atomic_init(&dp->emc_insert_min, DEFAULT_EM_FLOW_INSERT_MIN);
+    atomic_init(&dp->tx_flush_interval, DEFAULT_TX_FLUSH_INTERVAL);
+
+    cmap_init(&dp->poll_threads);
+    dp->pmd_rxq_assign_cyc = true;
+
+    ovs_mutex_init(&dp->tx_qid_pool_mutex);
+    /* We need 1 Tx queue for each possible core + 1 for non-PMD threads. */
+    dp->tx_qid_pool = id_pool_create(0, ovs_numa_get_n_cores() + 1);
+
+    ovs_mutex_init_recursive(&dp->non_pmd_mutex);
+    ovsthread_key_create(&dp->per_pmd_key, NULL);
+
+    ovs_mutex_lock(&dp->port_mutex);
+    /* non-PMD will be created before all other threads and will
+     * allocate static_tx_qid = 0. */
+    dp_netdev_set_nonpmd(dp);
+
+    error = do_add_port(dp, name, dpif_netdev_port_open_type(dp->class,
+                                                             "internal"),
+                        ODPP_LOCAL);
+    ovs_mutex_unlock(&dp->port_mutex);
+    if (error) {
+        dp_netdev_free(dp);
+        return error;
+    }
+
+    dp->last_tnl_conf_seq = seq_read(tnl_conf_seq);
+    *dpp = dp;
+    return 0;
+}
+
+/* Initializes the connection tracker 'ct'.  The caller is responsible for
+ * calling 'conntrack_destroy()', when the instance is not needed anymore */
+struct conntrack *
+conntrack_init(void)
+{
+    struct conntrack *ct = xzalloc(sizeof *ct);
+
+    ovs_rwlock_init(&ct->resources_lock);
+    ovs_rwlock_wrlock(&ct->resources_lock);
+    hmap_init(&ct->alg_expectations);
+    hindex_init(&ct->alg_expectation_refs);
+    ovs_rwlock_unlock(&ct->resources_lock);
+
+    ovs_mutex_init_adaptive(&ct->ct_lock);
+    ovs_mutex_lock(&ct->ct_lock);
+    cmap_init(&ct->conns);
+    for (unsigned i = 0; i < ARRAY_SIZE(ct->exp_lists); i++) {
+        ovs_list_init(&ct->exp_lists[i]);
+    }
+    hmap_init(&ct->zone_limits);
+    ct->zone_limit_seq = 0;
+    timeout_policy_init(ct);
+    ovs_mutex_unlock(&ct->ct_lock);
+
+    ct->hash_basis = random_uint32();
+    atomic_count_init(&ct->n_conn, 0);
+    atomic_init(&ct->n_conn_limit, DEFAULT_N_CONN_LIMIT);
+    atomic_init(&ct->tcp_seq_chk, true);
+    latch_init(&ct->clean_thread_exit);
+    ct->clean_thread = ovs_thread_create("ct_clean", clean_thread_main, ct);
+    ct->ipf = ipf_init();
+
+    return ct;
+}
+
+struct conntrack {
+    struct ovs_mutex ct_lock; /* Protects 2 following fields. */
+    struct cmap conns OVS_GUARDED;
+    struct ovs_list exp_lists[N_CT_TM] OVS_GUARDED;
+    struct hmap zone_limits OVS_GUARDED;
+    struct hmap timeout_policies OVS_GUARDED;
+    uint32_t hash_basis; /* Salt for hashing a connection key. */
+    pthread_t clean_thread; /* Periodically cleans up connection tracker. */
+    struct latch clean_thread_exit; /* To destroy the 'clean_thread'. */
+
+    /* Counting connections. */
+    atomic_count n_conn; /* Number of connections currently tracked. */
+    atomic_uint n_conn_limit; /* Max connections tracked. */
+
+    /* Expectations for application level gateways (created by control
+     * connections to help create data connections, e.g. for FTP). */
+    struct ovs_rwlock resources_lock; /* Protects fields below. */
+    struct hmap alg_expectations OVS_GUARDED; /* Holds struct
+                                               * alg_exp_nodes. */
+    struct hindex alg_expectation_refs OVS_GUARDED; /* For lookup from
+                                                     * control context.  */
+
+    struct ipf *ipf; /* Fragmentation handling context. */
+    uint32_t zone_limit_seq; /* Used to disambiguate zone limit counts. */
+    atomic_bool tcp_seq_chk; /* Check TCP sequence numbers. */
+};
+
+
+/* Cleanup:
+ *
+ * We must call conntrack_clean() periodically.  conntrack_clean() return
+ * value gives an hint on when the next cleanup must be done (either because
+ * there is an actual connection that expires, or because a new connection
+ * might be created with the minimum timeout).
+ *
+ * The logic below has two goals:
+ *
+ * - We want to reduce the number of wakeups and batch connection cleanup
+ *   when the load is not very high.  CT_CLEAN_INTERVAL ensures that if we
+ *   are coping with the current cleanup tasks, then we wait at least
+ *   5 seconds to do further cleanup.
+ *
+ * - We don't want to keep the map locked too long, as we might prevent
+ *   traffic from flowing.  CT_CLEAN_MIN_INTERVAL ensures that if cleanup is
+ *   behind, there is at least some 200ms blocks of time when the map will be
+ *   left alone, so the datapath can operate unhindered.
+ */
+#define CT_CLEAN_INTERVAL 5000 /* 5 seconds */
+#define CT_CLEAN_MIN_INTERVAL 200  /* 0.2 seconds */
+
+static void *
+clean_thread_main(void *f_)
+{
+    struct conntrack *ct = f_;
+
+    while (!latch_is_set(&ct->clean_thread_exit)) {
+        long long next_wake;
+        long long now = time_msec();
+        next_wake = conntrack_clean(ct, now);
+
+        if (next_wake < now) {
+            poll_timer_wait_until(now + CT_CLEAN_MIN_INTERVAL);
+        } else {
+            poll_timer_wait_until(MAX(next_wake, now + CT_CLEAN_INTERVAL));
+        }
+        latch_wait(&ct->clean_thread_exit);
+        poll_block();
+    }
+
+    return NULL;
+}
+
+/* Cleans up old connection entries from 'ct'.  Returns the time when the
+ * next expiration might happen.  The return value might be smaller than
+ * 'now', meaning that an internal limit has been reached, and some expired
+ * connections have not been deleted. */
+static long long
+conntrack_clean(struct conntrack *ct, long long now)
+{
+    unsigned int n_conn_limit;
+    atomic_read_relaxed(&ct->n_conn_limit, &n_conn_limit);
+    size_t clean_max = n_conn_limit > 10 ? n_conn_limit / 10 : 1;
+    long long min_exp = ct_sweep(ct, now, clean_max);
+    long long next_wakeup = MIN(min_exp, now + CT_DPIF_NETDEV_TP_MIN);
+
+    return next_wakeup;
+}
+
+/* Delete the expired connections from 'ctb', up to 'limit'. Returns the
+ * earliest expiration time among the remaining connections in 'ctb'.  Returns
+ * LLONG_MAX if 'ctb' is empty.  The return value might be smaller than 'now',
+ * if 'limit' is reached */
+static long long
+ct_sweep(struct conntrack *ct, long long now, size_t limit)
+{
+    struct conn *conn, *next;
+    long long min_expiration = LLONG_MAX;
+    size_t count = 0;
+
+    ovs_mutex_lock(&ct->ct_lock);
+
+    for (unsigned i = 0; i < N_CT_TM; i++) {
+        LIST_FOR_EACH_SAFE (conn, next, exp_node, &ct->exp_lists[i]) {
+            ovs_mutex_lock(&conn->lock);
+            if (now < conn->expiration || count >= limit) {
+                min_expiration = MIN(min_expiration, conn->expiration);
+                ovs_mutex_unlock(&conn->lock);
+                if (count >= limit) {
+                    /* Do not check other lists. */
+                    COVERAGE_INC(conntrack_long_cleanup);
+                    goto out;
+                }
+                break;
+            } else {
+                ovs_mutex_unlock(&conn->lock);
+                conn_clean(ct, conn);
+            }
+            count++;
+        }
+    }
+
+out:
+    VLOG_DBG("conntrack cleanup %"PRIuSIZE" entries in %lld msec", count,
+             time_msec() - now);
+    ovs_mutex_unlock(&ct->ct_lock);
+    return min_expiration;
+}
+
+/* Must be called with 'conn' of 'conn_type' CT_CONN_TYPE_DEFAULT.  Also
+ * removes the associated nat 'conn' from the lookup datastructures. */
+static void
+conn_clean(struct conntrack *ct, struct conn *conn)
+    OVS_REQUIRES(ct->ct_lock)
+{
+    ovs_assert(conn->conn_type == CT_CONN_TYPE_DEFAULT);
+
+    conn_clean_cmn(ct, conn);
+    if (conn->nat_conn) {
+        uint32_t hash = conn_key_hash(&conn->nat_conn->key, ct->hash_basis);
+        cmap_remove(&ct->conns, &conn->nat_conn->cm_node, hash);
+    }
+    ovs_list_remove(&conn->exp_node);
+    conn->cleaned = true;
+    ovsrcu_postpone(delete_conn, conn);
+    atomic_count_dec(&ct->n_conn);
+}
+
+struct ct_l4_proto ct_proto_tcp = {
+    .new_conn = tcp_new_conn,
+    .valid_new = tcp_valid_new,
+    .conn_update = tcp_conn_update,
+    .conn_get_protoinfo = tcp_conn_get_protoinfo,
+};
+
+static struct conn *
+tcp_new_conn(struct conntrack *ct, struct dp_packet *pkt, long long now,
+             uint32_t tp_id)
+{
+    struct conn_tcp* newconn = NULL;
+    struct tcp_header *tcp = dp_packet_l4(pkt);
+    struct tcp_peer *src, *dst;
+    uint16_t tcp_flags = TCP_FLAGS(tcp->tcp_ctl);
+
+    newconn = xzalloc(sizeof *newconn);
+
+    src = &newconn->peer[0];
+    dst = &newconn->peer[1];
+
+    src->seqlo = ntohl(get_16aligned_be32(&tcp->tcp_seq));
+    src->seqhi = src->seqlo + tcp_payload_length(pkt) + 1;
+
+    if (tcp_flags & TCP_SYN) {
+        src->seqhi++;
+        src->wscale = tcp_get_wscale(tcp);
+    } else {
+        src->wscale = CT_WSCALE_UNKNOWN;
+        dst->wscale = CT_WSCALE_UNKNOWN;
+    }
+    src->max_win = MAX(ntohs(tcp->tcp_winsz), 1);
+    if (src->wscale & CT_WSCALE_MASK) {
+        /* Remove scale factor from initial window */
+        uint8_t sws = src->wscale & CT_WSCALE_MASK;
+        src->max_win = DIV_ROUND_UP((uint32_t) src->max_win, 1 << sws);
+    }
+    if (tcp_flags & TCP_FIN) {
+        src->seqhi++;
+    }
+    dst->seqhi = 1;
+    dst->max_win = 1;
+    src->state = CT_DPIF_TCPS_SYN_SENT;
+    dst->state = CT_DPIF_TCPS_CLOSED;
+
+    newconn->up.tp_id = tp_id;
+    conn_init_expiration(ct, &newconn->up, CT_TM_TCP_FIRST_PACKET, now);
+
+    return &newconn->up;
+}
+
+/* ct_lock must be held. */
+void
+conn_init_expiration(struct conntrack *ct, struct conn *conn,
+                     enum ct_timeout tm, long long now)
+    OVS_REQUIRES(ct->ct_lock)
+{
+    struct timeout_policy *tp;
+    uint32_t val;
+
+    tp = timeout_policy_lookup(ct, conn->tp_id);
+    if (tp) {
+        val = tp->policy.attrs[tm_to_ct_dpif_tp(tm)];
+    } else {
+        val = ct_dpif_netdev_tp_def[tm_to_ct_dpif_tp(tm)];
+    }
+
+    VLOG_DBG_RL(&rl, "Init timeout %s zone=%u with policy id=%d val=%u sec.",
+                ct_timeout_str[tm], conn->key.zone, conn->tp_id, val);
+
+    conn_init_expiration__(ct, conn, tm, now, val);
+}
+
+static void
+conn_init_expiration__(struct conntrack *ct, struct conn *conn,
+                       enum ct_timeout tm, long long now,
+                       uint32_t tp_value)
+{
+    conn->expiration = now + tp_value * 1000;
+    ovs_list_push_back(&ct->exp_lists[tm], &conn->exp_node);
+}
+
+static struct conn *
+new_conn(struct conntrack *ct, struct dp_packet *pkt, struct conn_key *key,
+         long long now, uint32_t tp_id)
+{
+    return l4_protos[key->nw_proto]->new_conn(ct, pkt, now, tp_id);
+}
+
+static struct conn *
+conn_not_found(struct conntrack *ct, struct dp_packet *pkt,
+               struct conn_lookup_ctx *ctx, bool commit, long long now,
+               const struct nat_action_info_t *nat_action_info,
+               const char *helper, const struct alg_exp_node *alg_exp,
+               enum ct_alg_ctl_type ct_alg_ctl, uint32_t tp_id)
+    OVS_REQUIRES(ct->ct_lock)
+{
+    struct conn *nc = NULL;
+    struct conn *nat_conn = NULL;
+
+    if (!valid_new(pkt, &ctx->key)) {
+        pkt->md.ct_state = CS_INVALID;
+        return nc;
+    }
+
+    pkt->md.ct_state = CS_NEW;
+
+    if (alg_exp) {
+        pkt->md.ct_state |= CS_RELATED;
+    }
+
+    if (commit) {
+        struct zone_limit *zl = zone_limit_lookup_or_default(ct,
+                                                             ctx->key.zone);
+        if (zl && zl->czl.count >= zl->czl.limit) {
+            return nc;
+        }
+
+        unsigned int n_conn_limit;
+        atomic_read_relaxed(&ct->n_conn_limit, &n_conn_limit);
+        if (atomic_count_get(&ct->n_conn) >= n_conn_limit) {
+            COVERAGE_INC(conntrack_full);
+            return nc;
+        }
+
+        nc = new_conn(ct, pkt, &ctx->key, now, tp_id);
+        memcpy(&nc->key, &ctx->key, sizeof nc->key);
+        memcpy(&nc->rev_key, &nc->key, sizeof nc->rev_key);
+        conn_key_reverse(&nc->rev_key);
+
+        if (ct_verify_helper(helper, ct_alg_ctl)) {
+            nc->alg = nullable_xstrdup(helper);
+        }
+
+        if (alg_exp) {
+            nc->alg_related = true;
+            nc->mark = alg_exp->master_mark;
+            nc->label = alg_exp->master_label;
+            nc->master_key = alg_exp->master_key;
+        }
+
+        if (nat_action_info) {
+            nc->nat_info = xmemdup(nat_action_info, sizeof *nc->nat_info);
+            nat_conn = xzalloc(sizeof *nat_conn);
+
+            if (alg_exp) {
+                if (alg_exp->nat_rpl_dst) {
+                    nc->rev_key.dst.addr = alg_exp->alg_nat_repl_addr;
+                    nc->nat_info->nat_action = NAT_ACTION_SRC;
+                } else {
+                    nc->rev_key.src.addr = alg_exp->alg_nat_repl_addr;
+                    nc->nat_info->nat_action = NAT_ACTION_DST;
+                }
+            } else {
+                memcpy(nat_conn, nc, sizeof *nat_conn);
+                bool nat_res = nat_select_range_tuple(ct, nc, nat_conn);
+
+                if (!nat_res) {
+                    goto nat_res_exhaustion;
+                }
+
+                /* Update nc with nat adjustments made to nat_conn by
+                 * nat_select_range_tuple(). */
+                memcpy(nc, nat_conn, sizeof *nc);
+            }
+
+            nat_packet(pkt, nc, ctx->icmp_related);
+            memcpy(&nat_conn->key, &nc->rev_key, sizeof nat_conn->key);
+            memcpy(&nat_conn->rev_key, &nc->key, sizeof nat_conn->rev_key);
+            nat_conn->conn_type = CT_CONN_TYPE_UN_NAT;
+            nat_conn->nat_info = NULL;
+            nat_conn->alg = NULL;
+            nat_conn->nat_conn = NULL;
+            uint32_t nat_hash = conn_key_hash(&nat_conn->key, ct->hash_basis);
+            cmap_insert(&ct->conns, &nat_conn->cm_node, nat_hash);
+        }
+
+        nc->nat_conn = nat_conn;
+        ovs_mutex_init_adaptive(&nc->lock);
+        nc->conn_type = CT_CONN_TYPE_DEFAULT;
+        cmap_insert(&ct->conns, &nc->cm_node, ctx->hash);
+        atomic_count_inc(&ct->n_conn);
+        ctx->conn = nc; /* For completeness. */
+        if (zl) {
+            nc->admit_zone = zl->czl.zone;
+            nc->zone_limit_seq = zl->czl.zone_limit_seq;
+            zl->czl.count++;
+        } else {
+            nc->admit_zone = INVALID_ZONE;
+        }
+    }
+
+    return nc;
+
+    /* This would be a user error or a DOS attack.  A user error is prevented
+     * by allocating enough combinations of NAT addresses when combined with
+     * ephemeral ports.  A DOS attack should be protected against with
+     * firewall rules or a separate firewall.  Also using zone partitioning
+     * can limit DoS impact. */
+nat_res_exhaustion:
+    free(nat_conn);
+    ovs_list_remove(&nc->exp_node);
+    delete_conn_cmn(nc);
+    static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(5, 5);
+    VLOG_WARN_RL(&rl, "Unable to NAT due to tuple space exhaustion - "
+                 "if DoS attack, use firewalling and/or zone partitioning.");
+    return NULL;
+}
+
+static void
+process_one(struct conntrack *ct, struct dp_packet *pkt,
+            struct conn_lookup_ctx *ctx, uint16_t zone,
+            bool force, bool commit, long long now, const uint32_t *setmark,
+            const struct ovs_key_ct_labels *setlabel,
+            const struct nat_action_info_t *nat_action_info,
+            ovs_be16 tp_src, ovs_be16 tp_dst, const char *helper,
+            uint32_t tp_id)
+{
+    /* Reset ct_state whenever entering a new zone. */
+    if (pkt->md.ct_state && pkt->md.ct_zone != zone) {
+        pkt->md.ct_state = 0;
+    }
+
+    bool create_new_conn = false;
+    conn_key_lookup(ct, &ctx->key, ctx->hash, now, &ctx->conn, &ctx->reply);
+    struct conn *conn = ctx->conn;
+
+    /* Delete found entry if in wrong direction. 'force' implies commit. */
+    if (OVS_UNLIKELY(force && ctx->reply && conn)) {
+        ovs_mutex_lock(&ct->ct_lock);
+        if (conn_lookup(ct, &conn->key, now, NULL, NULL)) {
+            conn_clean(ct, conn);
+        }
+        ovs_mutex_unlock(&ct->ct_lock);
+        conn = NULL;
+    }
+
+    if (OVS_LIKELY(conn)) {
+        if (conn->conn_type == CT_CONN_TYPE_UN_NAT) {
+
+            ctx->reply = true;
+            struct conn *rev_conn = conn;  /* Save for debugging. */
+            uint32_t hash = conn_key_hash(&conn->rev_key, ct->hash_basis);
+            conn_key_lookup(ct, &ctx->key, hash, now, &conn, &ctx->reply);
+
+            if (!conn) {
+                pkt->md.ct_state |= CS_INVALID;
+                write_ct_md(pkt, zone, NULL, NULL, NULL);
+                char *log_msg = xasprintf("Missing master conn %p", rev_conn);
+                ct_print_conn_info(rev_conn, log_msg, VLL_INFO, true, true);
+                free(log_msg);
+                return;
+            }
+        }
+    }
+
+    enum ct_alg_ctl_type ct_alg_ctl = get_alg_ctl_type(pkt, tp_src, tp_dst,
+                                                       helper);
+
+    if (OVS_LIKELY(conn)) {
+        if (OVS_LIKELY(!conn_update_state_alg(ct, pkt, ctx, conn,
+                                              nat_action_info,
+                                              ct_alg_ctl, now,
+                                              &create_new_conn))) {
+            create_new_conn = conn_update_state(ct, pkt, ctx, conn, now);
+        }
+        if (nat_action_info && !create_new_conn) {
+            handle_nat(pkt, conn, zone, ctx->reply, ctx->icmp_related);
+        }
+
+    } else if (check_orig_tuple(ct, pkt, ctx, now, &conn, nat_action_info)) {
+        create_new_conn = conn_update_state(ct, pkt, ctx, conn, now);
+    } else {
+        if (ctx->icmp_related) {
+            /* An icmp related conn should always be found; no new
+               connection is created based on an icmp related packet. */
+            pkt->md.ct_state = CS_INVALID;
+        } else {
+            create_new_conn = true;
+        }
+    }
+
+    const struct alg_exp_node *alg_exp = NULL;
+    struct alg_exp_node alg_exp_entry;
+
+    if (OVS_UNLIKELY(create_new_conn)) {
+
+        ovs_rwlock_rdlock(&ct->resources_lock);
+        alg_exp = expectation_lookup(&ct->alg_expectations, &ctx->key,
+                                     ct->hash_basis,
+                                     alg_src_ip_wc(ct_alg_ctl));
+        if (alg_exp) {
+            memcpy(&alg_exp_entry, alg_exp, sizeof alg_exp_entry);
+            alg_exp = &alg_exp_entry;
+        }
+        ovs_rwlock_unlock(&ct->resources_lock);
+
+        ovs_mutex_lock(&ct->ct_lock);
+        if (!conn_lookup(ct, &ctx->key, now, NULL, NULL)) {
+            conn = conn_not_found(ct, pkt, ctx, commit, now, nat_action_info,
+                                  helper, alg_exp, ct_alg_ctl, tp_id);
+        }
+        ovs_mutex_unlock(&ct->ct_lock);
+    }
+
+    write_ct_md(pkt, zone, conn, &ctx->key, alg_exp);
+
+    if (conn && setmark) {
+        set_mark(pkt, conn, setmark[0], setmark[1]);
+    }
+
+    if (conn && setlabel) {
+        set_label(pkt, conn, &setlabel[0], &setlabel[1]);
+    }
+
+    handle_alg_ctl(ct, ctx, pkt, ct_alg_ctl, conn, now, !!nat_action_info);
+
+    set_cached_conn(nat_action_info, ctx, conn, pkt);
+}
+
+/* Sends the packets in '*pkt_batch' through the connection tracker 'ct'.  All
+ * the packets must have the same 'dl_type' (IPv4 or IPv6) and should have
+ * the l3 and and l4 offset properly set.  Performs fragment reassembly with
+ * the help of ipf_preprocess_conntrack().
+ *
+ * If 'commit' is true, the packets are allowed to create new entries in the
+ * connection tables.  'setmark', if not NULL, should point to a two
+ * elements array containing a value and a mask to set the connection mark.
+ * 'setlabel' behaves similarly for the connection label.*/
+int
+conntrack_execute(struct conntrack *ct, struct dp_packet_batch *pkt_batch,
+                  ovs_be16 dl_type, bool force, bool commit, uint16_t zone,
+                  const uint32_t *setmark,
+                  const struct ovs_key_ct_labels *setlabel,
+                  ovs_be16 tp_src, ovs_be16 tp_dst, const char *helper,
+                  const struct nat_action_info_t *nat_action_info,
+                  long long now, uint32_t tp_id)
+{
+    ipf_preprocess_conntrack(ct->ipf, pkt_batch, now, dl_type, zone,
+                             ct->hash_basis);
+
+    struct dp_packet *packet;
+    struct conn_lookup_ctx ctx;
+
+    DP_PACKET_BATCH_FOR_EACH (i, packet, pkt_batch) {
+        struct conn *conn = packet->md.conn;
+        if (OVS_UNLIKELY(packet->md.ct_state == CS_INVALID)) {
+            write_ct_md(packet, zone, NULL, NULL, NULL);
+        } else if (conn && conn->key.zone == zone && !force
+                   && !get_alg_ctl_type(packet, tp_src, tp_dst, helper)) {
+            process_one_fast(zone, setmark, setlabel, nat_action_info,
+                             conn, packet);
+        } else if (OVS_UNLIKELY(!conn_key_extract(ct, packet, dl_type, &ctx,
+                                zone))) {
+            packet->md.ct_state = CS_INVALID;
+            write_ct_md(packet, zone, NULL, NULL, NULL);
+        } else {
+            process_one(ct, packet, &ctx, zone, force, commit, now, setmark,
+                        setlabel, nat_action_info, tp_src, tp_dst, helper,
+                        tp_id);
+        }
+    }
+
+    ipf_postprocess_conntrack(ct->ipf, pkt_batch, now, dl_type);
+
+    return 0;
+}
+
+也就是说DPDK模式的conntrack是自己实现的
+
+static void
+dp_execute_cb(void *aux_, struct dp_packet_batch *packets_,
+              const struct nlattr *a, bool should_steal)
+    OVS_NO_THREAD_SAFETY_ANALYSIS
+{
+    struct dp_netdev_execute_aux *aux = aux_;
+    uint32_t *depth = recirc_depth_get();
+    struct dp_netdev_pmd_thread *pmd = aux->pmd;
+    struct dp_netdev *dp = pmd->dp;
+    int type = nl_attr_type(a);
+    struct tx_port *p;
+    uint32_t packet_count, packets_dropped;
+
+    switch ((enum ovs_action_attr)type) {
+    case OVS_ACTION_ATTR_OUTPUT:
+        dp_execute_output_action(pmd, packets_, should_steal,
+                                 nl_attr_get_odp_port(a));
+        return;
+
+    case OVS_ACTION_ATTR_LB_OUTPUT:
+        dp_execute_lb_output_action(pmd, packets_, should_steal,
+                                    nl_attr_get_u32(a));
+        return;
+
+    case OVS_ACTION_ATTR_TUNNEL_PUSH:
+        if (should_steal) {
+            /* We're requested to push tunnel header, but also we need to take
+             * the ownership of these packets. Thus, we can avoid performing
+             * the action, because the caller will not use the result anyway.
+             * Just break to free the batch. */
+            break;
+        }
+        dp_packet_batch_apply_cutlen(packets_);
+        packet_count = dp_packet_batch_size(packets_);
+        if (push_tnl_action(pmd, a, packets_)) {
+            COVERAGE_ADD(datapath_drop_tunnel_push_error,
+                         packet_count);
+        }
+        return;
+
+    case OVS_ACTION_ATTR_TUNNEL_POP:
+        if (*depth < MAX_RECIRC_DEPTH) {
+            struct dp_packet_batch *orig_packets_ = packets_;
+            odp_port_t portno = nl_attr_get_odp_port(a);
+
+            p = pmd_tnl_port_cache_lookup(pmd, portno);
+            if (p) {
+                struct dp_packet_batch tnl_pkt;
+
+                if (!should_steal) {
+                    dp_packet_batch_clone(&tnl_pkt, packets_);
+                    packets_ = &tnl_pkt;
+                    dp_packet_batch_reset_cutlen(orig_packets_);
+                }
+
+                dp_packet_batch_apply_cutlen(packets_);
+
+                packet_count = dp_packet_batch_size(packets_);
+                netdev_pop_header(p->port->netdev, packets_);
+                packets_dropped =
+                   packet_count - dp_packet_batch_size(packets_);
+                if (packets_dropped) {
+                    COVERAGE_ADD(datapath_drop_tunnel_pop_error,
+                                 packets_dropped);
+                }
+                if (dp_packet_batch_is_empty(packets_)) {
+                    return;
+                }
+
+                struct dp_packet *packet;
+                DP_PACKET_BATCH_FOR_EACH (i, packet, packets_) {
+                    packet->md.in_port.odp_port = portno;
+                }
+
+                (*depth)++;
+                dp_netdev_recirculate(pmd, packets_);
+                (*depth)--;
+                return;
+            }
+            COVERAGE_ADD(datapath_drop_invalid_tnl_port,
+                         dp_packet_batch_size(packets_));
+        } else {
+            COVERAGE_ADD(datapath_drop_recirc_error,
+                         dp_packet_batch_size(packets_));
+        }
+        break;
+
+    case OVS_ACTION_ATTR_USERSPACE:
+        if (!fat_rwlock_tryrdlock(&dp->upcall_rwlock)) {
+            struct dp_packet_batch *orig_packets_ = packets_;
+            const struct nlattr *userdata;
+            struct dp_packet_batch usr_pkt;
+            struct ofpbuf actions;
+            struct flow flow;
+            ovs_u128 ufid;
+            bool clone = false;
+
+            userdata = nl_attr_find_nested(a, OVS_USERSPACE_ATTR_USERDATA);
+            ofpbuf_init(&actions, 0);
+
+            if (packets_->trunc) {
+                if (!should_steal) {
+                    dp_packet_batch_clone(&usr_pkt, packets_);
+                    packets_ = &usr_pkt;
+                    clone = true;
+                    dp_packet_batch_reset_cutlen(orig_packets_);
+                }
+
+                dp_packet_batch_apply_cutlen(packets_);
+            }
+
+            struct dp_packet *packet;
+            DP_PACKET_BATCH_FOR_EACH (i, packet, packets_) {
+                flow_extract(packet, &flow);
+                odp_flow_key_hash(&flow, sizeof flow, &ufid);
+                dp_execute_userspace_action(pmd, packet, should_steal, &flow,
+                                            &ufid, &actions, userdata);
+            }
+
+            if (clone) {
+                dp_packet_delete_batch(packets_, true);
+            }
+
+            ofpbuf_uninit(&actions);
+            fat_rwlock_unlock(&dp->upcall_rwlock);
+
+            return;
+        }
+        COVERAGE_ADD(datapath_drop_lock_error,
+                     dp_packet_batch_size(packets_));
+        break;
+
+    case OVS_ACTION_ATTR_RECIRC:
+        if (*depth < MAX_RECIRC_DEPTH) {
+            struct dp_packet_batch recirc_pkts;
+
+            if (!should_steal) {
+               dp_packet_batch_clone(&recirc_pkts, packets_);
+               packets_ = &recirc_pkts;
+            }
+
+            struct dp_packet *packet;
+            DP_PACKET_BATCH_FOR_EACH (i, packet, packets_) {
+                packet->md.recirc_id = nl_attr_get_u32(a);
+            }
+
+            (*depth)++;
+            dp_netdev_recirculate(pmd, packets_);
+            (*depth)--;
+
+            return;
+        }
+
+        COVERAGE_ADD(datapath_drop_recirc_error,
+                     dp_packet_batch_size(packets_));
+        VLOG_WARN("Packet dropped. Max recirculation depth exceeded.");
+        break;
+
+    case OVS_ACTION_ATTR_CT: {
+        const struct nlattr *b;
+        bool force = false;
+        bool commit = false;
+        unsigned int left;
+        uint16_t zone = 0;
+        uint32_t tp_id = 0;
+        const char *helper = NULL;
+        const uint32_t *setmark = NULL;
+        const struct ovs_key_ct_labels *setlabel = NULL;
+        struct nat_action_info_t nat_action_info;
+        struct nat_action_info_t *nat_action_info_ref = NULL;
+        bool nat_config = false;
+
+        NL_ATTR_FOR_EACH_UNSAFE (b, left, nl_attr_get(a),
+                                 nl_attr_get_size(a)) {
+            enum ovs_ct_attr sub_type = nl_attr_type(b);
+
+            switch(sub_type) {
+            case OVS_CT_ATTR_FORCE_COMMIT:
+                force = true;
+                /* fall through. */
+            case OVS_CT_ATTR_COMMIT:
+                commit = true;
+                break;
+            case OVS_CT_ATTR_ZONE:
+                zone = nl_attr_get_u16(b);
+                break;
+            case OVS_CT_ATTR_HELPER:
+                helper = nl_attr_get_string(b);
+                break;
+            case OVS_CT_ATTR_MARK:
+                setmark = nl_attr_get(b);
+                break;
+            case OVS_CT_ATTR_LABELS:
+                setlabel = nl_attr_get(b);
+                break;
+            case OVS_CT_ATTR_EVENTMASK:
+                /* Silently ignored, as userspace datapath does not generate
+                 * netlink events. */
+                break;
+            case OVS_CT_ATTR_TIMEOUT:
+                if (!str_to_uint(nl_attr_get_string(b), 10, &tp_id)) {
+                    VLOG_WARN("Invalid Timeout Policy ID: %s.",
+                              nl_attr_get_string(b));
+                    tp_id = DEFAULT_TP_ID;
+                }
+                break;
+            case OVS_CT_ATTR_NAT: {
+                const struct nlattr *b_nest;
+                unsigned int left_nest;
+                bool ip_min_specified = false;
+                bool proto_num_min_specified = false;
+                bool ip_max_specified = false;
+                bool proto_num_max_specified = false;
+                memset(&nat_action_info, 0, sizeof nat_action_info);
+                nat_action_info_ref = &nat_action_info;
+
+                NL_NESTED_FOR_EACH_UNSAFE (b_nest, left_nest, b) {
+                    enum ovs_nat_attr sub_type_nest = nl_attr_type(b_nest);
+
+                    switch (sub_type_nest) {
+                    case OVS_NAT_ATTR_SRC:
+                    case OVS_NAT_ATTR_DST:
+                        nat_config = true;
+                        nat_action_info.nat_action |=
+                            ((sub_type_nest == OVS_NAT_ATTR_SRC)
+                                ? NAT_ACTION_SRC : NAT_ACTION_DST);
+                        break;
+                    case OVS_NAT_ATTR_IP_MIN:
+                        memcpy(&nat_action_info.min_addr,
+                               nl_attr_get(b_nest),
+                               nl_attr_get_size(b_nest));
+                        ip_min_specified = true;
+                        break;
+                    case OVS_NAT_ATTR_IP_MAX:
+                        memcpy(&nat_action_info.max_addr,
+                               nl_attr_get(b_nest),
+                               nl_attr_get_size(b_nest));
+                        ip_max_specified = true;
+                        break;
+                    case OVS_NAT_ATTR_PROTO_MIN:
+                        nat_action_info.min_port =
+                            nl_attr_get_u16(b_nest);
+                        proto_num_min_specified = true;
+                        break;
+                    case OVS_NAT_ATTR_PROTO_MAX:
+                        nat_action_info.max_port =
+                            nl_attr_get_u16(b_nest);
+                        proto_num_max_specified = true;
+                        break;
+                    case OVS_NAT_ATTR_PERSISTENT:
+                    case OVS_NAT_ATTR_PROTO_HASH:
+                    case OVS_NAT_ATTR_PROTO_RANDOM:
+                        break;
+                    case OVS_NAT_ATTR_UNSPEC:
+                    case __OVS_NAT_ATTR_MAX:
+                        OVS_NOT_REACHED();
+                    }
+                }
+
+                if (ip_min_specified && !ip_max_specified) {
+                    nat_action_info.max_addr = nat_action_info.min_addr;
+                }
+                if (proto_num_min_specified && !proto_num_max_specified) {
+                    nat_action_info.max_port = nat_action_info.min_port;
+                }
+                if (proto_num_min_specified || proto_num_max_specified) {
+                    if (nat_action_info.nat_action & NAT_ACTION_SRC) {
+                        nat_action_info.nat_action |= NAT_ACTION_SRC_PORT;
+                    } else if (nat_action_info.nat_action & NAT_ACTION_DST) {
+                        nat_action_info.nat_action |= NAT_ACTION_DST_PORT;
+                    }
+                }
+                break;
+            }
+            case OVS_CT_ATTR_UNSPEC:
+            case __OVS_CT_ATTR_MAX:
+                OVS_NOT_REACHED();
+            }
+        }
+
+        /* We won't be able to function properly in this case, hence
+         * complain loudly. */
+        if (nat_config && !commit) {
+            static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(5, 5);
+            VLOG_WARN_RL(&rl, "NAT specified without commit.");
+        }
+
+        conntrack_execute(dp->conntrack, packets_, aux->flow->dl_type, force,
+                          commit, zone, setmark, setlabel, aux->flow->tp_src,
+                          aux->flow->tp_dst, helper, nat_action_info_ref,
+                          pmd->ctx.now / 1000, tp_id);
+        break;
+    }
+
+    case OVS_ACTION_ATTR_METER:
+        dp_netdev_run_meter(pmd->dp, packets_, nl_attr_get_u32(a),
+                            pmd->ctx.now);
+        break;
+
+    case OVS_ACTION_ATTR_PUSH_VLAN:
+    case OVS_ACTION_ATTR_POP_VLAN:
+    case OVS_ACTION_ATTR_PUSH_MPLS:
+    case OVS_ACTION_ATTR_POP_MPLS:
+    case OVS_ACTION_ATTR_SET:
+    case OVS_ACTION_ATTR_SET_MASKED:
+    case OVS_ACTION_ATTR_SAMPLE:
+    case OVS_ACTION_ATTR_HASH:
+    case OVS_ACTION_ATTR_UNSPEC:
+    case OVS_ACTION_ATTR_TRUNC:
+    case OVS_ACTION_ATTR_PUSH_ETH:
+    case OVS_ACTION_ATTR_POP_ETH:
+    case OVS_ACTION_ATTR_CLONE:
+    case OVS_ACTION_ATTR_PUSH_NSH:
+    case OVS_ACTION_ATTR_POP_NSH:
+    case OVS_ACTION_ATTR_CT_CLEAR:
+    case OVS_ACTION_ATTR_CHECK_PKT_LEN:
+    case OVS_ACTION_ATTR_DROP:
+    //XXXXXXXX 7.DPDK mode action execution
+    case OVS_ACTION_ATTR_CONFIG_GW:
+    case OVS_ACTION_ATTR_HANDLE_GW:
+    case __OVS_ACTION_ATTR_MAX:
+        OVS_NOT_REACHED();
+    }
+
+    dp_packet_delete_batch(packets_, should_steal);
+}
+
+
+///////////我们沿着ovs调用过程来解析commit到conntrack的过程
+
+
+内核datapath模式
+
+(1) 快路径	
+
+netdev_port_receive
+->ovs_vport_receive
+->ovs_dp_process_received_packet
+->   ovs_flow_extract
+   + ovs_flow_tbl_lookup
+   + ovs_dp_upcall -> queue_userspace_packet
+ -> genlmsg_unicast (发送消息给用户空间)
+   + ovs_execute_actions -> do_execute_actions (快路径执行action)
+
+(2) 用户态upcall接收线程
+
+ovs_thread_create->udpif_upcall_handler->recv_upcalls(内核态datapath模式用户态处理upcall的核心函数)
+handler线程只对传统ovs架构下,对内核upcall的消息进行处理。即慢速路径的处理就是handler线程的工作内容。
+
+(3) 处理upcall的核心函数	
+
+recv_upcalls(内核态模式处理upcall的核心函数)
+->  upcall_receive (无论是内核模式，还是DPDK模式，都先调用upcall_receive，两者的type都是一样的，都是DPIF_UC_MISS(就是MISS_UPCALL)，不同的是，内核PMD是PMD_ID_NULL，而DPDK的PMD有pmd_id)
+  + process_upcall (无论是内核模式，还是DPDK模式，都再调用process_upcall查找openflow流表，并对于actions进行转换)
+  + handle_upcalls (这里只有内核模式有，安装流表到内核，并在内核执行action)
+
+(4) 慢路径做action的转换	
+
+process_upcall->upcall_xlate->xlate_actions
+->rule_dpif_lookup_from_table (到table的分类器中查找流表)
+  + do_xlate_actions
+
+xlate_actions函数：openflow流表匹配完成后，调用do_xlate_actions函数把openflow action转化为数据面的action
+
+(5) 慢路径action的执行, 并将action加入数据面
+
+handle_upcalls 将flow rule添加到内核中的fast path(如果should_install_flow为true，put_op_init里面设置op->dop.type = DPIF_OP_FLOW_PUT)，且在内核执行action(设置op->dop.type = DPIF_OP_EXECUTE) 
+-> dpif_operate -> dpif_netlink_operate -> dpif_netlink_operate_chunks -> dpif_netlink_operate__ (case DPIF_OP_FLOW_PUT: dpif_netlink_init_flow_put + dpif_netlink_flow_to_ofpbuf ; case DPIF_OP_EXECUTE: dpif_netlink_encode_execute)
++ nl_transact_multiple(通过netlink发送给内核)
+
+接下来我们到内核里面datapath\datapath.c
+
+内核将action放到内核流表中
+OVS_FLOW_CMD_NEW->ovs_flow_cmd_new
+->   ovs_flow_alloc //分配一个内核流表
+   + ovs_nla_get_match(OVS_FLOW_ATTR_KEY) /* Extract key. 从netlink消息里面获取流表的key */
+   + ovs_nla_copy_actions(OVS_FLOW_ATTR_ACTIONS) /* Validate actions. 从netlink消息里面获取流表的actions */
+   + ovs_flow_tbl_insert(&dp->table, new_flow, &mask)
+
+内核执行upcall下发过来的action
+OVS_PACKET_CMD_EXECUTE->ovs_packet_cmd_execute->ovs_execute_actions->do_execute_actions
+
+
+/*XXXXXXXX 1.define openflow action: add openflow action type*/
+    /* NX1.0+(35): struct nx_action_conntrack, ... VLMFF */
+    NXAST_RAW_CT,
+    /* NX1.0+(43): void. */
+    NXAST_RAW_CT_CLEAR,
+/*XXXXXXXX 2.define openvswitch action*/
+//XXXXXXXX 2.define openvswitch action: define action struct
+    OFPACT(CT,              ofpact_conntrack,   ofpact, "ct")           \
+    OFPACT(CT_CLEAR,        ofpact_null,        ofpact, "ct_clear")     \
+
+/* OFPACT_CT.
+ *
+ * Used for NXAST_CT. */
+struct ofpact_conntrack {
+    OFPACT_PADDED_MEMBERS(
+        struct ofpact ofpact;
+        uint16_t flags;
+        uint16_t zone_imm;
+        struct mf_subfield zone_src;
+        uint16_t alg;
+        uint8_t recirc_table;
+    );
+    struct ofpact actions[0];
+};
+//XXXXXXXX 3.translate between openflow action and openvswitch action: decode, encode, parse, format, check
+//XXXXXXXX 4.define datapath action
+//XXXXXXXX 4.XXX define datapath action: define data path action struct
+enum ovs_action_attr {
+	OVS_ACTION_ATTR_CT,           /* Nested OVS_CT_ATTR_* . */
+	OVS_ACTION_ATTR_CT_CLEAR,     /* No argument. */
+	__OVS_ACTION_ATTR_MAX,	      /* Nothing past this will be accepted
+				       * from userspace. */
+};
+//XXXXXXXX 5.handle upcall, translate openvswitch action to datapath action
+static void
+do_xlate_actions(const struct ofpact *ofpacts, size_t ofpacts_len,
+                 struct xlate_ctx *ctx, bool is_last_action,
+                 bool group_bucket_action)
+        case OFPACT_CT:
+            compose_conntrack_action(ctx, ofpact_get_CT(a), last);
+            break;
+
+        case OFPACT_CT_CLEAR:
+            compose_ct_clear_action(ctx);
+            break;
+
+static int __ovs_nla_copy_actions(struct net *net, const struct nlattr *attr,
+				  const struct sw_flow_key *key,
+				  struct sw_flow_actions **sfa,
+				  __be16 eth_type, __be16 vlan_tci,
+				  u32 mpls_label_count, bool log)
+
+			[OVS_ACTION_ATTR_CT] = (u32)-1,
+			[OVS_ACTION_ATTR_CT_CLEAR] = 0,
+
+		case OVS_ACTION_ATTR_CT:
+			err = ovs_ct_copy_action(net, a, key, sfa, log);
+			if (err)
+				return err;
+			skip_copy = true;
+			break;
+
+		case OVS_ACTION_ATTR_CT_CLEAR:
+			break;
+
+//XXXXXXXX 6.kernel datapath action exeution
+static int do_execute_actions(struct datapath *dp, struct sk_buff *skb,
+			      struct sw_flow_key *key,
+			      const struct nlattr *attr, int len)
+
+		case OVS_ACTION_ATTR_CT:
+			if (!is_flow_key_valid(key)) {
+				err = ovs_flow_key_update(skb, key);
+				if (err)
+					return err;
+			}
+
+			err = ovs_ct_execute(ovs_dp_get_net(dp), skb, key,
+					     nla_data(a));
+
+			/* Hide stolen IP fragments from user space. */
+			if (err)
+				return err == -EINPROGRESS ? 0 : err;
+			break;
+
+		case OVS_ACTION_ATTR_CT_CLEAR:
+			err = ovs_ct_clear(skb, key);
+			break;
+//XXXXXXXX 7.DPDK mode action execution
+
+
+///////////////////////////////////////////////////////////////////
+
+接下来一是了解linux内核netfilter的实现，二是看ovs如何调用的netfilter，三是看ovs是否可以通过调研netfilter来实现ACL
+

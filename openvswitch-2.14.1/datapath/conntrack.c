@@ -1724,6 +1724,21 @@ bool ovs_ct_verify(struct net *net, enum ovs_key_attr attr)
 	return false;
 }
 
+static int __ovs_nla_copy_actions(struct net *net, const struct nlattr *attr,
+                  const struct sw_flow_key *key,
+                  struct sw_flow_actions **sfa,
+                  __be16 eth_type, __be16 vlan_tci,
+                  u32 mpls_label_count, bool log)
+        case OVS_ACTION_ATTR_CT:
+            err = ovs_ct_copy_action(net, a, key, sfa, log);
+            if (err)
+                return err;
+            skip_copy = true;
+            break;
+
+        case OVS_ACTION_ATTR_CT_CLEAR:
+            break;
+
 int ovs_ct_copy_action(struct net *net, const struct nlattr *attr,
 		       const struct sw_flow_key *key,
 		       struct sw_flow_actions **sfa,  bool log)
