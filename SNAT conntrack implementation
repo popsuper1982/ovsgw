@@ -1799,3 +1799,668 @@ static int do_execute_actions(struct datapath *dp, struct sk_buff *skb,
 
 接下来一是了解linux内核netfilter的实现，二是看ovs如何调用的netfilter，三是看ovs是否可以通过调研netfilter来实现ACL
 
+我们先来看linux内核netfilter的实现
+
+Netfilter 在四个 Hook 点对包进行跟踪：
+
+PRE_ROUTING 和 LOCAL_OUT ：调用 nf_conntrack_in() 开始连接跟踪， 正常情况下会创建一条新连接记录，然后将 conntrack entry 放到unconfirmed list。
+
+为什么是这两个 hook 点呢？因为它们都是新连接的第一个包最先达到的地方，
+
+PRE_ROUTING 是外部主动和本机建连时包最先到达的地方
+LOCAL_OUT 是本机主动和外部建连时包最先到达的地方
+
+POST_ROUTING 和 LOCAL_IN：调用 nf_conntrack_confirm() 将 nf_conntrack_in() 创建的连接移到 confirmed list。
+
+同样要问，为什么在这两个 hook 点呢？因为如果新连接的第一个包没有被丢弃，那这 是它们离开 netfilter 之前的最后 hook 点：
+
+外部主动和本机建连的包，如果在中间处理中没有被丢弃，LOCAL_IN 是其被送到应用（例如 nginx 服务）之前的最后 hook 点
+本机主动和外部建连的包，如果在中间处理中没有被丢弃，POST_ROUTING 是其离开主机时的最后 hook 点
+
+下面的代码可以看到这些 handler 是如何注册到 Netfilter hook 点的：
+
+// net/netfilter/nf_conntrack_proto.c
+
+/* Connection tracking may drop packets, but never alters them, so make it the first hook.  */
+static const struct nf_hook_ops ipv4_conntrack_ops[] = {
+    {
+        .hook        = ipv4_conntrack_in,       // 调用 nf_conntrack_in() 进入连接跟踪
+        .pf          = NFPROTO_IPV4,
+        .hooknum     = NF_INET_PRE_ROUTING,     // PRE_ROUTING hook 点
+        .priority    = NF_IP_PRI_CONNTRACK,
+    },
+    {
+        .hook        = ipv4_conntrack_local,    // 调用 nf_conntrack_in() 进入连接跟踪
+        .pf          = NFPROTO_IPV4,
+        .hooknum     = NF_INET_LOCAL_OUT,       // LOCAL_OUT hook 点
+        .priority    = NF_IP_PRI_CONNTRACK,
+    },
+    {
+        .hook        = ipv4_confirm,            // 调用 nf_conntrack_confirm()
+        .pf          = NFPROTO_IPV4,
+        .hooknum     = NF_INET_POST_ROUTING,    // POST_ROUTING hook 点
+        .priority    = NF_IP_PRI_CONNTRACK_CONFIRM,
+    },
+    {
+        .hook        = ipv4_confirm,            // 调用 nf_conntrack_confirm()
+        .pf          = NFPROTO_IPV4,
+        .hooknum     = NF_INET_LOCAL_IN,        // LOCAL_IN hook 点
+        .priority    = NF_IP_PRI_CONNTRACK_CONFIRM,
+    },
+};
+
+nf_conntrack_in() 是连接跟踪模块的核心。
+
+// net/netfilter/nf_conntrack_core.c
+
+unsigned int
+nf_conntrack_in(struct net *net, u_int8_t pf, unsigned int hooknum, struct sk_buff *skb)
+{
+  struct nf_conn *tmpl = nf_ct_get(skb, &ctinfo); // 获取 skb 对应的 conntrack_info 和连接记录
+  if (tmpl || ctinfo == IP_CT_UNTRACKED) {        // 如果记录存在，或者是不需要跟踪的类型
+      if ((tmpl && !nf_ct_is_template(tmpl)) || ctinfo == IP_CT_UNTRACKED) {
+          NF_CT_STAT_INC_ATOMIC(net, ignore);     // 无需跟踪的类型，增加 ignore 计数
+          return NF_ACCEPT;                       // 返回 NF_ACCEPT，继续后面的处理
+      }
+      skb->_nfct = 0;                             // 不属于 ignore 类型，计数器置零，准备后续处理
+  }
+
+  struct nf_conntrack_l4proto *l4proto = __nf_ct_l4proto_find(...);    // 提取协议相关的 L4 头信息
+
+  if (l4proto->error != NULL) {                   // skb 的完整性和合法性验证
+      if (l4proto->error(net, tmpl, skb, dataoff, pf, hooknum) <= 0) {
+          NF_CT_STAT_INC_ATOMIC(net, error);
+          NF_CT_STAT_INC_ATOMIC(net, invalid);
+          goto out;
+      }
+  }
+
+repeat:
+  // 开始连接跟踪：提取 tuple；创建新连接记录，或者更新已有连接的状态
+  resolve_normal_ct(net, tmpl, skb, ... l4proto);
+
+  l4proto->packet(ct, skb, dataoff, ctinfo); // 进行一些协议相关的处理，例如 UDP 会更新 timeout
+
+  if (ctinfo == IP_CT_ESTABLISHED_REPLY && !test_and_set_bit(IPS_SEEN_REPLY_BIT, &ct->status))
+      nf_conntrack_event_cache(IPCT_REPLY, ct);
+out:
+  if (tmpl)
+      nf_ct_put(tmpl); // 解除对连接记录 tmpl 的引用
+}
+
+大致流程：
+
+1.尝试获取这个 skb 对应的连接跟踪记录
+2.判断是否需要对这个包做连接跟踪，如果不需要，更新 ignore 计数（conntrack -S 能看到这个计数）， 返回 NF_ACCEPT；如果需要，就初始化这个 skb 的引用计数。
+3.从包的 L4 header 中提取信息，初始化协议相关的 struct nf_conntrack_l4proto {} 变量，其中包含了该协议的连接跟踪相关的回调方法。
+4.调用该协议的 error() 方法检查包的完整性、校验和等信息。
+5.调用 resolve_normal_ct() 开始连接跟踪，它会创建新 tuple，新 conntrack entry，或者更新已有连接的状态。
+6.调用该协议的 packet() 方法进行一些协议相关的处理，例如对于 UDP，如果 status bit 里面设置了 IPS_SEEN_REPLY 位，就会更新 timeout。timeout 大小和协 议相关，越小越越可以防止 DoS 攻击（DoS 的基本原理就是将机器的可用连接耗尽）
+
+/* On success, returns 0, sets skb->_nfct | ctinfo */
+static int
+resolve_normal_ct(struct nf_conn *tmpl,
+		  struct sk_buff *skb,
+		  unsigned int dataoff,
+		  u_int8_t protonum,
+		  const struct nf_hook_state *state)
+{
+	const struct nf_conntrack_zone *zone;
+	struct nf_conntrack_tuple tuple;
+	struct nf_conntrack_tuple_hash *h;
+	enum ip_conntrack_info ctinfo;
+	struct nf_conntrack_zone tmp;
+	struct nf_conn *ct;
+	u32 hash;
+
+	if (!nf_ct_get_tuple(skb, skb_network_offset(skb),
+			     dataoff, state->pf, protonum, state->net,
+			     &tuple)) {
+		pr_debug("Can't get tuple\n");
+		return 0;
+	}
+
+	/* look for tuple match */
+	zone = nf_ct_zone_tmpl(tmpl, skb, &tmp);
+	hash = hash_conntrack_raw(&tuple, state->net);
+	h = __nf_conntrack_find_get(state->net, zone, &tuple, hash);
+	if (!h) {
+		h = init_conntrack(state->net, tmpl, &tuple,
+				   skb, dataoff, hash);
+		if (!h)
+			return 0;
+		if (IS_ERR(h))
+			return PTR_ERR(h);
+	}
+	ct = nf_ct_tuplehash_to_ctrack(h);
+
+	/* It exists; we have (non-exclusive) reference. */
+	if (NF_CT_DIRECTION(h) == IP_CT_DIR_REPLY) {
+		ctinfo = IP_CT_ESTABLISHED_REPLY;
+	} else {
+		/* Once we've had two way comms, always ESTABLISHED. */
+		if (test_bit(IPS_SEEN_REPLY_BIT, &ct->status)) {
+			pr_debug("normal packet for %p\n", ct);
+			ctinfo = IP_CT_ESTABLISHED;
+		} else if (test_bit(IPS_EXPECTED_BIT, &ct->status)) {
+			pr_debug("related packet for %p\n", ct);
+			ctinfo = IP_CT_RELATED;
+		} else {
+			pr_debug("new packet for %p\n", ct);
+			ctinfo = IP_CT_NEW;
+		}
+	}
+	nf_ct_set(skb, ct, ctinfo);
+	return 0;
+}
+
+init_conntrack()：创建新连接记录
+
+如果连接不存在（flow 的第一个包），resolve_normal_ct() 会调用 init_conntrack ，后者进而会调用 new() 方法创建一个新的 conntrack entry。
+
+// include/net/netfilter/nf_conntrack_core.c
+// Allocate a new conntrack
+static noinline struct nf_conntrack_tuple_hash *
+init_conntrack(struct net *net, struct nf_conn *tmpl,
+           const struct nf_conntrack_tuple *tuple,
+           const struct nf_conntrack_l4proto *l4proto,
+           struct sk_buff *skb, unsigned int dataoff, u32 hash)
+{
+    struct nf_conn *ct;
+
+    // 从 conntrack table 中分配一个 entry，如果哈希表满了，会在内核日志中打印
+    // "nf_conntrack: table full, dropping packet" 信息，通过 `dmesg -T` 能看到
+    ct = __nf_conntrack_alloc(net, zone, tuple, &repl_tuple, GFP_ATOMIC, hash);
+
+    l4proto->new(ct, skb, dataoff); // 协议相关的方法
+
+    local_bh_disable();             // 关闭软中断
+    if (net->ct.expect_count) {
+        exp = nf_ct_find_expectation(net, zone, tuple);
+        if (exp) {
+            /* Welcome, Mr. Bond.  We've been expecting you... */
+            __set_bit(IPS_EXPECTED_BIT, &ct->status);
+
+            /* exp->master safe, refcnt bumped in nf_ct_find_expectation */
+            ct->master = exp->master;
+            ct->mark = exp->master->mark;
+            ct->secmark = exp->master->secmark;
+            NF_CT_STAT_INC(net, expect_new);
+        }
+    }
+
+    /* Now it is inserted into the unconfirmed list, bump refcount */
+    // 至此这个新的 conntrack entry 已经被插入 unconfirmed list
+    nf_conntrack_get(&ct->ct_general);
+    nf_ct_add_to_unconfirmed_list(ct);
+
+    local_bh_enable();              // 重新打开软中断
+
+    if (exp) {
+        if (exp->expectfn)
+            exp->expectfn(ct, exp);
+        nf_ct_expect_put(exp);
+    }
+
+    return &ct->tuplehash[IP_CT_DIR_ORIGINAL];
+}
+
+每种协议需要实现自己的 l4proto->new() 方法，代码见：net/netfilter/nf_conntrack_proto_*.c。 例如 TCP 协议对应的 new() 方法是：
+
+// net/netfilter/nf_conntrack_proto_tcp.c
+
+/* Called when a new connection for this protocol found. */
+static bool tcp_new(struct nf_conn *ct, const struct sk_buff *skb, unsigned int dataoff)
+{
+    if (new_state == TCP_CONNTRACK_SYN_SENT) {
+        memset(&ct->proto.tcp, 0, sizeof(ct->proto.tcp));
+        /* SYN packet */
+        ct->proto.tcp.seen[0].td_end = segment_seq_plus_len(ntohl(th->seq), skb->len, dataoff, th);
+        ct->proto.tcp.seen[0].td_maxwin = ntohs(th->window);
+        ...
+}
+
+如果当前包会影响后面包的状态判断，init_conntrack() 会设置 struct nf_conn 的 master 字段。面向连接的协议会用到这个特性，例如 TCP。
+
+nf_conntrack_confirm()：确认包没有被丢弃
+
+nf_conntrack_in() 创建的新 conntrack entry 会插入到一个 未确认连接（unconfirmed connection）列表。
+
+如果这个包之后没有被丢弃，那它在经过POST_ROUTING时会被nf_conntrack_confirm()方法处理，原理我们在分析过了 3.6 节的开头分析过了。nf_conntrack_confirm()完成之后，状态就变为了IPS_CONFIRMED，并且连接记录从未确认列表移到正常的列表。
+
+之所以把创建一个新 entry 的过程分为创建（new）和确认（confirm）两个阶段 ，是因为包在经过 nf_conntrack_in() 之后，到达 nf_conntrack_confirm() 之前 ，可能会被内核丢弃。这样会导致系统残留大量的半连接状态记录，在性能和安全性上都 是很大问题。分为两步之后，可以加快半连接状态 conntrack entry 的 GC。
+
+// include/net/netfilter/nf_conntrack_core.h
+
+/* Confirm a connection: returns NF_DROP if packet must be dropped. */
+static inline int nf_conntrack_confirm(struct sk_buff *skb)
+{
+    struct nf_conn *ct = (struct nf_conn *)skb_nfct(skb);
+    int ret = NF_ACCEPT;
+
+    if (ct) {
+        if (!nf_ct_is_confirmed(ct))
+            ret = __nf_conntrack_confirm(skb);
+        if (likely(ret == NF_ACCEPT))
+            nf_ct_deliver_cached_events(ct);
+    }
+    return ret;
+}
+
+confirm 逻辑，省略了各种错误处理逻辑：
+
+// net/netfilter/nf_conntrack_core.c
+
+/* Confirm a connection given skb; places it in hash table */
+int
+__nf_conntrack_confirm(struct sk_buff *skb)
+{
+    struct nf_conn *ct;
+    ct = nf_ct_get(skb, &ctinfo);
+
+    local_bh_disable();               // 关闭软中断
+
+    hash = *(unsigned long *)&ct->tuplehash[IP_CT_DIR_REPLY].hnnode.pprev;
+    reply_hash = hash_conntrack(net, &ct->tuplehash[IP_CT_DIR_REPLY].tuple);
+
+    ct->timeout += nfct_time_stamp;   // 更新连接超时时间，超时后会被 GC
+    atomic_inc(&ct->ct_general.use);  // 设置连接引用计数？
+    ct->status |= IPS_CONFIRMED;      // 设置连接状态为 confirmed
+
+    __nf_conntrack_hash_insert(ct, hash, reply_hash);  // 插入到连接跟踪哈希表
+
+    local_bh_enable();                // 重新打开软中断
+
+    nf_conntrack_event_cache(master_ct(ct) ? IPCT_RELATED : IPCT_NEW, ct);
+    return NF_ACCEPT;
+}
+
+ovs就是直接调用nf_conntrack_in和nf_conntrack_confirm进行连接追踪的
+
+///////////////
+
+linux内核如何实现iptables
+
+一是iptables规则下发，控制面可以仍然使用iptables命令，到内核是调用
+
+在Ip_tables.c中，初始化一个nf_sockopt_ops 结构，指定其set操作函数为do_ipt_set_ctl（）方法，get操作函数为do_ipt_get_ctl（）方法，代码如下：
+
+static struct nf_sockopt_ops ipt_sockopts = {
+    .pf    = PF_INET,
+    .set_optmin   = IPT_BASE_CTL,
+    .set_optmax   = IPT_SO_SET_MAX+1,
+    .set       = do_ipt_set_ctl,
+#ifdef CONFIG_COMPAT
+    .compat_set   = compat_do_ipt_set_ctl,
+#endif
+    .get_optmin   = IPT_BASE_CTL,
+    .get_optmax   = IPT_SO_GET_MAX+1,
+    .get       = do_ipt_get_ctl,
+#ifdef CONFIG_COMPAT
+    .compat_get   = compat_do_ipt_get_ctl,
+#endif
+    .owner     = THIS_MODULE,
+};
+
+关于do_ipt_set_ctl()方法的功能和具体实现，我们后面在详细说明。
+随后，在模块初始化的时候，调用nf_register_sockopt（）方法，将ipt_sockopts添加到nf_sockopts全局变量中：
+/* Register setsockopt */
+    ret = nf_register_sockopt(&ipt_sockopts);
+
+static int
+do_ipt_set_ctl(struct sock *sk, int cmd, void __user *user, unsigned int len)
+{
+    int ret;
+    if (!capable(CAP_NET_ADMIN))
+       return -EPERM;
+    switch (cmd) {
+    case IPT_SO_SET_REPLACE:
+       ret = do_replace(sock_net(sk), user, len);
+       break;
+    case IPT_SO_SET_ADD_COUNTERS:
+       ret = do_add_counters(sock_net(sk), user, len, 0);
+       break;
+    default:
+       duprintf("do_ipt_set_ctl:  unknown request %i\n", cmd);
+       ret = -EINVAL;
+    }
+    return ret;
+}
+
+do_replace()方法复制用户空间数据到内核空间，并对其做一些必要检查，然后调用__do_replace()保存到对应的table中：
+
+static int
+do_replace(struct net *net, const void __user *user, unsigned int len)
+{
+    int ret;
+    struct ipt_replace tmp;
+    struct xt_table_info *newinfo;
+    void *loc_cpu_entry;
+    struct ipt_entry *iter;
+      // 复制用户空间数据到内核
+    if (copy_from_user(&tmp, user, sizeof(tmp)) != 0)
+       return -EFAULT;
+    /* overflow check */
+    if (tmp.num_counters >= INT_MAX / sizeof(struct xt_counters))
+       return -ENOMEM;
+    tmp.name[sizeof(tmp.name)-1] = 0;
+    newinfo = xt_alloc_table_info(tmp.size);
+    if (!newinfo)
+       return -ENOMEM;
+    /* choose the copy that is on our node/cpu */
+    loc_cpu_entry = newinfo->entries[raw_smp_processor_id()];
+      // 将用户空间传入的数据中的规则部分复制到newinfo的entries中
+    if (copy_from_user(loc_cpu_entry, user + sizeof(tmp),
+              tmp.size) != 0) {
+       ret = -EFAULT;
+       goto free_newinfo;
+    }
+    // 对用户空间的数据进行检查，同时为每个cpu做一份copy
+      ret = translate_table(net, newinfo, loc_cpu_entry, &tmp);
+    if (ret != 0)
+       goto free_newinfo;
+    duprintf("Translated table\n");
+      // 查找所属表，将newinfo（包含用户空间提交的规则）替换到对应的表
+      // 的数据区中。
+    ret = __do_replace(net, tmp.name, tmp.valid_hooks, newinfo,
+              tmp.num_counters, tmp.counters);
+    if (ret)
+       goto free_newinfo_untrans;
+    return 0;
+ free_newinfo_untrans:
+    xt_entry_foreach(iter, loc_cpu_entry, newinfo->size)
+       cleanup_entry(iter, net);
+ free_newinfo:
+    xt_free_table_info(newinfo);
+    return ret;
+}
+
+https://ipset.netfilter.org/iptables-extensions.man.html
+
+physdev
+This module matches on the bridge port input and output devices enslaved to a bridge device. This module is a part of the infrastructure that enables a transparent bridging IP firewall and is only useful for kernel versions above version 2.5.44.
+
+[!] --physdev-in name
+Name of a bridge port via which a packet is received (only for packets entering the INPUT, FORWARD and PREROUTING chains). If the interface name ends in a "+", then any interface which begins with this name will match. If the packet didn't arrive through a bridge device, this packet won't match this option, unless '!' is used.
+[!] --physdev-out name
+Name of a bridge port via which a packet is going to be sent (for bridged packets entering the FORWARD and POSTROUTING chains). If the interface name ends in a "+", then any interface which begins with this name will match.
+[!] --physdev-is-in
+Matches if the packet has entered through a bridge interface.
+[!] --physdev-is-out
+Matches if the packet will leave through a bridge interface.
+[!] --physdev-is-bridged
+Matches if the packet is being bridged and therefore is not being routed. This is only useful in the FORWARD and POSTROUTING chains.
+
+iptables -A FORWARD -m physdev --physdev-is-bridged -j bridgechain
+iptables -A bridgechain -m physdev --physdev-in vnet0 --physdev-is-bridged -j vnet0-o
+iptables -A brigdechain -m physdev --physdev-out vnet0 --physdev-is-bridged -j vnet0-i
+
+
+二是转发过程中按iptables规则进行过滤
+
+Netfilter介入到IP协议栈，是通过NF_HOOK
+
+NF_HOOK(NFPROTO_IPV4, NF_INET_PRE_ROUTING,
+		       net, NULL, skb, dev, NULL,
+		       ip_rcv_finish);
+
+NF_HOOK(NFPROTO_IPV4, NF_INET_LOCAL_IN,
+		       net, NULL, skb, skb->dev, NULL,
+		       ip_local_deliver_finish);
+
+NF_HOOK(NFPROTO_IPV4, NF_INET_FORWARD,
+		       net, NULL, skb, skb->dev, rt->dst.dev,
+		       ip_forward_finish);
+
+nf_hook(NFPROTO_IPV4, NF_INET_LOCAL_OUT,
+		       net, sk, skb, NULL, skb_dst(skb)->dev,
+		       dst_output);
+
+NF_HOOK_COND(NFPROTO_IPV4, NF_INET_POST_ROUTING,
+			    net, sk, skb, NULL, dev,
+			    ip_finish_output,
+			    !(IPCB(skb)->flags & IPSKB_REROUTED));
+
+static inline int
+NF_HOOK_COND(uint8_t pf, unsigned int hook, struct net *net, struct sock *sk,
+	     struct sk_buff *skb, struct net_device *in, struct net_device *out,
+	     int (*okfn)(struct net *, struct sock *, struct sk_buff *),
+	     bool cond)
+{
+	int ret;
+
+	if (!cond ||
+	    ((ret = nf_hook(pf, hook, net, sk, skb, in, out, okfn)) == 1))
+		ret = okfn(net, sk, skb);
+	return ret;
+}
+
+static inline int
+NF_HOOK(uint8_t pf, unsigned int hook, struct net *net, struct sock *sk, struct sk_buff *skb,
+	struct net_device *in, struct net_device *out,
+	int (*okfn)(struct net *, struct sock *, struct sk_buff *))
+{
+	int ret = nf_hook(pf, hook, net, sk, skb, in, out, okfn);
+	if (ret == 1)
+		ret = okfn(net, sk, skb);
+	return ret;
+}
+
+/**
+ *	nf_hook - call a netfilter hook
+ *
+ *	Returns 1 if the hook has allowed the packet to pass.  The function
+ *	okfn must be invoked by the caller in this case.  Any other return
+ *	value indicates the packet has been consumed by the hook.
+ */
+static inline int nf_hook(u_int8_t pf, unsigned int hook, struct net *net,
+			  struct sock *sk, struct sk_buff *skb,
+			  struct net_device *indev, struct net_device *outdev,
+			  int (*okfn)(struct net *, struct sock *, struct sk_buff *))
+{
+	struct nf_hook_entries *hook_head = NULL;
+	int ret = 1;
+
+#ifdef CONFIG_JUMP_LABEL
+	if (__builtin_constant_p(pf) &&
+	    __builtin_constant_p(hook) &&
+	    !static_key_false(&nf_hooks_needed[pf][hook]))
+		return 1;
+#endif
+
+	rcu_read_lock();
+	switch (pf) {
+	case NFPROTO_IPV4:
+		hook_head = rcu_dereference(net->nf.hooks_ipv4[hook]);
+		break;
+	case NFPROTO_IPV6:
+		hook_head = rcu_dereference(net->nf.hooks_ipv6[hook]);
+		break;
+	case NFPROTO_ARP:
+#ifdef CONFIG_NETFILTER_FAMILY_ARP
+		if (WARN_ON_ONCE(hook >= ARRAY_SIZE(net->nf.hooks_arp)))
+			break;
+		hook_head = rcu_dereference(net->nf.hooks_arp[hook]);
+#endif
+		break;
+	case NFPROTO_BRIDGE:
+#ifdef CONFIG_NETFILTER_FAMILY_BRIDGE
+		hook_head = rcu_dereference(net->nf.hooks_bridge[hook]);
+#endif
+		break;
+#if IS_ENABLED(CONFIG_DECNET)
+	case NFPROTO_DECNET:
+		hook_head = rcu_dereference(net->nf.hooks_decnet[hook]);
+		break;
+#endif
+	default:
+		WARN_ON_ONCE(1);
+		break;
+	}
+
+	if (hook_head) {
+		struct nf_hook_state state;
+
+		nf_hook_state_init(&state, hook, pf, indev, outdev,
+				   sk, net, okfn);
+
+		ret = nf_hook_slow(skb, &state, hook_head, 0);
+	}
+	rcu_read_unlock();
+
+	return ret;
+}
+
+/* Returns 1 if okfn() needs to be executed by the caller,
+ * -EPERM for NF_DROP, 0 otherwise.  Caller must hold rcu_read_lock. */
+int nf_hook_slow(struct sk_buff *skb, struct nf_hook_state *state,
+		 const struct nf_hook_entries *e, unsigned int s)
+{
+	unsigned int verdict;
+	int ret;
+
+	for (; s < e->num_hook_entries; s++) {
+		verdict = nf_hook_entry_hookfn(&e->hooks[s], skb, state);
+		switch (verdict & NF_VERDICT_MASK) {
+		case NF_ACCEPT:
+			break;
+		case NF_DROP:
+			kfree_skb(skb);
+			ret = NF_DROP_GETERR(verdict);
+			if (ret == 0)
+				ret = -EPERM;
+			return ret;
+		case NF_QUEUE:
+			ret = nf_queue(skb, state, s, verdict);
+			if (ret == 1)
+				continue;
+			return ret;
+		default:
+			/* Implicit handling for NF_STOLEN, as well as any other
+			 * non conventional verdicts.
+			 */
+			return 0;
+		}
+	}
+
+	return 1;
+}
+
+static inline int
+nf_hook_entry_hookfn(const struct nf_hook_entry *entry, struct sk_buff *skb,
+		     struct nf_hook_state *state)
+{
+	return entry->hook(entry->priv, skb, state);
+}
+
+
+static struct nf_hook_ops *filter_ops __read_mostly;
+
+static int __init iptable_filter_init(void)
+{
+	int ret;
+
+	filter_ops = xt_hook_ops_alloc(&packet_filter, iptable_filter_hook);
+	if (IS_ERR(filter_ops))
+		return PTR_ERR(filter_ops);
+
+	ret = register_pernet_subsys(&iptable_filter_net_ops);
+	if (ret < 0)
+		kfree(filter_ops);
+
+	return ret;
+}
+
+#define FILTER_VALID_HOOKS ((1 << NF_INET_LOCAL_IN) | \
+			    (1 << NF_INET_FORWARD) | \
+			    (1 << NF_INET_LOCAL_OUT))
+
+static const struct xt_table packet_filter = {
+	.name		= "filter",
+	.valid_hooks	= FILTER_VALID_HOOKS,
+	.me		= THIS_MODULE,
+	.af		= NFPROTO_IPV4,
+	.priority	= NF_IP_PRI_FILTER,
+	.table_init	= iptable_filter_table_init,
+};
+
+static unsigned int
+iptable_filter_hook(void *priv, struct sk_buff *skb,
+		    const struct nf_hook_state *state)
+{
+	return ipt_do_table(skb, state, state->net->ipv4.iptable_filter);
+}
+
+struct nf_hook_state {
+	unsigned int hook;
+	u_int8_t pf;
+	struct net_device *in;
+	struct net_device *out;
+	struct sock *sk;
+	struct net *net;
+	int (*okfn)(struct net *, struct sock *, struct sk_buff *);
+};
+
+ovs里面调用netfilter conntrack的时候，自己构建了一个nf_hook_state
+
+所以iptables得数据面执行在ipt_do_table函数中
+
+/**
+ * struct datapath - datapath for flow-based packet switching
+ * @rcu: RCU callback head for deferred destruction.
+ * @list_node: Element in global 'dps' list.
+ * @table: Current flow table.  Protected by ovs_mutex and RCU.
+ * @ports: Hash table for ports.  %OVSP_LOCAL port always exists.  Protected by
+ * ovs_mutex and RCU.
+ * @stats_percpu: Per-CPU datapath statistics.
+ * @net: Reference to net namespace.
+ *
+ * Context: See the comment on locking at the top of datapath.c for additional
+ * locking information.
+ */
+struct datapath {
+	struct rcu_head rcu;
+	struct list_head list_node;
+
+	/* Flow table. */
+	struct flow_table __rcu *table;
+
+	/* Switch ports. */
+	struct hlist_head *ports;
+
+	/* Stats. */
+	struct dp_stats_percpu __percpu *stats_percpu;
+
+#ifdef CONFIG_NET_NS
+	/* Network namespace ref. */
+	struct net *net;
+#endif
+};
+
+static inline struct net *ovs_dp_get_net(const struct datapath *dp)
+{
+	return rpl_read_pnet(&dp->net);
+}
+
+static inline void ovs_dp_set_net(struct datapath *dp, struct net *net)
+{
+	rpl_write_pnet(&dp->net, net);
+}
+
+static inline void nf_hook_state_init(struct nf_hook_state *p,
+				      unsigned int hook,
+				      u_int8_t pf,
+				      struct net_device *indev,
+				      struct net_device *outdev,
+				      struct sock *sk,
+				      struct net *net,
+				      int (*okfn)(struct net *, struct sock *, struct sk_buff *))
+{
+	p->hook = hook;
+	p->pf = pf;
+	p->in = indev;
+	p->out = outdev;
+	p->sk = sk;
+	p->net = net;
+	p->okfn = okfn;
+}
