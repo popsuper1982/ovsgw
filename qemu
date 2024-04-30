@@ -1,0 +1,29 @@
+qemu
+
+sudo yum groupinstall "Development Tools"
+sudo yum install -y cmake make ninja-build glib2 glib2-devel spice-server-devel spice-protocol usbredir-devel gcc
+sudo yum install iasl  libssh-devel bzip2-devel  libepoxy-devel
+sudo yum install libcap-ng-devel libdrm-devel
+sudo yum install libbpf-devel libibumad-devel
+
+编译与安装
+
+$cd qemu-5.0.0
+$./configure --enable-kvm --enable-debug --enable-vnc --enable-werror  --target-list="x86_64-softmmu"
+$make -j8
+$sudo make install
+
+–enable-vnc 启用 VNC
+–enable-kvm 编译 KVM 模块, 使 Qemu 可以利用 KVM  来访问硬件提供的虚拟化服务。
+–enalbe-werror 编译时,将所有的警告当作错误处理。
+–target-list 选择目标机器的架构。默认是将所有的架构都编译,但为了更快的完成编译,指定需要的架构即可.
+
+安装好之后,会生成如下应用程序
+ivshmem-client/server 这是一个 guest 和 host 共享内存的应用程序,遵循 C/S 的架构。
+qemu-ga 这是一个不利用网络实现 guest 和 host 之间交互的应用程序,使用 virtio-serial,运行在 guest 中。
+qemu-io 这是一个执行 Qemu I/O 操作的命令行工具。
+qemu-system-x86_64 Qemu的核心应用程序,虚拟机就由它创建的。
+qemu-img 创建虚拟机镜像文件的工具
+qemu-nbd 磁盘挂载工具。
+
+ 
