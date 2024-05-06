@@ -26,4 +26,267 @@ qemu-system-x86_64 Qemu的核心应用程序,虚拟机就由它创建的。
 qemu-img 创建虚拟机镜像文件的工具
 qemu-nbd 磁盘挂载工具。
 
- 
+wget https://download.qemu.org/qemu-5.0.0.tar.xz
+tar xvJf qemu-5.0.0.tar.xz
+cd qemu-5.0.0/
+./configure --target-list="x86_64-softmmu"
+make
+make install
+
+https://libvirt.org/compiling.html
+
+wget https://download.libvirt.org/libvirt-6.9.0.tar.xz
+tar xvf libvirt-6.9.0.tar.xz
+cd libvirt-6.9.0/ 
+meson setup build
+
+meson.build:919:2: ERROR: Program(s) ['xsltproc'] not found or not executable
+
+yum install libxslt
+
+meson.build:927:2: ERROR: Program(s) ['rpcgen', 'portable-rpcgen'] not found or not executable
+
+yum search rpcgen
+
+meson.build:1070:0: ERROR: Dependency "gnutls" not found, tried pkgconfig and cmake
+
+yum install gnutls gnutls-devel gnutls-utils
+
+meson.build:1166:0: ERROR: Dependency "libxml-2.0" not found, tried pkgconfig and cmake
+
+yum install libxml2 libxml2-devel
+
+meson.build:1534:4: ERROR: Problem encountered: XDR is required for remote driver
+
+yum install libtirpc-devel
+
+至此meson setup build成功
+
+ninja -C build
+
+ninja -C build install
+
+////////////// QEMU-KVM: 安装第一个能上网的虚拟机
+
+yum install bridge-utils
+
+
+///////////
+
+train版本已经不维护了，需要自己下载
+https://opendev.org/openstack/devstack/releases/tag/train-eol
+
+
+
++ ./stack.sh:main:790                      :   git_clone https://opendev.org/openstack/requirements.git /opt/stack/requirements stable/train
++ functions-common:git_timed:643           :   die 643 'git call failed: [git clone' https://opendev.org/openstack/requirements.git /opt/stack/requirements --branch 'stable/train]'
+
+https://opendev.org/openstack/requirements/releases/tag/train-eol
+
+自己下载 requirements
+
+./stack.sh:main:790 在这行把git clone注释掉
+
+[metadata]
+name = openstack_requirements
+summary = OpenStack python dependency management tools
+description-file =
+    README.rst
+author = OpenStack
+author-email = openstack-discuss@lists.openstack.org
+home-page = https://docs.openstack.org/requirements/latest/
+classifier =
+    Environment :: OpenStack
+    Intended Audience :: Information Technology
+    Intended Audience :: System Administrators
+    License :: OSI Approved :: Apache Software License
+    Operating System :: POSIX :: Linux
+    Operating System :: Microsoft :: Windows
+    Operating System :: MacOS :: MacOS X
+    Programming Language :: Python
+    Programming Language :: Python :: 2
+    Programming Language :: Python :: 2.7
+    Programming Language :: Python :: 3
+    Programming Language :: Python :: 3.6
+    Programming Language :: Python :: 3.7
+
+[files]
+packages =
+    openstack_requirements
+
+[build_sphinx]
+all_files = 1
+build-dir = doc/build
+source-dir = doc/source
+
+[entry_points]
+console_scripts =
+    edit-constraints = openstack_requirements.cmds.edit_constraint:main
+    generate-constraints = openstack_requirements.cmds.generate:main
+    check-conflicts = openstack_requirements.cmds.check_conflicts:main
+    update-requirements = openstack_requirements.cmds.update:main
+    validate-constraints = openstack_requirements.cmds.validate:main
+    validate-projects = openstack_requirements.cmds.validate_projects:main
+    normalize-requirements = openstack_requirements.cmds.normalize_requirements:main
+    check-python2-support = openstack_requirements.cmds.check_py2:main
+    check-constraints = openstack_requirements.cmds.check_exists:main
+    build-lower-constraints = openstack_requirements.cmds.build_lower_constraints:main
+
+Processing /opt/stack/requirements
+    Complete output from command python setup.py egg_info:
+    ERROR:root:Error parsing
+    Traceback (most recent call last):
+      File "/usr/local/lib/python2.7/dist-packages/pbr/core.py", line 96, in pbr
+        attrs = util.cfg_to_args(path, dist.script_args)
+      File "/usr/local/lib/python2.7/dist-packages/pbr/util.py", line 270, in cfg_to_args
+        pbr.hooks.setup_hook(config)
+      File "/usr/local/lib/python2.7/dist-packages/pbr/hooks/__init__.py", line 25, in setup_hook
+        metadata_config.run()
+      File "/usr/local/lib/python2.7/dist-packages/pbr/hooks/base.py", line 27, in run
+        self.hook()
+      File "/usr/local/lib/python2.7/dist-packages/pbr/hooks/metadata.py", line 26, in hook
+        self.config['name'], self.config.get('version', None))
+      File "/usr/local/lib/python2.7/dist-packages/pbr/packaging.py", line 874, in get_version
+        name=package_name))
+    Exception: Versioning for this project requires either an sdist tarball, or access to an upstream git repository. It's also possible that there is a mismatch between the package name in setup.cfg and the argument given to pbr.version.VersionInfo. Project name openstack_requirements was given, but was not able to be found.
+    error in setup command: Error parsing /tmp/pip-Qp_xTQ-build/setup.cfg: Exception: Versioning for this project requires either an sdist tarball, or access to an upstream git repository. It's also possible that there is a mismatch between the package name in setup.cfg and the argument given to pbr.version.VersionInfo. Project name openstack_requirements was given, but was not able to be found.
+
+Requirement already up-to-date: pbr===5.4.3 in /usr/local/lib/python2.7/dist-packages (from -c /opt/stack/requirements/upper-constraints.txt (line 49))
+You are using pip version 9.0.3, however version 24.0 is available.
+You should consider upgrading via the 'pip install --upgrade pip' command.
++ inc/python:pip_install:290               :   result=0
++ inc/python:pip_install:292               :   time_stop pip_install
++ functions-common:time_stop:2349          :   local name
++ functions-common:time_stop:2350          :   local end_time
++ functions-common:time_stop:2351          :   local elapsed_time
++ functions-common:time_stop:2352          :   local total
++ functions-common:time_stop:2353          :   local start_time
++ functions-common:time_stop:2355          :   name=pip_install
++ functions-common:time_stop:2356          :   start_time=1714993760901
++ functions-common:time_stop:2358          :   [[ -z 1714993760901 ]]
+++ functions-common:time_stop:2361          :   date +%s%3N
++ functions-common:time_stop:2361          :   end_time=1714993761800
++ functions-common:time_stop:2362          :   elapsed_time=899
++ functions-common:time_stop:2363          :   total=5288
++ functions-common:time_stop:2365          :   _TIME_START[$name]=
++ functions-common:time_stop:2366          :   _TIME_TOTAL[$name]=6187
++ inc/python:pip_install:293               :   return 0
++ lib/infra:install_infra:35               :   PIP_VIRTUAL_ENV=/opt/stack/requirements/.venv
++ lib/infra:install_infra:35               :   pip_install /opt/stack/requirements
++ inc/python:pip_install:283               :   env http_proxy= https_proxy= no_proxy= PIP_FIND_LINKS= SETUPTOOLS_SYS_PATH_TECHNIQUE=rewrite /opt/stack/requirements/.venv/bin/pip install -c /opt/stack/requirements/upper-constraints.txt /opt/stack/requirements
+
+
+stack@ecm-b1f4:~$ grep -r "pbr" *
+devstack/tests/test_libs_from_pypi.sh:ALL_LIBS="python-novaclient oslo.config pbr oslo.context"
+devstack/files/get-pip.py-py27:u;#E1aSpbrXQv|cP)J0?yY|yI6c}AcMKr2}ZDdx1KN!deKMFoa*hNM;7@$tAp>b?GpC(m>YnEg9mnz_
+devstack/files/get-pip.py-py27:KSaogv^spbr%2s>dxxAd%-ayum*U4<l64q%zO7@u;u@mj8gq;-^C@SLbbVAz4C>54{2aHqK`wU0uS@n
+devstack/files/get-pip.py-py27:ZOGy9bn@qV6K_{|I)@lE2S?F&Yl6^@EUEx2>ppbrj0Q6ArDupaE?O=oWsjrsnNi}~nU(cxu;6Pwtb}O
+devstack/files/get-pip.py-py27:s10)>Y&=DrFpbr;F!x|Wo8JV~k+*|ikcd99oBEha4&n6a;bY~dzWCl?pTx?hfiY<sF&W!hmfyDrQ6yt
+devstack/lib/infra:GITDIR["pbr"]=$DEST/pbr
+devstack/lib/infra:    # We don't care about testing git pbr in the requirements venv.
+devstack/lib/infra:    PIP_VIRTUAL_ENV=$PIP_VIRTUAL_ENV pip_install -U pbr
+devstack/lib/infra:    # Install pbr
+devstack/lib/infra:    if use_library_from_git "pbr"; then
+devstack/lib/infra:        git_clone_by_name "pbr"
+devstack/lib/infra:        setup_dev_lib "pbr"
+devstack/lib/infra:        # Always upgrade pbr to latest version as we may have pulled it
+devstack/lib/infra:        pip_install "-U" "pbr"
+devstack/stackrc:# pbr drives the setuptools configs
+devstack/stackrc:GITREPO["pbr"]=${PBR_REPO:-${GIT_BASE}/openstack/pbr.git}
+devstack/stackrc:GITBRANCH["pbr"]=${PBR_BRANCH:-$TARGET_BRANCH}
+devstack/setup.py:    setup_requires=['pbr'],
+devstack/setup.py:    pbr=True)
+devstack/inc/python:#         See https://docs.openstack.org/pbr/latest/user/using.html#extra-requirements
+devstack/inc/python:#         See https://docs.openstack.org/pbr/latest/user/using.html#extra-requirements
+devstack/inc/python:#         See https://docs.openstack.org/pbr/latest/user/using.html#extra-requirements
+devstack/inc/python:#               See https://docs.openstack.org/pbr/latest/user/using.html#extra-requirements
+devstack/doc/requirements.txt:pbr>=2.0.0,!=2.1.0
+logs/stack.sh.log.2024-05-06-184039:2024-05-06 10:40:54.187 | Requirement already up-to-date: pbr===5.4.3 in /usr/local/lib/python2.7/dist-packages (from -c /opt/stack/requirements/upper-constraints.txt (line 49))
+logs/stack.sh.log.2024-05-06-184039:2024-05-06 10:40:56.505 | + lib/infra:install_infra:34               :   pip_install -U pbr
+logs/stack.sh.log.2024-05-06-184039:2024-05-06 10:40:56.668 | + inc/python:pip_install:283               :   env http_proxy= https_proxy= no_proxy= PIP_FIND_LINKS= SETUPTOOLS_SYS_PATH_TECHNIQUE=rewrite /opt/stack/requirements/.venv/bin/pip install -c /opt/stack/requirements/upper-constraints.txt -U pbr
+logs/stack.sh.log.2024-05-06-184039:2024-05-06 10:40:58.558 | Requirement already up-to-date: pbr===5.4.3 in /usr/local/lib/python2.7/dist-packages (from -c /opt/stack/requirements/upper-constraints.txt (line 49))
+logs/stack.sh.log.2024-05-06-184039:2024-05-06 10:40:59.633 |       File "/usr/local/lib/python2.7/dist-packages/pbr/core.py", line 96, in pbr
+logs/stack.sh.log.2024-05-06-184039:2024-05-06 10:40:59.633 |       File "/usr/local/lib/python2.7/dist-packages/pbr/util.py", line 270, in cfg_to_args
+logs/stack.sh.log.2024-05-06-184039:2024-05-06 10:40:59.633 |         pbr.hooks.setup_hook(config)
+logs/stack.sh.log.2024-05-06-184039:2024-05-06 10:40:59.633 |       File "/usr/local/lib/python2.7/dist-packages/pbr/hooks/__init__.py", line 25, in setup_hook
+logs/stack.sh.log.2024-05-06-184039:2024-05-06 10:40:59.633 |       File "/usr/local/lib/python2.7/dist-packages/pbr/hooks/base.py", line 27, in run
+logs/stack.sh.log.2024-05-06-184039:2024-05-06 10:40:59.633 |       File "/usr/local/lib/python2.7/dist-packages/pbr/hooks/metadata.py", line 26, in hook
+logs/stack.sh.log.2024-05-06-184039:2024-05-06 10:40:59.633 |       File "/usr/local/lib/python2.7/dist-packages/pbr/packaging.py", line 874, in get_version
+logs/stack.sh.log.2024-05-06-184039:2024-05-06 10:40:59.633 |     Exception: Versioning for this project requires either an sdist tarball, or access to an upstream git repository. It's also possible that there is a mismatch between the package name in setup.cfg and the argument given to pbr.version.VersionInfo. Project name openstack_requirements was given, but was not able to be found.
+logs/stack.sh.log.2024-05-06-184039:2024-05-06 10:40:59.633 |     error in setup command: Error parsing /tmp/pip-jkRqHS-build/setup.cfg: Exception: Versioning for this project requires either an sdist tarball, or access to an upstream git repository. It's also possible that there is a mismatch between the package name in setup.cfg and the argument given to pbr.version.VersionInfo. Project name openstack_requirements was given, but was not able to be found.
+logs/stack.sh.log.2024-05-06-183501:2024-05-06 10:35:17.402 | Requirement already up-to-date: pbr===5.4.3 in /usr/local/lib/python2.7/dist-packages (from -c /opt/stack/requirements/upper-constraints.txt (line 49))
+logs/stack.sh.log.2024-05-06-183501:2024-05-06 10:35:19.030 | + lib/infra:install_infra:34               :   pip_install -U pbr
+logs/stack.sh.log.2024-05-06-183501:2024-05-06 10:35:19.195 | + inc/python:pip_install:283               :   env http_proxy= https_proxy= no_proxy= PIP_FIND_LINKS= SETUPTOOLS_SYS_PATH_TECHNIQUE=rewrite /opt/stack/requirements/.venv/bin/pip install -c /opt/stack/requirements/upper-constraints.txt -U pbr
+logs/stack.sh.log.2024-05-06-182252:2024-05-06 10:30:32.196 | Collecting pbr===5.4.3 (from -c /opt/stack/requirements/upper-constraints.txt (line 49))
+logs/stack.sh.log.2024-05-06-182252:2024-05-06 10:30:33.612 |   Downloading https://files.pythonhosted.org/packages/46/a4/d5c83831a3452713e4b4f126149bc4fbda170f7cb16a86a00ce57ce0e9ad/pbr-5.4.3-py2.py3-none-any.whl (110kB)
+logs/stack.sh.log.2024-05-06-182252:2024-05-06 10:33:59.365 | Installing collected packages: voluptuous, pbr, six, python-mimeparse, extras, argparse, linecache2, traceback2, unittest2, testtools, fixtures, wcwidth, unicodecsv, python-subunit, PyYAML, stevedore, pyparsing, contextlib2, subprocess32, pyperclip, cmd2, cliff, future, stestr, os-testr
+logs/stack.sh.log.2024-05-06-182252:2024-05-06 10:34:00.106 | Successfully installed PyYAML-5.1.2 argparse-1.4.0 cliff-2.16.0 cmd2-0.8.9 contextlib2-0.5.5 extras-1.0.0 fixtures-3.0.0 future-0.17.1 linecache2-1.0.0 os-testr-1.1.0 pbr-5.4.3 pyparsing-2.4.2 pyperclip-1.7.0 python-mimeparse-1.6.0 python-subunit-1.4.0 six-1.12.0 stestr-2.5.1 stevedore-1.31.0 subprocess32-3.5.4 testtools-2.3.0 traceback2-1.4.0 unicodecsv-0.14.1 unittest2-1.1.0 voluptuous-0.11.7 wcwidth-0.1.7
+logs/stack.sh.log.2024-05-06-190849:2024-05-06 11:09:19.290 | Requirement already up-to-date: pbr===5.4.3 in /usr/local/lib/python2.7/dist-packages (from -c /opt/stack/requirements/upper-constraints.txt (line 49))
+logs/stack.sh.log.2024-05-06-190849:2024-05-06 11:09:20.894 | + lib/infra:install_infra:34               :   pip_install -U pbr
+logs/stack.sh.log.2024-05-06-190849:2024-05-06 11:09:21.058 | + inc/python:pip_install:283               :   env http_proxy= https_proxy= no_proxy= PIP_FIND_LINKS= SETUPTOOLS_SYS_PATH_TECHNIQUE=rewrite /opt/stack/requirements/.venv/bin/pip install -c /opt/stack/requirements/upper-constraints.txt -U pbr
+logs/stack.sh.log.2024-05-06-190849:2024-05-06 11:09:21.756 | Requirement already up-to-date: pbr===5.4.3 in /usr/local/lib/python2.7/dist-packages (from -c /opt/stack/requirements/upper-constraints.txt (line 49))
+logs/stack.sh.log.2024-05-06-190849:2024-05-06 11:09:22.914 |       File "/usr/local/lib/python2.7/dist-packages/pbr/core.py", line 96, in pbr
+logs/stack.sh.log.2024-05-06-190849:2024-05-06 11:09:22.914 |       File "/usr/local/lib/python2.7/dist-packages/pbr/util.py", line 270, in cfg_to_args
+logs/stack.sh.log.2024-05-06-190849:2024-05-06 11:09:22.914 |         pbr.hooks.setup_hook(config)
+logs/stack.sh.log.2024-05-06-190849:2024-05-06 11:09:22.914 |       File "/usr/local/lib/python2.7/dist-packages/pbr/hooks/__init__.py", line 25, in setup_hook
+logs/stack.sh.log.2024-05-06-190849:2024-05-06 11:09:22.914 |       File "/usr/local/lib/python2.7/dist-packages/pbr/hooks/base.py", line 27, in run
+logs/stack.sh.log.2024-05-06-190849:2024-05-06 11:09:22.914 |       File "/usr/local/lib/python2.7/dist-packages/pbr/hooks/metadata.py", line 26, in hook
+logs/stack.sh.log.2024-05-06-190849:2024-05-06 11:09:22.915 |       File "/usr/local/lib/python2.7/dist-packages/pbr/packaging.py", line 874, in get_version
+logs/stack.sh.log.2024-05-06-190849:2024-05-06 11:09:22.915 |     Exception: Versioning for this project requires either an sdist tarball, or access to an upstream git repository. It's also possible that there is a mismatch between the package name in setup.cfg and the argument given to pbr.version.VersionInfo. Project name openstack_requirements was given, but was not able to be found.
+logs/stack.sh.log.2024-05-06-190849:2024-05-06 11:09:22.915 |     error in setup command: Error parsing /tmp/pip-Qp_xTQ-build/setup.cfg: Exception: Versioning for this project requires either an sdist tarball, or access to an upstream git repository. It's also possible that there is a mismatch between the package name in setup.cfg and the argument given to pbr.version.VersionInfo. Project name openstack_requirements was given, but was not able to be found.
+logs/stack.sh.log.2024-05-06-190307:2024-05-06 11:03:36.975 | Requirement already up-to-date: pbr===5.4.3 in /usr/local/lib/python2.7/dist-packages (from -c /opt/stack/requirements/upper-constraints.txt (line 49))
+logs/stack.sh.log.2024-05-06-190307:2024-05-06 11:03:45.059 | + lib/infra:install_infra:34               :   pip_install -U pbr
+logs/stack.sh.log.2024-05-06-190307:2024-05-06 11:03:45.251 | + inc/python:pip_install:283               :   env http_proxy= https_proxy= no_proxy= PIP_FIND_LINKS= SETUPTOOLS_SYS_PATH_TECHNIQUE=rewrite /opt/stack/requirements/.venv/bin/pip install -c /opt/stack/requirements/upper-constraints.txt -U pbr
+logs/stack.sh.log.2024-05-06-190307:2024-05-06 11:03:46.343 | Requirement already up-to-date: pbr===5.4.3 in /usr/local/lib/python2.7/dist-packages (from -c /opt/stack/requirements/upper-constraints.txt (line 49))
+logs/stack.sh.log.2024-05-06-190307:2024-05-06 11:03:47.419 |       File "/usr/local/lib/python2.7/dist-packages/pbr/core.py", line 96, in pbr
+logs/stack.sh.log.2024-05-06-190307:2024-05-06 11:03:47.419 |       File "/usr/local/lib/python2.7/dist-packages/pbr/util.py", line 270, in cfg_to_args
+logs/stack.sh.log.2024-05-06-190307:2024-05-06 11:03:47.419 |         pbr.hooks.setup_hook(config)
+logs/stack.sh.log.2024-05-06-190307:2024-05-06 11:03:47.419 |       File "/usr/local/lib/python2.7/dist-packages/pbr/hooks/__init__.py", line 25, in setup_hook
+logs/stack.sh.log.2024-05-06-190307:2024-05-06 11:03:47.419 |       File "/usr/local/lib/python2.7/dist-packages/pbr/hooks/base.py", line 27, in run
+logs/stack.sh.log.2024-05-06-190307:2024-05-06 11:03:47.419 |       File "/usr/local/lib/python2.7/dist-packages/pbr/hooks/metadata.py", line 26, in hook
+logs/stack.sh.log.2024-05-06-190307:2024-05-06 11:03:47.419 |       File "/usr/local/lib/python2.7/dist-packages/pbr/packaging.py", line 874, in get_version
+logs/stack.sh.log.2024-05-06-190307:2024-05-06 11:03:47.419 |     Exception: Versioning for this project requires either an sdist tarball, or access to an upstream git repository. It's also possible that there is a mismatch between the package name in setup.cfg and the argument given to pbr.version.VersionInfo. Project name openstack_requirements was given, but was not able to be found.
+logs/stack.sh.log.2024-05-06-190307:2024-05-06 11:03:47.419 |     error in setup command: Error parsing /tmp/pip-d_IZfc-build/setup.cfg: Exception: Versioning for this project requires either an sdist tarball, or access to an upstream git repository. It's also possible that there is a mismatch between the package name in setup.cfg and the argument given to pbr.version.VersionInfo. Project name openstack_requirements was given, but was not able to be found.
+logs/stack.sh.log.2024-05-06-184316:2024-05-06 10:43:31.394 | Requirement already up-to-date: pbr===5.4.3 in /usr/local/lib/python2.7/dist-packages (from -c /opt/stack/requirements/upper-constraints.txt (line 49))
+logs/stack.sh.log.2024-05-06-184316:2024-05-06 10:43:35.646 | + lib/infra:install_infra:34               :   pip_install -U pbr
+logs/stack.sh.log.2024-05-06-184316:2024-05-06 10:43:35.807 | + inc/python:pip_install:283               :   env http_proxy= https_proxy= no_proxy= PIP_FIND_LINKS= SETUPTOOLS_SYS_PATH_TECHNIQUE=rewrite /opt/stack/requirements/.venv/bin/pip install -c /opt/stack/requirements/upper-constraints.txt -U pbr
+logs/stack.sh.log.2024-05-06-184316:2024-05-06 10:43:36.512 | Requirement already up-to-date: pbr===5.4.3 in /usr/local/lib/python2.7/dist-packages (from -c /opt/stack/requirements/upper-constraints.txt (line 49))
+logs/stack.sh.log.2024-05-06-184316:2024-05-06 10:43:37.573 |       File "/usr/local/lib/python2.7/dist-packages/pbr/core.py", line 96, in pbr
+logs/stack.sh.log.2024-05-06-184316:2024-05-06 10:43:37.574 |       File "/usr/local/lib/python2.7/dist-packages/pbr/util.py", line 270, in cfg_to_args
+logs/stack.sh.log.2024-05-06-184316:2024-05-06 10:43:37.574 |         pbr.hooks.setup_hook(config)
+logs/stack.sh.log.2024-05-06-184316:2024-05-06 10:43:37.574 |       File "/usr/local/lib/python2.7/dist-packages/pbr/hooks/__init__.py", line 25, in setup_hook
+logs/stack.sh.log.2024-05-06-184316:2024-05-06 10:43:37.574 |       File "/usr/local/lib/python2.7/dist-packages/pbr/hooks/base.py", line 27, in run
+logs/stack.sh.log.2024-05-06-184316:2024-05-06 10:43:37.574 |       File "/usr/local/lib/python2.7/dist-packages/pbr/hooks/metadata.py", line 26, in hook
+logs/stack.sh.log.2024-05-06-184316:2024-05-06 10:43:37.574 |       File "/usr/local/lib/python2.7/dist-packages/pbr/packaging.py", line 874, in get_version
+logs/stack.sh.log.2024-05-06-184316:2024-05-06 10:43:37.574 |     Exception: Versioning for this project requires either an sdist tarball, or access to an upstream git repository. It's also possible that there is a mismatch between the package name in setup.cfg and the argument given to pbr.version.VersionInfo. Project name openstack_requirements was given, but was not able to be found.
+logs/stack.sh.log.2024-05-06-184316:2024-05-06 10:43:37.574 |     error in setup command: Error parsing /tmp/pip-GvSh9i-build/setup.cfg: Exception: Versioning for this project requires either an sdist tarball, or access to an upstream git repository. It's also possible that there is a mismatch between the package name in setup.cfg and the argument given to pbr.version.VersionInfo. Project name openstack_requirements was given, but was not able to be found.
+requirements/openstack_requirements/tests/test_update_pbr.py:            self.fail, common.pbr_project, 'requirements.txt')
+requirements/openstack_requirements/tests/test_update_pbr.py:            self.fail, common.pbr_project, 'test-requirements.txt')
+requirements/openstack_requirements/tests/test_update_pbr.py:            common.pbr_project, common.global_reqs, None, None, None,
+requirements/openstack_requirements/tests/common.py:pbr_fixture = Project(
+requirements/openstack_requirements/tests/common.py:    "openstack_requirements/tests/files/pbr_setup.cfg",
+requirements/openstack_requirements/tests/common.py:pbr_project = make_project(pbr_fixture)
+requirements/openstack_requirements/tests/test_project.py:    def test_pbr(self):
+requirements/openstack_requirements/tests/test_project.py:        root = self.useFixture(common.pbr_fixture).root
+requirements/openstack_requirements/tests/files/gr-base.txt:pbr>=0.5.16,<0.6
+requirements/openstack_requirements/tests/files/pbr_setup.cfg:name = pbr
+requirements/openstack_requirements/tests/files/pbr_setup.cfg:home-page = https://pypi.org/project/pbr
+requirements/openstack_requirements/tests/files/upper-constraints.txt:pbr===2.0.0
+requirements/openstack_requirements/tests/files/setup.py:    setup_requires=['d2to1', 'pbr>=0.5,<0.6'],
+requirements/openstack_requirements/tests/files/project-with-oslo-tar.txt:pbr>=0.5.16,<0.6
+requirements/openstack_requirements/cmds/update.py:# In python < 2.7.4, a lazy loading of package `pbr` will break
+requirements/openstack_requirements/cmds/update.py:    setup_requires=['pbr>=2.0.0'],
+requirements/openstack_requirements/cmds/update.py:    pbr=True)
+requirements/openstack_requirements/cmds/update.py:    # If it doesn't use pbr, we don't want to update it.
+requirements/openstack_requirements/cmds/update.py:    elif 'pbr' not in proj['setup.py']:
+requirements/openstack_requirements/cmds/update.py:    # We don't update pbr's setup.py because it can't use itself.
+requirements/openstack_requirements/cmds/update.py:    if 'setup.cfg' in proj and 'name = pbr' in proj['setup.cfg']:
+requirements/openstack_requirements/cmds/validate_projects.py:    'openstack/pbr',
+requirements/upper-constraints.txt:pbr===5.4.3
+requirements/setup.py:# In python < 2.7.4, a lazy loading of package `pbr` will break
+requirements/setup.py:    setup_requires=['pbr>=2.0.0'],
+requirements/setup.py:    pbr=True)
+requirements/projects.txt:openstack-dev/pbr
+requirements/global-requirements.txt:pbr!=2.1.0  # Apache-2.0
+Binary file requirements/.venv/bin/python matches
+
