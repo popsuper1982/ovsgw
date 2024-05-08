@@ -207,11 +207,41 @@ function pip_install {
         PIP_FIND_LINKS=$PIP_FIND_LINKS \
         $cmd_pip $upgrade \
         $@ \
-        -i https://pypi.tuna.tsinghua.edu.cn/simple
+        -i https://pypi.tuna.tsinghua.edu.cn/simple \
+        --default-timeout=30000
     result=$?
 
     time_stop "pip_install"
     return $result
+}
+
+# install_tempest() - Collect source and prepare
+function install_tempest {
+    git_clone $TEMPEST_REPO $TEMPEST_DIR $TEMPEST_BRANCH
+    # NOTE(gmann): Pinning tox<4.0.0 for stable/zed and lower. Tox 4.0.0
+    # released after zed was released and has some incompatible changes
+    # and it is ok not to fix the issues caused by tox 4.0.0 in stable
+    # beanches jobs. We can continue testing the stable/zed and lower
+    # branches with tox<4.0.0
+    pip_install 'tox!=2.8.0,<4.0.0'
+    pushd $TEMPEST_DIR
+    # NOTE(gmann): checkout the TEMPEST_BRANCH in case TEMPEST_BRANCH
+    # is tag name not master. git_clone would not checkout tag because
+    # TEMPEST_DIR already exist until RECLONE is true.
+    git checkout $TEMPEST_BRANCH
+
+    local tmp_u_c_m
+    tmp_u_c_m=$(mktemp -t tempest_u_c_m.XXXXXXXXXX)
+    set_tempest_venv_constraints $tmp_u_c_m
+
+    tox -r --notest -efull
+    # NOTE(mtreinish) Respect constraints in the tempest full venv, things that
+    # are using a tox job other than full will not be respecting constraints but
+    # running pip install -U on tempest requirements
+    $TEMPEST_DIR/.tox/tempest/bin/pip install -c $tmp_u_c_m -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple --default-timeout=30000
+    PROJECT_VENV["tempest"]=${TEMPEST_DIR}/.tox/tempest
+    rm -f $tmp_u_c_m
+    popd
 }
 
 192.168.10.9(内)
@@ -447,4 +477,43 @@ Required-by:
 
 cd /usr/lib/python3/dist-packages/
 里面有httplib2 0.9.2
+删除
 
+++ lib/tempest:install_tempest:766          :   tox -r --notest -efull
+full create: /opt/stack/tempest/.tox/tempest
+full installdeps: -c/opt/stack/requirements/upper-constraints.txt, -r/opt/stack/tempest/requirements.txt
+
+/opt/stack/tempest/.tox/tempest/bin/pip install -c/opt/stack/requirements/upper-constraints.txt -r/opt/stack/tempest/requirements.txt
+
+tox -i https://pypi.my-alternative-index.org
+
+tox -r --notest -efull -i https://pypi.tuna.tsinghua.edu.cn/simple
+
+# install_tempest() - Collect source and prepare
+function install_tempest {
+    git_clone $TEMPEST_REPO $TEMPEST_DIR $TEMPEST_BRANCH
+    # NOTE(gmann): Pinning tox<4.0.0 for stable/zed and lower. Tox 4.0.0
+    # released after zed was released and has some incompatible changes
+    # and it is ok not to fix the issues caused by tox 4.0.0 in stable
+    # beanches jobs. We can continue testing the stable/zed and lower
+    # branches with tox<4.0.0
+    pip_install 'tox!=2.8.0,<4.0.0'
+    pushd $TEMPEST_DIR
+    # NOTE(gmann): checkout the TEMPEST_BRANCH in case TEMPEST_BRANCH
+    # is tag name not master. git_clone would not checkout tag because
+    # TEMPEST_DIR already exist until RECLONE is true.
+    git checkout $TEMPEST_BRANCH
+
+    local tmp_u_c_m
+    tmp_u_c_m=$(mktemp -t tempest_u_c_m.XXXXXXXXXX)
+    set_tempest_venv_constraints $tmp_u_c_m
+
+    tox -r --notest -efull -i https://pypi.tuna.tsinghua.edu.cn/simple
+    # NOTE(mtreinish) Respect constraints in the tempest full venv, things that
+    # are using a tox job other than full will not be respecting constraints but
+    # running pip install -U on tempest requirements
+    $TEMPEST_DIR/.tox/tempest/bin/pip install -c $tmp_u_c_m -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+    PROJECT_VENV["tempest"]=${TEMPEST_DIR}/.tox/tempest
+    rm -f $tmp_u_c_m
+    popd
+}
