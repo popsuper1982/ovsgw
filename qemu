@@ -40,6 +40,10 @@ tar xvf libvirt-6.9.0.tar.xz
 cd libvirt-6.9.0/ 
 meson setup build
 
+meson.build:443:27: ERROR: Expecting eol got id.
+  if host_machine.system() in [ 'linux', 'freebsd', 'windows' ]
+
+
 meson.build:919:2: ERROR: Program(s) ['xsltproc'] not found or not executable
 
 yum install libxslt
@@ -517,3 +521,1287 @@ function install_tempest {
     rm -f $tmp_u_c_m
     popd
 }
+
+
++ ./stack.sh:main:1430                     :   is_nova_ready
++ lib/nova:is_nova_ready:1072              :   wait_for_compute 60
++ functions:wait_for_compute:471           :   local timeout=60
++ functions:wait_for_compute:472           :   local rval=0
++ functions:wait_for_compute:473           :   local compute_hostname
++ functions:wait_for_compute:474           :   time_start wait_for_service
++ functions-common:time_start:2323         :   local name=wait_for_service
++ functions-common:time_start:2324         :   local start_time=
++ functions-common:time_start:2325         :   [[ -n '' ]]
+++ functions-common:time_start:2328         :   date +%s%3N
++ functions-common:time_start:2328         :   _TIME_START[$name]=1715218069184
+++ functions:wait_for_compute:475           :   iniget /etc/nova/nova.conf DEFAULT host
++ functions:wait_for_compute:475           :   compute_hostname=
++ functions:wait_for_compute:476           :   [[ -z '' ]]
+++ functions:wait_for_compute:477           :   hostname
++ functions:wait_for_compute:477           :   compute_hostname=devstack-controller
++ functions:wait_for_compute:479           :   timeout 60 bash -x
+++ functions:wait_for_compute:479           :   hostname
++ ::                                       :   ID=
++ ::                                       :   [[ '' == '' ]]
++ ::                                       :   sleep 1
++ ::                                       :   [[ libvirt = \f\a\k\e ]]
+++ ::                                       :   openstack --os-cloud devstack-admin --os-region RegionOne compute service list --host devstack-controller --service nova-compute -c ID -f value
+/usr/lib/python3/dist-packages/secretstorage/dhcrypto.py:15: CryptographyDeprecationWarning: int_from_bytes is deprecated, use int.from_bytes instead
+  from cryptography.utils import int_from_bytes
+/usr/lib/python3/dist-packages/secretstorage/util.py:19: CryptographyDeprecationWarning: int_from_bytes is deprecated, use int.from_bytes instead
+  from cryptography.utils import int_from_bytes
++ ::                                       :   ID=
++ ::                                       :   [[ '' == '' ]]
++ ::                                       :   sleep 1
++ ::                                       :   [[ libvirt = \f\a\k\e ]]
+++ ::                                       :   openstack --os-cloud devstack-admin --os-region RegionOne compute service list --host devstack-controller --service nova-compute -c ID -f value
+/usr/lib/python3/dist-packages/secretstorage/dhcrypto.py:15: CryptographyDeprecationWarning: int_from_bytes is deprecated, use int.from_bytes instead
+  from cryptography.utils import int_from_bytes
+/usr/lib/python3/dist-packages/secretstorage/util.py:19: CryptographyDeprecationWarning: int_from_bytes is deprecated, use int.from_bytes instead
+  from cryptography.utils import int_from_bytes
++ ::                                       :   ID=
++ ::                                       :   [[ '' == '' ]]
++ ::                                       :   sleep 1
++ ::                                       :   [[ libvirt = \f\a\k\e ]]
+++ ::                                       :   openstack --os-cloud devstack-admin --os-region RegionOne compute service list --host devstack-controller --service nova-compute -c ID -f value
+/usr/lib/python3/dist-packages/secretstorage/dhcrypto.py:15: CryptographyDeprecationWarning: int_from_bytes is deprecated, use int.from_bytes instead
+  from cryptography.utils import int_from_bytes
+/usr/lib/python3/dist-packages/secretstorage/util.py:19: CryptographyDeprecationWarning: int_from_bytes is deprecated, use int.from_bytes instead
+  from cryptography.utils import int_from_bytes
++ ::                                       :   ID=
++ ::                                       :   [[ '' == '' ]]
++ ::                                       :   sleep 1
++ ::                                       :   [[ libvirt = \f\a\k\e ]]
+++ ::                                       :   openstack --os-cloud devstack-admin --os-region RegionOne compute service list --host devstack-controller --service nova-compute -c ID -f value
+/usr/lib/python3/dist-packages/secretstorage/dhcrypto.py:15: CryptographyDeprecationWarning: int_from_bytes is deprecated, use int.from_bytes instead
+  from cryptography.utils import int_from_bytes
+/usr/lib/python3/dist-packages/secretstorage/util.py:19: CryptographyDeprecationWarning: int_from_bytes is deprecated, use int.from_bytes instead
+  from cryptography.utils import int_from_bytes
++ ::                                       :   ID=
++ ::                                       :   [[ '' == '' ]]
++ ::                                       :   sleep 1
++ ::                                       :   [[ libvirt = \f\a\k\e ]]
+++ ::                                       :   openstack --os-cloud devstack-admin --os-region RegionOne compute service list --host devstack-controller --service nova-compute -c ID -f value
+/usr/lib/python3/dist-packages/secretstorage/dhcrypto.py:15: CryptographyDeprecationWarning: int_from_bytes is deprecated, use int.from_bytes instead
+  from cryptography.utils import int_from_bytes
+/usr/lib/python3/dist-packages/secretstorage/util.py:19: CryptographyDeprecationWarning: int_from_bytes is deprecated, use int.from_bytes instead
+  from cryptography.utils import int_from_bytes
++ ::                                       :   ID=
++ ::                                       :   [[ '' == '' ]]
++ ::                                       :   sleep 1
++ ::                                       :   [[ libvirt = \f\a\k\e ]]
+++ ::                                       :   openstack --os-cloud devstack-admin --os-region RegionOne compute service list --host devstack-controller --service nova-compute -c ID -f value
+/usr/lib/python3/dist-packages/secretstorage/dhcrypto.py:15: CryptographyDeprecationWarning: int_from_bytes is deprecated, use int.from_bytes instead
+  from cryptography.utils import int_from_bytes
+/usr/lib/python3/dist-packages/secretstorage/util.py:19: CryptographyDeprecationWarning: int_from_bytes is deprecated, use int.from_bytes instead
+  from cryptography.utils import int_from_bytes
++ ::                                       :   ID=
++ ::                                       :   [[ '' == '' ]]
++ ::                                       :   sleep 1
++ ::                                       :   [[ libvirt = \f\a\k\e ]]
+++ ::                                       :   openstack --os-cloud devstack-admin --os-region RegionOne compute service list --host devstack-controller --service nova-compute -c ID -f value
+/usr/lib/python3/dist-packages/secretstorage/dhcrypto.py:15: CryptographyDeprecationWarning: int_from_bytes is deprecated, use int.from_bytes instead
+  from cryptography.utils import int_from_bytes
+/usr/lib/python3/dist-packages/secretstorage/util.py:19: CryptographyDeprecationWarning: int_from_bytes is deprecated, use int.from_bytes instead
+  from cryptography.utils import int_from_bytes
++ ::                                       :   ID=
++ ::                                       :   [[ '' == '' ]]
++ ::                                       :   sleep 1
++ ::                                       :   [[ libvirt = \f\a\k\e ]]
+++ ::                                       :   openstack --os-cloud devstack-admin --os-region RegionOne compute service list --host devstack-controller --service nova-compute -c ID -f value
+/usr/lib/python3/dist-packages/secretstorage/dhcrypto.py:15: CryptographyDeprecationWarning: int_from_bytes is deprecated, use int.from_bytes instead
+  from cryptography.utils import int_from_bytes
+/usr/lib/python3/dist-packages/secretstorage/util.py:19: CryptographyDeprecationWarning: int_from_bytes is deprecated, use int.from_bytes instead
+  from cryptography.utils import int_from_bytes
++ ::                                       :   ID=
++ ::                                       :   [[ '' == '' ]]
++ ::                                       :   sleep 1
++ ::                                       :   [[ libvirt = \f\a\k\e ]]
+++ ::                                       :   openstack --os-cloud devstack-admin --os-region RegionOne compute service list --host devstack-controller --service nova-compute -c ID -f value
+/usr/lib/python3/dist-packages/secretstorage/dhcrypto.py:15: CryptographyDeprecationWarning: int_from_bytes is deprecated, use int.from_bytes instead
+  from cryptography.utils import int_from_bytes
+/usr/lib/python3/dist-packages/secretstorage/util.py:19: CryptographyDeprecationWarning: int_from_bytes is deprecated, use int.from_bytes instead
+  from cryptography.utils import int_from_bytes
++ ::                                       :   ID=
++ ::                                       :   [[ '' == '' ]]
++ ::                                       :   sleep 1
++ ::                                       :   [[ libvirt = \f\a\k\e ]]
+++ ::                                       :   openstack --os-cloud devstack-admin --os-region RegionOne compute service list --host devstack-controller --service nova-compute -c ID -f value
+/usr/lib/python3/dist-packages/secretstorage/dhcrypto.py:15: CryptographyDeprecationWarning: int_from_bytes is deprecated, use int.from_bytes instead
+  from cryptography.utils import int_from_bytes
+/usr/lib/python3/dist-packages/secretstorage/util.py:19: CryptographyDeprecationWarning: int_from_bytes is deprecated, use int.from_bytes instead
+  from cryptography.utils import int_from_bytes
++ ::                                       :   ID=
++ ::                                       :   [[ '' == '' ]]
++ ::                                       :   sleep 1
++ ::                                       :   [[ libvirt = \f\a\k\e ]]
+++ ::                                       :   openstack --os-cloud devstack-admin --os-region RegionOne compute service list --host devstack-controller --service nova-compute -c ID -f value
+/usr/lib/python3/dist-packages/secretstorage/dhcrypto.py:15: CryptographyDeprecationWarning: int_from_bytes is deprecated, use int.from_bytes instead
+  from cryptography.utils import int_from_bytes
+/usr/lib/python3/dist-packages/secretstorage/util.py:19: CryptographyDeprecationWarning: int_from_bytes is deprecated, use int.from_bytes instead
+  from cryptography.utils import int_from_bytes
++ ::                                       :   ID=
++ ::                                       :   [[ '' == '' ]]
++ ::                                       :   sleep 1
++ ::                                       :   [[ libvirt = \f\a\k\e ]]
+++ ::                                       :   openstack --os-cloud devstack-admin --os-region RegionOne compute service list --host devstack-controller --service nova-compute -c ID -f value
+/usr/lib/python3/dist-packages/secretstorage/dhcrypto.py:15: CryptographyDeprecationWarning: int_from_bytes is deprecated, use int.from_bytes instead
+  from cryptography.utils import int_from_bytes
+/usr/lib/python3/dist-packages/secretstorage/util.py:19: CryptographyDeprecationWarning: int_from_bytes is deprecated, use int.from_bytes instead
+  from cryptography.utils import int_from_bytes
++ ::                                       :   ID=
++ ::                                       :   [[ '' == '' ]]
++ ::                                       :   sleep 1
++ ::                                       :   [[ libvirt = \f\a\k\e ]]
+++ ::                                       :   openstack --os-cloud devstack-admin --os-region RegionOne compute service list --host devstack-controller --service nova-compute -c ID -f value
+/usr/lib/python3/dist-packages/secretstorage/dhcrypto.py:15: CryptographyDeprecationWarning: int_from_bytes is deprecated, use int.from_bytes instead
+  from cryptography.utils import int_from_bytes
+/usr/lib/python3/dist-packages/secretstorage/util.py:19: CryptographyDeprecationWarning: int_from_bytes is deprecated, use int.from_bytes instead
+  from cryptography.utils import int_from_bytes
++ ::                                       :   ID=
++ ::                                       :   [[ '' == '' ]]
++ ::                                       :   sleep 1
++ ::                                       :   [[ libvirt = \f\a\k\e ]]
+++ ::                                       :   openstack --os-cloud devstack-admin --os-region RegionOne compute service list --host devstack-controller --service nova-compute -c ID -f value
+/usr/lib/python3/dist-packages/secretstorage/dhcrypto.py:15: CryptographyDeprecationWarning: int_from_bytes is deprecated, use int.from_bytes instead
+  from cryptography.utils import int_from_bytes
+/usr/lib/python3/dist-packages/secretstorage/util.py:19: CryptographyDeprecationWarning: int_from_bytes is deprecated, use int.from_bytes instead
+  from cryptography.utils import int_from_bytes
++ ::                                       :   ID=
++ ::                                       :   [[ '' == '' ]]
++ ::                                       :   sleep 1
++ ::                                       :   [[ libvirt = \f\a\k\e ]]
+++ ::                                       :   openstack --os-cloud devstack-admin --os-region RegionOne compute service list --host devstack-controller --service nova-compute -c ID -f value
+/usr/lib/python3/dist-packages/secretstorage/dhcrypto.py:15: CryptographyDeprecationWarning: int_from_bytes is deprecated, use int.from_bytes instead
+  from cryptography.utils import int_from_bytes
+/usr/lib/python3/dist-packages/secretstorage/util.py:19: CryptographyDeprecationWarning: int_from_bytes is deprecated, use int.from_bytes instead
+  from cryptography.utils import int_from_bytes
++ ::                                       :   ID=
++ ::                                       :   [[ '' == '' ]]
++ ::                                       :   sleep 1
++ ::                                       :   [[ libvirt = \f\a\k\e ]]
+++ ::                                       :   openstack --os-cloud devstack-admin --os-region RegionOne compute service list --host devstack-controller --service nova-compute -c ID -f value
+/usr/lib/python3/dist-packages/secretstorage/dhcrypto.py:15: CryptographyDeprecationWarning: int_from_bytes is deprecated, use int.from_bytes instead
+  from cryptography.utils import int_from_bytes
+/usr/lib/python3/dist-packages/secretstorage/util.py:19: CryptographyDeprecationWarning: int_from_bytes is deprecated, use int.from_bytes instead
+  from cryptography.utils import int_from_bytes
++ ::                                       :   ID=
++ ::                                       :   [[ '' == '' ]]
++ ::                                       :   sleep 1
++ ::                                       :   [[ libvirt = \f\a\k\e ]]
+++ ::                                       :   openstack --os-cloud devstack-admin --os-region RegionOne compute service list --host devstack-controller --service nova-compute -c ID -f value
+/usr/lib/python3/dist-packages/secretstorage/dhcrypto.py:15: CryptographyDeprecationWarning: int_from_bytes is deprecated, use int.from_bytes instead
+  from cryptography.utils import int_from_bytes
+/usr/lib/python3/dist-packages/secretstorage/util.py:19: CryptographyDeprecationWarning: int_from_bytes is deprecated, use int.from_bytes instead
+  from cryptography.utils import int_from_bytes
++ ::                                       :   ID=
++ ::                                       :   [[ '' == '' ]]
++ ::                                       :   sleep 1
++ ::                                       :   [[ libvirt = \f\a\k\e ]]
+++ ::                                       :   openstack --os-cloud devstack-admin --os-region RegionOne compute service list --host devstack-controller --service nova-compute -c ID -f value
+/usr/lib/python3/dist-packages/secretstorage/dhcrypto.py:15: CryptographyDeprecationWarning: int_from_bytes is deprecated, use int.from_bytes instead
+  from cryptography.utils import int_from_bytes
+/usr/lib/python3/dist-packages/secretstorage/util.py:19: CryptographyDeprecationWarning: int_from_bytes is deprecated, use int.from_bytes instead
+  from cryptography.utils import int_from_bytes
++ ::                                       :   ID=
++ ::                                       :   [[ '' == '' ]]
++ ::                                       :   sleep 1
++ ::                                       :   [[ libvirt = \f\a\k\e ]]
+++ ::                                       :   openstack --os-cloud devstack-admin --os-region RegionOne compute service list --host devstack-controller --service nova-compute -c ID -f value
+/usr/lib/python3/dist-packages/secretstorage/dhcrypto.py:15: CryptographyDeprecationWarning: int_from_bytes is deprecated, use int.from_bytes instead
+  from cryptography.utils import int_from_bytes
+/usr/lib/python3/dist-packages/secretstorage/util.py:19: CryptographyDeprecationWarning: int_from_bytes is deprecated, use int.from_bytes instead
+  from cryptography.utils import int_from_bytes
++ ::                                       :   ID=
++ ::                                       :   [[ '' == '' ]]
++ ::                                       :   sleep 1
++ ::                                       :   [[ libvirt = \f\a\k\e ]]
+++ ::                                       :   openstack --os-cloud devstack-admin --os-region RegionOne compute service list --host devstack-controller --service nova-compute -c ID -f value
+/usr/lib/python3/dist-packages/secretstorage/dhcrypto.py:15: CryptographyDeprecationWarning: int_from_bytes is deprecated, use int.from_bytes instead
+  from cryptography.utils import int_from_bytes
+/usr/lib/python3/dist-packages/secretstorage/util.py:19: CryptographyDeprecationWarning: int_from_bytes is deprecated, use int.from_bytes instead
+  from cryptography.utils import int_from_bytes
++ ::                                       :   ID=
++ ::                                       :   [[ '' == '' ]]
++ ::                                       :   sleep 1
++ ::                                       :   [[ libvirt = \f\a\k\e ]]
+++ ::                                       :   openstack --os-cloud devstack-admin --os-region RegionOne compute service list --host devstack-controller --service nova-compute -c ID -f value
+/usr/lib/python3/dist-packages/secretstorage/dhcrypto.py:15: CryptographyDeprecationWarning: int_from_bytes is deprecated, use int.from_bytes instead
+  from cryptography.utils import int_from_bytes
+/usr/lib/python3/dist-packages/secretstorage/util.py:19: CryptographyDeprecationWarning: int_from_bytes is deprecated, use int.from_bytes instead
+  from cryptography.utils import int_from_bytes
++ ::                                       :   ID=
++ ::                                       :   [[ '' == '' ]]
++ ::                                       :   sleep 1
++ ::                                       :   [[ libvirt = \f\a\k\e ]]
+++ ::                                       :   openstack --os-cloud devstack-admin --os-region RegionOne compute service list --host devstack-controller --service nova-compute -c ID -f value
+/usr/lib/python3/dist-packages/secretstorage/dhcrypto.py:15: CryptographyDeprecationWarning: int_from_bytes is deprecated, use int.from_bytes instead
+  from cryptography.utils import int_from_bytes
+/usr/lib/python3/dist-packages/secretstorage/util.py:19: CryptographyDeprecationWarning: int_from_bytes is deprecated, use int.from_bytes instead
+  from cryptography.utils import int_from_bytes
++ ::                                       :   ID=
++ ::                                       :   [[ '' == '' ]]
++ ::                                       :   sleep 1
++ ::                                       :   [[ libvirt = \f\a\k\e ]]
+++ ::                                       :   openstack --os-cloud devstack-admin --os-region RegionOne compute service list --host devstack-controller --service nova-compute -c ID -f value
+/usr/lib/python3/dist-packages/secretstorage/dhcrypto.py:15: CryptographyDeprecationWarning: int_from_bytes is deprecated, use int.from_bytes instead
+  from cryptography.utils import int_from_bytes
+/usr/lib/python3/dist-packages/secretstorage/util.py:19: CryptographyDeprecationWarning: int_from_bytes is deprecated, use int.from_bytes instead
+  from cryptography.utils import int_from_bytes
++ ::                                       :   ID=
++ ::                                       :   [[ '' == '' ]]
++ ::                                       :   sleep 1
++ ::                                       :   [[ libvirt = \f\a\k\e ]]
+++ ::                                       :   openstack --os-cloud devstack-admin --os-region RegionOne compute service list --host devstack-controller --service nova-compute -c ID -f value
+/usr/lib/python3/dist-packages/secretstorage/dhcrypto.py:15: CryptographyDeprecationWarning: int_from_bytes is deprecated, use int.from_bytes instead
+  from cryptography.utils import int_from_bytes
+/usr/lib/python3/dist-packages/secretstorage/util.py:19: CryptographyDeprecationWarning: int_from_bytes is deprecated, use int.from_bytes instead
+  from cryptography.utils import int_from_bytes
++ ::                                       :   ID=
++ ::                                       :   [[ '' == '' ]]
++ ::                                       :   sleep 1
++ ::                                       :   [[ libvirt = \f\a\k\e ]]
+++ ::                                       :   openstack --os-cloud devstack-admin --os-region RegionOne compute service list --host devstack-controller --service nova-compute -c ID -f value
+/usr/lib/python3/dist-packages/secretstorage/dhcrypto.py:15: CryptographyDeprecationWarning: int_from_bytes is deprecated, use int.from_bytes instead
+  from cryptography.utils import int_from_bytes
+/usr/lib/python3/dist-packages/secretstorage/util.py:19: CryptographyDeprecationWarning: int_from_bytes is deprecated, use int.from_bytes instead
+  from cryptography.utils import int_from_bytes
++ ::                                       :   ID=
++ ::                                       :   [[ '' == '' ]]
++ ::                                       :   sleep 1
++ ::                                       :   [[ libvirt = \f\a\k\e ]]
+++ ::                                       :   openstack --os-cloud devstack-admin --os-region RegionOne compute service list --host devstack-controller --service nova-compute -c ID -f value
+/usr/lib/python3/dist-packages/secretstorage/dhcrypto.py:15: CryptographyDeprecationWarning: int_from_bytes is deprecated, use int.from_bytes instead
+  from cryptography.utils import int_from_bytes
+/usr/lib/python3/dist-packages/secretstorage/util.py:19: CryptographyDeprecationWarning: int_from_bytes is deprecated, use int.from_bytes instead
+  from cryptography.utils import int_from_bytes
++ ::                                       :   ID=
++ ::                                       :   [[ '' == '' ]]
++ ::                                       :   sleep 1
++ ::                                       :   [[ libvirt = \f\a\k\e ]]
+++ ::                                       :   openstack --os-cloud devstack-admin --os-region RegionOne compute service list --host devstack-controller --service nova-compute -c ID -f value
+/usr/lib/python3/dist-packages/secretstorage/dhcrypto.py:15: CryptographyDeprecationWarning: int_from_bytes is deprecated, use int.from_bytes instead
+  from cryptography.utils import int_from_bytes
+/usr/lib/python3/dist-packages/secretstorage/util.py:19: CryptographyDeprecationWarning: int_from_bytes is deprecated, use int.from_bytes instead
+  from cryptography.utils import int_from_bytes
++ ::                                       :   ID=
++ ::                                       :   [[ '' == '' ]]
++ ::                                       :   sleep 1
++ ::                                       :   [[ libvirt = \f\a\k\e ]]
+++ ::                                       :   openstack --os-cloud devstack-admin --os-region RegionOne compute service list --host devstack-controller --service nova-compute -c ID -f value
+/usr/lib/python3/dist-packages/secretstorage/dhcrypto.py:15: CryptographyDeprecationWarning: int_from_bytes is deprecated, use int.from_bytes instead
+  from cryptography.utils import int_from_bytes
+/usr/lib/python3/dist-packages/secretstorage/util.py:19: CryptographyDeprecationWarning: int_from_bytes is deprecated, use int.from_bytes instead
+  from cryptography.utils import int_from_bytes
++ ::                                       :   ID=
++ ::                                       :   [[ '' == '' ]]
++ ::                                       :   sleep 1
++ ::                                       :   [[ libvirt = \f\a\k\e ]]
+++ ::                                       :   openstack --os-cloud devstack-admin --os-region RegionOne compute service list --host devstack-controller --service nova-compute -c ID -f value
+/usr/lib/python3/dist-packages/secretstorage/dhcrypto.py:15: CryptographyDeprecationWarning: int_from_bytes is deprecated, use int.from_bytes instead
+  from cryptography.utils import int_from_bytes
+/usr/lib/python3/dist-packages/secretstorage/util.py:19: CryptographyDeprecationWarning: int_from_bytes is deprecated, use int.from_bytes instead
+  from cryptography.utils import int_from_bytes
++ ::                                       :   ID=
++ ::                                       :   [[ '' == '' ]]
++ ::                                       :   sleep 1
++ functions:wait_for_compute:479           :   rval=124
++ functions:wait_for_compute:491           :   time_stop wait_for_service
++ functions-common:time_stop:2337          :   local name
++ functions-common:time_stop:2338          :   local end_time
++ functions-common:time_stop:2339          :   local elapsed_time
++ functions-common:time_stop:2340          :   local total
++ functions-common:time_stop:2341          :   local start_time
++ functions-common:time_stop:2343          :   name=wait_for_service
++ functions-common:time_stop:2344          :   start_time=1715218069184
++ functions-common:time_stop:2346          :   [[ -z 1715218069184 ]]
+++ functions-common:time_stop:2349          :   date +%s%3N
++ functions-common:time_stop:2349          :   end_time=1715218129219
++ functions-common:time_stop:2350          :   elapsed_time=60035
++ functions-common:time_stop:2351          :   total=9336
++ functions-common:time_stop:2353          :   _TIME_START[$name]=
++ functions-common:time_stop:2354          :   _TIME_TOTAL[$name]=69371
++ functions:wait_for_compute:493           :   [[ 124 != 0 ]]
++ functions:wait_for_compute:494           :   echo 'Didn'\''t find service registered by hostname after 60 seconds'
+Didn't find service registered by hostname after 60 seconds
++ functions:wait_for_compute:495           :   openstack --os-cloud devstack-admin --os-region RegionOne compute service list
+/usr/lib/python3/dist-packages/secretstorage/dhcrypto.py:15: CryptographyDeprecationWarning: int_from_bytes is deprecated, use int.from_bytes instead
+  from cryptography.utils import int_from_bytes
+/usr/lib/python3/dist-packages/secretstorage/util.py:19: CryptographyDeprecationWarning: int_from_bytes is deprecated, use int.from_bytes instead
+  from cryptography.utils import int_from_bytes
++----+----------------+---------------------+----------+---------+-------+----------------------------+
+| ID | Binary         | Host                | Zone     | Status  | State | Updated At                 |
++----+----------------+---------------------+----------+---------+-------+----------------------------+
+|  2 | nova-scheduler | devstack-controller | internal | enabled | up    | 2024-05-09T01:28:44.000000 |
+|  5 | nova-conductor | devstack-controller | internal | enabled | up    | 2024-05-09T01:28:46.000000 |
+|  1 | nova-conductor | devstack-controller | internal | enabled | up    | 2024-05-09T01:28:47.000000 |
++----+----------------+---------------------+----------+---------+-------+----------------------------+
++ functions:wait_for_compute:497           :   return 124
++ lib/nova:is_nova_ready:1                 :   exit_trap
++ ./stack.sh:exit_trap:524                 :   local r=124
+++ ./stack.sh:exit_trap:525                 :   jobs -p
++ ./stack.sh:exit_trap:525                 :   jobs=
++ ./stack.sh:exit_trap:528                 :   [[ -n '' ]]
++ ./stack.sh:exit_trap:534                 :   '[' -f /tmp/tmp.mI7Z4X1BLb ']'
++ ./stack.sh:exit_trap:535                 :   rm /tmp/tmp.mI7Z4X1BLb
++ ./stack.sh:exit_trap:539                 :   kill_spinner
++ ./stack.sh:kill_spinner:434              :   '[' '!' -z '' ']'
++ ./stack.sh:exit_trap:541                 :   [[ 124 -ne 0 ]]
++ ./stack.sh:exit_trap:542                 :   echo 'Error on exit'
+Error on exit
++ ./stack.sh:exit_trap:544                 :   type -p generate-subunit
++ ./stack.sh:exit_trap:545                 :   generate-subunit 1715217651 479 fail
++ ./stack.sh:exit_trap:547                 :   [[ -z /opt/stack/logs ]]
++ ./stack.sh:exit_trap:550                 :   /usr/bin/python3.6 /opt/stack/devstack/tools/worlddump.py -d /opt/stack/logs
+neutron-dhcp-agent: no process found
+neutron-l3-agent: no process found
+neutron-metadata-agent: no process found
+neutron-openvswitch-agent: no process found
+stack@devstack-controller:~/devstack$ + ./stack.sh:exit_trap:559                 :   exit 124
+
+上面是检查nova-compute是否运行，发现没有运行
+
+ERROR nova.virt.libvirt.host [-] Connection to libvirt failed: Failed to connect socket to '/var/run/libvirt/libvirt-sock': Permission denied: libvirt.libvirtError: Failed to connect socket to '/var/run/libvirt/libvirt-sock': Permission denied
+
+error: Failed to connect socket to '/var/run/libvirt/libvirt-sock': Permission denied
+error: failed to connect to the hypervisor
+（当前用户没有权限，修改/etc/libvirt/libvirtd.conf,unix_sock_rw_perms = 0777,使所有用户都有权限读写）
+
+报错信息：error: Failed to connect socket to ‘/var/run/libvirt/libvirt-sock’: Permission denied 处理方法： 修改libvirt配置文件：/etc/libvirt/libvirtd.conf 将unix_sock_rw_perms = 0770 修改为unix_sock_rw_perms = 0777 即可
+
+ERROR oslo_service.service [-] Error starting thread.: nova.exception.InternalError: Nova requires libvirt version 6.0.0 or greater.
+
+在18.04以及之前版本，安装libvirt，只需要安装libvirt-bin
+
+$ sudo apt install libvirt-bin
+但是在18.10，libvirt-bin已经被拆分成两部分libvirt-daemon-system和libvirt-clients
+
+$ sudo apt install qemu-kvm libvirt-daemon-system libvirt-clients bridge-utils
+
+
+
++ lib/nova_plugins/functions-libvirt:configure_libvirt:158 :   sudo tee -a /etc/libvirt/libvirtd.conf
+
+
+wget http://archive.ubuntu.com/ubuntu/pool/main/libv/libvirt/libvirt-clients_6.0.0-0ubuntu8_amd64.deb
+wget http://archive.ubuntu.com/ubuntu/pool/main/libv/libvirt/libvirt-daemon_6.0.0-0ubuntu8_amd64.deb
+wget http://archive.ubuntu.com/ubuntu/pool/main/libv/libvirt/libvirt-daemon-driver-qemu_6.0.0-0ubuntu8_amd64.deb
+wget http://archive.ubuntu.com/ubuntu/pool/main/libv/libvirt/libvirt-daemon-driver-storage-rbd_6.0.0-0ubuntu8_amd64.deb
+wget http://archive.ubuntu.com/ubuntu/pool/main/libv/libvirt/libvirt-daemon-system_6.0.0-0ubuntu8_amd64.deb
+wget http://archive.ubuntu.com/ubuntu/pool/main/libv/libvirt/libvirt-daemon-system-systemd_6.0.0-0ubuntu8_amd64.deb
+
+
+
+ libvirt-clients : Depends: libgcc-s1 (>= 3.3.1) but it is not installable
+                   Depends: libreadline8 (>= 6.0) but it is not installable
+                   Depends: libvirt0 (= 6.0.0-0ubuntu8) but 4.0.0-1ubuntu8.21 is to be installed
+ libvirt-daemon : Depends: libcap-ng0 (>= 0.7.9) but 0.7.7-3.1 is to be installed
+                  Depends: libgcc-s1 (>= 3.3.1) but it is not installable
+                  Depends: libvirt0 (= 6.0.0-0ubuntu8) but 4.0.0-1ubuntu8.21 is to be installed
+ libvirt-daemon-driver-qemu : Depends: libgcc-s1 (>= 3.3.1) but it is not installable
+                              Depends: libgnutls30 (>= 3.6.12) but 3.5.18-1ubuntu1.6 is to be installed
+                              Depends: libvirt0 (>= 6.0.0-0ubuntu8) but 4.0.0-1ubuntu8.21 is to be installed
+ libvirt-daemon-driver-storage-rbd : Depends: libgcc-s1 (>= 3.3.1) but it is not installable
+                                     Depends: librados2 (>= 14.2.0) but 12.2.13-0ubuntu0.18.04.11 is to be installed
+                                     Depends: librbd1 (>= 14.2.0) but 12.2.13-0ubuntu0.18.04.11 is to be installed
+                                     Depends: libvirt0 (>= 6.0.0-0ubuntu8) but 4.0.0-1ubuntu8.21 is to be installed
+ libvirt-daemon-system : Depends: libgcc-s1 (>= 3.3.1) but it is not installable
+                         Depends: libvirt0 (>= 6.0.0-0ubuntu8) but 4.0.0-1ubuntu8.21 is to be installed
+                         Depends: iptables (>= 1.8.1-1) but 1.6.1-2ubuntu2.1 is to be installed or
+                                  firewalld but it is not going to be installed
+
+Traceback (most recent call last):
+  File "/usr/local/bin/rst2html5", line 5, in <module>
+    from rst2html5_ import main
+  File "/usr/local/lib/python3.6/dist-packages/rst2html5_.py", line 17, in <module>
+    from rst2html5 import HTML5Writer  # noqa E402
+  File "/usr/local/lib/python3.6/dist-packages/rst2html5/__init__.py", line 4, in <module>
+    from importlib import metadata
+ImportError: cannot import name 'metadata'
+Makefile:1474: recipe for target 'libvirt-go.html.in' failed
+make[2]: *** [libvirt-go.html.in] Error 1
+
+make[2]: Entering directory '/root/libvirt-6.1.0/build/docs'
+  GEN      libvirt-go.html.in
+  GEN      libvirt-go.html.tmp
+libvirt-go.html.in:320: namespace error : Failed to parse QName 'http:'
+  /* optimum is 45…75 characters/line <http://webtypography.net/2.1.2> */
+                                              ^
+libvirt-go.html.in:320: parser error : error parsing attribute name
+  /* optimum is 45…75 characters/line <http://webtypography.net/2.1.2> */
+                                              ^
+libvirt-go.html.in:320: parser error : attributes construct error
+  /* optimum is 45…75 characters/line <http://webtypography.net/2.1.2> */
+                                              ^
+libvirt-go.html.in:320: parser error : Couldn't find end of Start Tag http: line 320
+  /* optimum is 45…75 characters/line <http://webtypography.net/2.1.2> */
+
+
+
+rm -rf docs/
+
+root@devstack-controller:~/libvirt-6.1.0/build# history
+    1  ls
+    2  apt-get update
+    3  apt-get install git -y
+    4  ps aux | grep ovs
+    5  ls
+    6  git clone https://git.openstack.org/openstack-dev/devstack -b unmaintained/wallaby
+    7  ls
+    8  devstack/tools/create-stack-user.sh
+    9  ls
+   10  mv devstack /opt/stack
+   11  ls
+   12  cd /opt/stack/
+   13  ls
+   14  chown -R stack:stack /opt/stack/devstack
+   15  su - stack
+   16  cd cd /usr/lib/python3/dist-packages/
+   17  cd /usr/lib/python3/dist-packages/
+   18  ls
+   19  rm -rf httplib2*
+   20  ls
+   21  cd ~
+   22  ls
+   23  su - stack
+   24  vim /etc/libvirt/libvirtd.conf
+   25  su - stack
+   26  ls
+   27  cd ~
+   28  ls
+   29  wget http://archive.ubuntu.com/ubuntu/pool/main/libv/libvirt/libvirt-clients_6.0.0-0ubuntu8_amd64.deb
+   30  wget http://archive.ubuntu.com/ubuntu/pool/main/libv/libvirt/libvirt-daemon_6.0.0-0ubuntu8_amd64.deb
+   31  wget http://archive.ubuntu.com/ubuntu/pool/main/libv/libvirt/libvirt-daemon-driver-qemu_6.0.0-0ubuntu8_amd64.deb
+   32  wget http://archive.ubuntu.com/ubuntu/pool/main/libv/libvirt/libvirt-daemon-driver-storage-rbd_6.0.0-0ubuntu8_amd64.deb
+   33  wget http://archive.ubuntu.com/ubuntu/pool/main/libv/libvirt/libvirt-daemon-system_6.0.0-0ubuntu8_amd64.deb
+   34  wget http://archive.ubuntu.com/ubuntu/pool/main/libv/libvirt/libvirt-daemon-system-systemd_6.0.0-0ubuntu8_amd64.deb
+   35  ls
+   36  dpkg -i libvirt-*
+   37  ls
+   38  rm -rf *
+   39  ls
+   40  wget wget https://download.libvirt.org/libvirt-6.9.0.tar.xz
+   41  tar xvf libvirt-6.9.0.tar.xz
+   42  ls
+   43  cd libvirt-6.9.0/
+   44  ls
+   45  apt-get install meson
+   46  apt --fix-broken install
+   47  apt-get install meson
+   48  ls
+   49  meson setup build
+   50  meson build
+   51  meson --version
+   52  apt-get install meson
+   53  cd ..
+   54  ls
+   55  wget https://download.libvirt.org/libvirt-6.1.0.tar.xz
+   56  history
+   57  ls
+   58  tar xvf libvirt-6.1.0.tar.xz
+   59  ls
+   60  cd libvirt-6.1.0/
+   61  ls
+   62  meson setup build
+   63  ./configure
+   64  ls
+   65  ./configure
+   66  mkdir build
+   67  ls
+   68  cd build
+   69  ls
+   70  ../configure
+   71  apt-get install gnutls
+   72  apt-get search gnutls
+   73  apt-cache search gnutls
+   74  apt-get install gnutls-bin
+   75  ../configure
+   76  apt-cache search gnutls
+   77*
+   78  ../configure
+   79  dpkg -i gnutls
+   80  dpkg -l gnutls
+   81  dpkg -l | grep gnutls
+   82  apt-cache search gnutls
+   83  apt-get install libgnutls-dane0 libgnutls-openssl27 libgnutls28-dev libgnutls30 libgnutlsxx28
+   84  ls
+   85  ../configure
+   86  apt-get install  libnl3-devel
+   87  apt-cache search  libnl3-devel
+   88  apt-cache search  libnl3
+   89  apt-get install libnl-3-dev
+   90  ../configure
+   91  apt-cache search libnl-route
+   92  apt-get install libnl-route-3-dev
+   93  ../configure
+   94  apt-cache search xsltproc
+   95  apt-get install xsltproc
+   96  ../configure
+   97  apt-cache search rst2html
+   98  apt-cache search rst2
+   99  apt-cache search rst
+  100  apt-cache search rst2html
+  101  pip install rst2html
+  102  pip install rst2html5
+  103  ../configure
+  104  apt-cache search device-mapper
+  105  apt-get install libdevmapper-dev libdevmapper1.02.1
+  106  ../configure
+  107  apt-cache search pciaccess
+  108  apt-get install libpciaccess-dev libpciaccess0
+  109  ../configure
+  110  make
+  111  pip unstall rst2html5
+  112  pip -h
+  113  pip uninstall rst2html5
+  114  ../configure
+  115  make
+  116  ../configure -h
+  117  ../configure -h | grep docs
+  118  ls
+  119  cd ..
+  120  ls
+  121  grep -r "docs"
+  122  ls
+  123  cd docs/
+  124  ls
+  125  cd ..
+  126  ls
+  127  rm -rf docs/
+  128  ls
+  129  cd build
+  130  ls
+  131  ../configure
+  132  cd ..
+  133  ls
+  134  grep -r "docs"
+  135  vim configure
+  136  ls
+  137  cd build
+  138  ls
+  139  ../configure
+  140  make
+  141  ls
+  142  rm docs/
+  143  rm -r docs/
+  144  ls
+  145  cd ..
+  146  ls
+  147  grep -r "docs"
+  148  vim configure.ac
+  149  vim Makefile.am
+  150  grep -r "docs"
+  151  ls
+  152  cd ..
+  153  ls
+  154  mv libvirt-6.1.0 libvirt-6.1.0.back
+  155  ls
+  156  tar xvf libvirt-6.1.0.tar.xz
+  157  ls
+  158  cd libvirt-6.1.0
+  159  ls
+  160  grep -r "docs"
+  161  ls
+  162  rm -rf docs/
+  163  ls
+  164  grep -r "docs"
+  165  vim configure
+  166  ls
+  167  cd ..
+  168  ls
+  169  rm -rf libvirt-6.1.0
+  170  ls
+  171  tar xvf libvirt-6.1.0.tar.xz
+  172  ls
+  173  cd libvirt-6.1.0
+  174  ls
+  175  cd docs/
+  176  ls
+  177  vim Makefile.am
+  178  mv Makefile.am Makefile.am.back
+  179  vim Makefile.am
+  180  vim Makefile.in
+  181  mv Makefile.in Makefile.in.back
+  182  ls
+  183  cd ..
+  184  ls
+  185  mkdir build
+  186  cd build
+  187  ls
+  188  ../configure
+  189  ls
+  190  cd ..
+  191  ls
+  192  cd docs/
+  193  ls
+  194  touch Makefile.in
+  195  ls
+  196  cd ..
+  197  cd build
+  198  ls
+  199  ../configure
+  200  make
+  201  ls
+  202  cd docs/
+  203  ls
+  204  cat Makefile
+  205  cd ..
+  206  ls
+  207  cd docs/
+  208  ls
+  209  cd ..
+  210  ls
+  211  cd docs/
+  212  ls
+  213  cat Makefile
+  214  ls
+  215  cat Makefile.am
+  216  vim Makefile.in.back
+  217  vim Makefile.in
+  218  ls
+  219  cd ..
+  220  ls
+  221  cd build
+  222  ls
+  223  cd ..
+  224  ls
+  225  rm -rf build
+  226  ls
+  227  mkdir build
+  228  cd build
+  229  ls
+  230  ../configure
+  231  ls
+  232  cd docs/
+  233  ls
+  234  cat Makefile
+  235  ls
+  236  cd ..
+  237  ls
+  238  make
+  239  make install
+  240  ls
+  241  cd ..
+  242  ls
+  243  cd docs/
+  244  ls
+  245  vim Makefile.in.back
+  246  vim Makefile.in
+  247  cd ..
+  248  ls
+  249  cd build
+  250  ls
+  251  ../configure
+  252  ls
+  253  make
+  254  make install
+  255  ls
+  256  cd ..
+  257  systemctl restart libvirtd.service
+  258  virsh --version
+  259  apt-get remove libvirt-bin
+  260  dpkg -l | grep libvirt
+  261  apt-get remove  libvirt-bin
+  262  dpkg -r libvirt-bin
+  263  dpkg -h
+  264  dpkg --help
+  265  dpkg -l | grep libvirt
+  266  dpkg -r libvirt-bin
+  267  apt-get purge libvirt-bin
+  268  dpkg -l | grep libvirt
+  269  apt-get purge  libvirt-dev:amd64
+  270  apt-get purge libvirt0:amd64
+  271  apt-get purge python3-libvirt
+  272  dpkg -l | grep libvirt
+  273  apt-get purge libvirt-clients
+  274  apt-get purge libvirt-daemon-system
+  275  apt-get purge libvirt-daemon-system-systemd
+  276  dpkg -l | grep libvirt
+  277  apt-get install libvirt-bin
+  278  cat /usr/local/lib/systemd/system/libvirtd.service
+  279  apt-get purge libvirt-bin
+  280  dpkg -l | grep libvirt
+  281  apt-get purge libvirt0:amd64 libvirt-daemon-system libvirt-daemon-driver-storage-rbd libvirt-daemon libvirt-clients libvirt-bin
+  282  dpkg -l | grep libvirt
+  283  ls
+  284  cd build
+  285  ls
+  286  make install
+  287  virsh
+  288  virsh --version
+  289  history
+
+root@devstack-controller:~/libvirt-6.1.0/docs# cat Makefile.
+Makefile.am       Makefile.am.back  Makefile.in       Makefile.in.back
+root@devstack-controller:~/libvirt-6.1.0/docs# cat Makefile.am
+all:
+        echo "helloworld"
+root@devstack-controller:~/libvirt-6.1.0/docs# cat Makefile.in
+all:
+        echo "hello world 1"
+install:
+        echo "hello world 2"
+
+
+root@devstack-controller:~/libvirt-6.1.0# cat /usr/local/lib/systemd/system/libvirtd.service
+[Unit]
+Description=Virtualization daemon
+Requires=virtlogd.socket
+Requires=virtlockd.socket
+# Use Wants instead of Requires so that users
+# can disable these three .socket units to revert
+# to a traditional non-activation deployment setup
+Wants=libvirtd.socket
+Wants=libvirtd-ro.socket
+Wants=libvirtd-admin.socket
+Wants=systemd-machined.service
+Before=libvirt-guests.service
+After=network.target
+After=dbus.service
+After=iscsid.service
+After=apparmor.service
+After=local-fs.target
+After=remote-fs.target
+After=systemd-logind.service
+After=systemd-machined.service
+After=xencommons.service
+Conflicts=xendomains.service
+Documentation=man:libvirtd(8)
+Documentation=https://libvirt.org
+
+[Service]
+Type=notify
+EnvironmentFile=-/usr/local/etc/sysconfig/libvirtd
+ExecStart=/usr/local/sbin/libvirtd $LIBVIRTD_ARGS
+ExecReload=/bin/kill -HUP $MAINPID
+KillMode=process
+Restart=on-failure
+# At least 1 FD per guest, often 2 (eg qemu monitor + qemu agent).
+# eg if we want to support 4096 guests, we'll typically need 8192 FDs
+# If changing this, also consider virtlogd.service & virtlockd.service
+# limits which are also related to number of guests
+LimitNOFILE=8192
+# The cgroups pids controller can limit the number of tasks started by
+# the daemon, which can limit the number of domains for some hypervisors.
+# A conservative default of 8 tasks per guest results in a TasksMax of
+# 32k to support 4096 guests.
+TasksMax=32768
+# With cgroups v2 there is no devices controller anymore, we have to use
+# eBPF to control access to devices.  In order to do that we create a eBPF
+# hash MAP which locks memory.  The default map size for 64 devices together
+# with program takes 12k per guest.  After rounding up we will get 64M to
+# support 4096 guests.
+LimitMEMLOCK=64M
+
+[Install]
+WantedBy=multi-user.target
+Also=virtlockd.socket
+Also=virtlogd.socket
+Also=libvirtd.socket
+Also=libvirtd-ro.socket
+
+
+https://www.cnblogs.com/ck1020/p/6024039.html
+
+root@devstack-controller:/usr/local/lib/systemd/system# ls -l
+total 228
+-rw-r--r-- 1 root root  381 May  9 17:42 libvirtd-admin.socket
+-rw-r--r-- 1 root root  388 May  9 17:42 libvirtd-ro.socket
+-rw-r--r-- 1 root root 1880 May  9 17:42 libvirtd.service
+-rw-r--r-- 1 root root  329 May  9 17:42 libvirtd.socket
+-rw-r--r-- 1 root root  316 May  9 17:42 libvirtd-tcp.socket
+-rw-r--r-- 1 root root  312 May  9 17:42 libvirtd-tls.socket
+-rw-r--r-- 1 root root  639 May  9 17:43 libvirt-guests.service
+drwxr-xr-x 2 root root 4096 May  9 17:42 old
+-rw-r--r-- 1 root root   77 May  9 17:42 virt-guest-shutdown.target
+-rw-r--r-- 1 root root  534 May  9 17:42 virtinterfaced-admin.socket
+-rw-r--r-- 1 root root  541 May  9 17:42 virtinterfaced-ro.socket
+-rw-r--r-- 1 root root  589 May  9 17:42 virtinterfaced.service
+-rw-r--r-- 1 root root  470 May  9 17:42 virtinterfaced.socket
+-rw-r--r-- 1 root root  281 May  9 17:42 virtlockd-admin.socket
+-rw-r--r-- 1 root root  711 May  9 17:42 virtlockd.service
+-rw-r--r-- 1 root root  195 May  9 17:42 virtlockd.socket
+-rw-r--r-- 1 root root  270 May  9 17:42 virtlogd-admin.socket
+-rw-r--r-- 1 root root  844 May  9 17:42 virtlogd.service
+-rw-r--r-- 1 root root  193 May  9 17:42 virtlogd.socket
+-rw-r--r-- 1 root root  492 May  9 17:42 virtlxcd-admin.socket
+-rw-r--r-- 1 root root  499 May  9 17:42 virtlxcd-ro.socket
+-rw-r--r-- 1 root root 1579 May  9 17:42 virtlxcd.service
+-rw-r--r-- 1 root root  440 May  9 17:42 virtlxcd.socket
+-rw-r--r-- 1 root root  520 May  9 17:42 virtnetworkd-admin.socket
+-rw-r--r-- 1 root root  527 May  9 17:42 virtnetworkd-ro.socket
+-rw-r--r-- 1 root root  590 May  9 17:42 virtnetworkd.service
+-rw-r--r-- 1 root root  460 May  9 17:42 virtnetworkd.socket
+-rw-r--r-- 1 root root  520 May  9 17:42 virtnodedevd-admin.socket
+-rw-r--r-- 1 root root  527 May  9 17:42 virtnodedevd-ro.socket
+-rw-r--r-- 1 root root  573 May  9 17:42 virtnodedevd.service
+-rw-r--r-- 1 root root  460 May  9 17:42 virtnodedevd.socket
+-rw-r--r-- 1 root root  527 May  9 17:42 virtnwfilterd-admin.socket
+-rw-r--r-- 1 root root  534 May  9 17:42 virtnwfilterd-ro.socket
+-rw-r--r-- 1 root root  581 May  9 17:42 virtnwfilterd.service
+-rw-r--r-- 1 root root  465 May  9 17:42 virtnwfilterd.socket
+-rw-r--r-- 1 root root  503 May  9 17:42 virtproxyd-admin.socket
+-rw-r--r-- 1 root root  510 May  9 17:42 virtproxyd-ro.socket
+-rw-r--r-- 1 root root  551 May  9 17:42 virtproxyd.service
+-rw-r--r-- 1 root root  447 May  9 17:42 virtproxyd.socket
+-rw-r--r-- 1 root root  438 May  9 17:42 virtproxyd-tcp.socket
+-rw-r--r-- 1 root root  434 May  9 17:42 virtproxyd-tls.socket
+-rw-r--r-- 1 root root  513 May  9 17:42 virtsecretd-admin.socket
+-rw-r--r-- 1 root root  520 May  9 17:42 virtsecretd-ro.socket
+-rw-r--r-- 1 root root  565 May  9 17:42 virtsecretd.service
+-rw-r--r-- 1 root root  455 May  9 17:42 virtsecretd.socket
+-rw-r--r-- 1 root root  520 May  9 17:42 virtstoraged-admin.socket
+-rw-r--r-- 1 root root  527 May  9 17:42 virtstoraged-ro.socket
+-rw-r--r-- 1 root root  617 May  9 17:42 virtstoraged.service
+-rw-r--r-- 1 root root  460 May  9 17:42 virtstoraged.socket
+-rw-r--r-- 1 root root  499 May  9 17:42 virtvboxd-admin.socket
+-rw-r--r-- 1 root root  506 May  9 17:42 virtvboxd-ro.socket
+-rw-r--r-- 1 root root  572 May  9 17:42 virtvboxd.service
+-rw-r--r-- 1 root root  445 May  9 17:42 virtvboxd.socket
+-rw-r--r-- 1 root root  537 May  9 17:42 virtxend-admin.socket
+-rw-r--r-- 1 root root  544 May  9 17:42 virtxend-ro.socket
+-rw-r--r-- 1 root root  678 May  9 17:42 virtxend.service
+-rw-r--r-- 1 root root  485 May  9 17:42 virtxend.socket
+
+不用自己创建systemd文件，libvirt的make install会自动创建
+
+
+  303  systemctl daemon-reload
+  304  systemctl restart libvirtd.service
+  305  systemctl status libvirtd.service
+
+
+在su - stack里面的history
+
+stack@devstack-controller:~/devstack$ history
+    1  ls
+    2  cd devstack/
+    3  ls
+    4  vim inc/python
+    5  vim stackrc
+    6  ls
+    7  ./stack.sh
+    8  ls
+    9  vim local.conf
+   10  ./stack.sh
+   11  rm /opt/stack/devstack/files/etcd-v3.3.12-linux-amd64.tar.gz
+   12  cd /opt/stack/devstack/files/
+   13  ls
+   14  pwd
+   15  wget https://github.com/etcd-io/etcd/releases/download/v3.3.12/etcd-v3.3.12-linux-amd64.tar.gz
+   16  ls
+   17  rm etcd-v3.3.12-linux-amd64.tar.gz
+   18  ls
+   19  mv /opt/stack/etcd-v3.3.12-linux-amd64.tar.gz ./
+   20  ls
+   21  rm etcd.sha256sum
+   22  ls
+   23  cd ~
+   24  ls
+   25  cd devstack/
+   26  ls
+   27  ./stack.sh
+   28  pip install httplib2
+   29  ./stack.sh
+   30  pip uninstall httplib2
+   31  pip uninstall httplib2 --force
+   32  pip install --ignore-installed httplib2
+   33  ./stack.sh
+   34  pip show pip install --ignore-installed httplib2
+   35  pip show httplib2
+   36  pip3 show httplib2
+   37  cd /usr/local/lib/python3.6/dist-packages
+   38  ls
+   39  ls -l | grep http
+   40  cd /opt/stack/.local/
+   41  ls
+   42  cd lib/
+   43  ls
+   44  cd python3.6/
+   45  ls
+   46  cd site-packages/
+   47  ls
+   48  cd httplib2
+   49  ls
+   50  cd ..
+   51  ls
+   52  cd /
+   53  ls
+   54  find -name "httplib2"
+   55  cd /usr/lib/python3/dist-packages/
+   56  ls
+   57  rm httplib2*
+   58  exit
+   59  ls
+   60  cd devstack/
+   61  ls
+   62  ./stack.sh
+   63  pip install netaddr
+   64  ./stack.sh
+   65  ls
+   66  vim inc/python
+   67  pip install oslo.serialization
+   68  ./stack.sh
+   69  pip install fixtures
+   70  pip install PyYAML
+   71  ./stack.sh
+   72  pip install PyYAML==5.4.1
+   73  tox -r --notest -efull
+   74  /opt/stack/tempest/.tox/tempest/bin/pip -c/opt/stack/requirements/upper-constraints.txt, -r/opt/stack/tempest/requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple --default-timeout=30000
+   75  /opt/stack/tempest/.tox/tempest/bin/pip install -c/opt/stack/requirements/upper-constraints.txt, -r/opt/stack/tempest/requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple --default-timeout=30000
+   76  /opt/stack/tempest/.tox/tempest/bin/pip install -c /opt/stack/requirements/upper-constraints.txt, -r/opt/stack/tempest/requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple --default-timeout=30000
+   77  /opt/stack/tempest/.tox/tempest/bin/pip install -c /opt/stack/requirements/upper-constraints.txt -r /opt/stack/tempest/requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple --default-timeout=30000
+   78  vim lib/tempest
+   79  ./stack.sh
+   80  vim lib/tempest
+   81  pip install setuptools==54.1.1
+   82  ./stack.sh
+   83  cd ..
+   84  ls
+   85  grep -r "full installdeps"
+   86  vim /opt/stack/tempest/.tox/tempest/log/full-1.log
+   87  /opt/stack/tempest/.tox/tempest/bin/pip install -c/opt/stack/requirements/upper-constraints.txt -r/opt/stack/tempest/requirements.txt
+   88  cd /opt/stack/tempest/.tox/
+   89  ls
+   90  cd log/
+   91  ls
+   92  cd ..
+   93  ls
+   94  cd tempest/
+   95  ls
+   96  cat pyvenv.cfg
+   97  ls
+   98  cd bin/
+   99  ls
+  100  cd .
+  101  cd ..
+  102  ls
+  103  cd lib/
+  104  ls
+  105  cd ..
+  106  cd
+  107  cd devstack/
+  108  ls
+  109  ./stack.sh
+  110  vim lib/tempest
+  111  ./stack.sh
+  112  vim lib/tempest
+  113  ./stack.sh
+  114  cd /opt/stack/devstack/files/
+  115  ls
+  116  rm cirros-0.5.2-x86_64-disk.img
+  117  wget --progress=dot:giga -c http://download.cirros-cloud.net/0.5.2/cirros-0.5.2-x86_64-disk.img -O /opt/stack/devstack/files/cirros-0.5.2-x86_64-disk.img
+  118  ls
+  119  rm cirros-0.5.2-x86_64-disk.img
+  120  mv /opt/stack/cirros-0.5.2-x86_64-disk.img ./
+  121  ls
+  122  cd ~
+  123  ls
+  124  cd devstack/
+  125  ls
+  126  ./stack.sh
+  127  cd ..
+  128  cd logs/
+  129  ls
+  130  grep -r create_neutron_initial_network
+  131  vim stack.sh.log.2024-05-08-225210
+  132  cd ~
+  133  ls
+  134  cd devstack/
+  135  ls
+  136  ./unstack.sh
+  137  ./stack.sh
+  138  ps aux | grep neutron
+  139  ls
+  140  cd ..
+  141  ls
+  142  cd logs/
+  143  ls
+  144  vim stack.sh.log.2024-05-08-225210
+  145  vim stack.sh.log.2024-05-08-224938
+  146  cd ..
+  147  cd devstack/
+  148  ls
+  149  openstack --os-cloud devstack-admin --os-region RegionOne compute service list
+  150  openstack --os-cloud devstack-admin --os-region RegionOne compute service list --host devstack-controller --service nova-compute -c ID -f value
+  151  openstack --os-cloud devstack-admin --os-region RegionOne compute service list --host devstack-controller --service nova-compute -c ID
+  152  openstack --os-cloud devstack-admin --os-region RegionOne compute service list --host devstack-controller
+  153  openstack --os-cloud devstack-admin --os-region RegionOne compute service list --host devstack-controller --service nova-compute
+  154  ps aux | grep nova
+  155  ping devstack-controller
+  156  cat /etc/hosts
+  157  cd ..
+  158  cd logs/
+  159  ls
+  160  grep -r "nova-compute"
+  161  ps aux | grep libvirt
+  162  ps aux | grep qemu
+  163  ls
+  164  cd /etc/systemd/system/
+  165  ls
+  166  cat devstack@n-cpu.service
+  167  /usr/local/bin/nova-compute --config-file /etc/nova/nova-cpu.conf
+  168  cd /var/run/libvirt/
+  169  ls
+  170  vim /etc/libvirt/libvirtd.conf
+  171  cd ~
+  172  ls
+  173  cd logs/
+  174  ls
+  175  grep -r "libvirt"
+  176  :q:q
+  177  :q
+  178  exit
+  179  ls
+  180  sudo systemctl restart libvirtd.service
+  181  ps aux | grep libvirt
+  182  ps aux | grep compute
+  183  cat /etc/systemd/system/devstack@n-cpu.service
+  184  /usr/local/bin/nova-compute --config-file /etc/nova/nova-cpu.conf
+  185  sudo apt-get install libvirt-bin
+  186  yum search libvirt
+  187  apt-get search libvirt
+  188  apt-cache search libvirt
+  189  apt-cache madison libvirt
+  190  sudo apt-get install libvirt-clients libvirt-daemon libvirt-daemon-system
+  191  ls
+  192  cd ~
+  193  ls
+  194  exit
+  195  ls
+  196  cd devstack/
+  197  ls
+  198  history
+
++ functions-common:real_install_package:1348 :   apt_get install qemu-system libvirt-clients libvirt-daemon-system libvirt-dev pi
++ functions-common:apt_get:1128            :   sudo DEBIAN_FRONTEND=noninteractive http_proxy= https_proxy= no_proxy= apt-get --option Dpkg::Options::=--force-confold --assume-yes install qemu-system libvirt-clients libvirt-daemon-system libvirt-dev python3-libvirt
+Reading package lists...
+Building dependency tree...
+Reading state information...
+qemu-system is already the newest version (1:2.11+dfsg-1ubuntu7.42).
+The following packages were automatically installed and are no longer required:
+  python3-keyring python3-keyrings.alt python3-secretstorage python3-wheel
+  python3-xdg
+Use 'sudo apt autoremove' to remove them.
+The following additional packages will be installed:
+  libvirt-daemon libvirt-daemon-driver-storage-rbd libvirt0
+Suggested packages:
+  libvirt-daemon-driver-storage-gluster libvirt-daemon-driver-storage-sheepdog
+  libvirt-daemon-driver-storage-zfs numad auditd systemtap zfsutils
+The following NEW packages will be installed:
+  libvirt-clients libvirt-daemon libvirt-daemon-driver-storage-rbd
+  libvirt-daemon-system libvirt-dev libvirt0 python3-libvirt
+Preconfiguring packages ...
+0 upgraded, 7 newly installed, 0 to remove and 6 not upgraded.
+Need to get 0 B/4,385 kB of archives.
+After this operation, 19.2 MB of additional disk space will be used.
+Selecting previously unselected package libvirt0:amd64.
+(Reading database ... 91885 files and directories currently installed.)
+Preparing to unpack .../0-libvirt0_4.0.0-1ubuntu8.21_amd64.deb ...
+Unpacking libvirt0:amd64 (4.0.0-1ubuntu8.21) ...
+Selecting previously unselected package libvirt-clients.
+Preparing to unpack .../1-libvirt-clients_4.0.0-1ubuntu8.21_amd64.deb ...
+Unpacking libvirt-clients (4.0.0-1ubuntu8.21) ...
+Selecting previously unselected package libvirt-daemon.
+Preparing to unpack .../2-libvirt-daemon_4.0.0-1ubuntu8.21_amd64.deb ...
+Unpacking libvirt-daemon (4.0.0-1ubuntu8.21) ...
+Selecting previously unselected package libvirt-daemon-system.
+Preparing to unpack .../3-libvirt-daemon-system_4.0.0-1ubuntu8.21_amd64.deb ...
+Unpacking libvirt-daemon-system (4.0.0-1ubuntu8.21) ...
+Selecting previously unselected package libvirt-daemon-driver-storage-rbd.
+Preparing to unpack .../4-libvirt-daemon-driver-storage-rbd_4.0.0-1ubuntu8.21_amd64.deb ...
+Unpacking libvirt-daemon-driver-storage-rbd (4.0.0-1ubuntu8.21) ...
+Selecting previously unselected package libvirt-dev:amd64.
+Preparing to unpack .../5-libvirt-dev_4.0.0-1ubuntu8.21_amd64.deb ...
+Unpacking libvirt-dev:amd64 (4.0.0-1ubuntu8.21) ...
+Selecting previously unselected package python3-libvirt.
+Preparing to unpack .../6-python3-libvirt_4.0.0-1_amd64.deb ...
+Unpacking python3-libvirt (4.0.0-1) ...
+Setting up libvirt0:amd64 (4.0.0-1ubuntu8.21) ...
+Setting up libvirt-daemon (4.0.0-1ubuntu8.21) ...
+Setting up libvirt-clients (4.0.0-1ubuntu8.21) ...
+Setting up python3-libvirt (4.0.0-1) ...
+Setting up libvirt-dev:amd64 (4.0.0-1ubuntu8.21) ...
+Setting up libvirt-daemon-system (4.0.0-1ubuntu8.21) ...
+Adding user libvirt-qemu to group libvirt-qemu
+Default libvirt network on 192.168.122.1/24 already taken
+Changing to free 192.168.123.1/24
+Enabling libvirt default network
+Created symlink /etc/systemd/system/multi-user.target.wants/libvirt-guests.service → /usr/local/lib/systemd/system/libvirt-guests.service.
+Created symlink /etc/systemd/system/multi-user.target.wants/libvirtd.service → /usr/local/lib/systemd/system/libvirtd.service.
+Created symlink /etc/systemd/system/sockets.target.wants/virtlockd.socket → /usr/local/lib/systemd/system/virtlockd.socket.
+Created symlink /etc/systemd/system/sockets.target.wants/virtlogd.socket → /usr/local/lib/systemd/system/virtlogd.socket.
+virtlockd.service is a disabled or a static unit, not starting it.
+Job for libvirt-guests.service failed because the control process exited with error code.
+See "systemctl status libvirt-guests.service" and "journalctl -xe" for details.
+invoke-rc.d: initscript libvirt-guests, action "start" failed.
+● libvirt-guests.service - Suspend/Resume Running libvirt Guests
+   Loaded: loaded (/usr/local/lib/systemd/system/libvirt-guests.service; enabled; vendor preset: enabled)
+   Active: failed (Result: exit-code) since Thu 2024-05-09 17:24:09 CST; 6ms ago
+     Docs: man:libvirtd(8)
+           https://libvirt.org
+  Process: 9785 ExecStart=/usr/local/libexec/libvirt-guests.sh start (code=exited, status=2)
+ Main PID: 9785 (code=exited, status=2)
+
+May 09 17:24:09 devstack-controller systemd[1]: Starting Suspend/Resume Running libvirt Guests...
+May 09 17:24:09 devstack-controller libvirt-guests.sh[9785]: /usr/local/libexec/libvirt-guests.sh: 29: .: Can't open /usr/local/bin/gettext.sh
+May 09 17:24:09 devstack-controller systemd[1]: libvirt-guests.service: Main process exited, code=exited, status=2/INVALIDARGUMENT
+May 09 17:24:09 devstack-controller systemd[1]: libvirt-guests.service: Failed with result 'exit-code'.
+May 09 17:24:09 devstack-controller systemd[1]: Failed to start Suspend/Resume Running libvirt Guests.
+dpkg: error processing package libvirt-daemon-system (--configure):
+ installed libvirt-daemon-system package post-installation script subprocess returned error exit status 1
+Setting up libvirt-daemon-driver-storage-rbd (4.0.0-1ubuntu8.21) ...
+Processing triggers for systemd (237-3ubuntu10.57) ...
+Processing triggers for man-db (2.8.3-2ubuntu0.1) ...
+Processing triggers for ureadahead (0.100.0-21) ...
+Processing triggers for libc-bin (2.27-3ubuntu1.6) ...
+Errors were encountered while processing:
+ libvirt-daemon-system
+E: Sub-process /usr/bin/dpkg returned an error code (1)
+
+
+stack@devstack-controller:~/devstack$ grep -r "libvirt"
+functions:    # NOTE(danms): If we're on libvirt/qemu or libvirt/kvm, set the hw_rng_model
+functions:    # to libvirt in the image properties.
+functions:    if [[ "$VIRT_DRIVER" == "libvirt" ]]; then
+files/rpms-suse/nova:libvirt # NOPRIME
+files/rpms-suse/nova:libvirt-python # NOPRIME
+tools/image_list.sh:DRIVERS="openvz ironic libvirt vsphere dummy"
+tools/fixup_stuff.sh:        # Enable UCA:ussuri for updated versions of QEMU and libvirt
+tools/fixup_stuff.sh:        # On Fedora 20 firewalld interacts badly with libvirt and
+tools/fixup_stuff.sh:        # firewalld hanging after install of libvirt with polkit [1].
+.zuul.yaml:        LIBVIRT_TYPE: '{{ devstack_libvirt_type | default("qemu") }}'
+.zuul.yaml:        /var/log/libvirt: logs
+lib/nova:QEMU_CONF=/etc/libvirt/qemu.conf
+lib/nova:        if [[ "$VIRT_DRIVER" = 'libvirt' ]]; then
+lib/nova:    if [[ "$VIRT_DRIVER" == "libvirt" && "$LIBVIRT_TYPE" == "qemu" ]]; then
+lib/nova:        iniset $NOVA_CPU_CONF workarounds libvirt_disable_apic True
+lib/nova:    if [[ "$VIRT_DRIVER" = 'libvirt' ]]; then
+lib/tempest:    # in Cinder and the libvirt driver in Nova.
+lib/tempest:    if [[ "$CINDER_ENABLED_BACKENDS" == *"lvm"* ]] && [ "$VIRT_DRIVER" = "libvirt" ]; then
+lib/tempest:    if [ "$VIRT_DRIVER" = "libvirt" ]; then
+lib/tempest:    if [ "$VIRT_DRIVER" = "libvirt" ] && [ "$LIBVIRT_TYPE" = "lxc" ]; then
+lib/tempest:        # libvirt-lxc does not support boot from volume or attaching volumes
+lib/neutron_plugins/ovn_agent:function _disable_libvirt_apparmor {
+lib/neutron_plugins/ovn_agent:    # of libvirt to work with ovs configured ports. See LP#1466631.
+lib/neutron_plugins/ovn_agent:    # disables apparmor for libvirtd
+lib/neutron_plugins/ovn_agent:    sudo aa-complain /etc/apparmor.d/usr.sbin.libvirtd
+lib/neutron_plugins/ovn_agent:    _disable_libvirt_apparmor
+lib/nova_plugins/functions-libvirt:# lib/nova_plugins/functions-libvirt
+lib/nova_plugins/functions-libvirt:# Common libvirt configuration functions
+lib/nova_plugins/functions-libvirt:# Turn on selective debug log filters for libvirt.
+lib/nova_plugins/functions-libvirt:# 'configure_libvirt' function further below are _selective_ and not
+lib/nova_plugins/functions-libvirt:# Try to enable coredumps for libvirt
+lib/nova_plugins/functions-libvirt:# Enable coredumps for libvirt
+lib/nova_plugins/functions-libvirt:    local confdir=/etc/systemd/system/libvirtd.service.d
+lib/nova_plugins/functions-libvirt:# Installs required distro-specific libvirt packages.
+lib/nova_plugins/functions-libvirt:function install_libvirt {
+lib/nova_plugins/functions-libvirt:    # NOTE(yoctozepto): The common consensus [1] is that libvirt-python should
+lib/nova_plugins/functions-libvirt:    # The following line removes libvirt-python from upper-constraints and
+lib/nova_plugins/functions-libvirt:    # explicitly depend on a newer (or, in general, incompatible) libvirt-python
+lib/nova_plugins/functions-libvirt:            $REQUIREMENTS_DIR/upper-constraints.txt -- libvirt-python
+lib/nova_plugins/functions-libvirt:        install_package qemu-system libvirt-clients libvirt-daemon-system libvirt-dev python3-libvirt
+lib/nova_plugins/functions-libvirt:        install_package libvirt libvirt-devel python3-libvirt
+lib/nova_plugins/functions-libvirt:# Configures the installed libvirt system so that is accessible by
+lib/nova_plugins/functions-libvirt:function configure_libvirt {
+lib/nova_plugins/functions-libvirt:        cat <<EOF | sudo tee $rules_dir/50-libvirt-$STACK_USER.rules
+lib/nova_plugins/functions-libvirt:    if (action.id == 'org.libvirt.unix.manage' &&
+lib/nova_plugins/functions-libvirt:    # The user that nova runs as needs to be member of **libvirtd** group otherwise
+lib/nova_plugins/functions-libvirt:    # nova-compute will be unable to use libvirt.
+lib/nova_plugins/functions-libvirt:    # Enable server side traces for libvirtd
+lib/nova_plugins/functions-libvirt:            # of '1:libvirt' making everything turn on. So use libvirt.c for now.
+lib/nova_plugins/functions-libvirt:            # This will have to be re-visited when Ubuntu ships libvirt >= 1.2.3
+lib/nova_plugins/functions-libvirt:            local log_filters="1:libvirt.c 1:qemu 1:conf 1:security 3:object 3:event 3:json 3:file 1:util 1:cpu"
+lib/nova_plugins/functions-libvirt:            local log_filters="1:libvirt 1:qemu 1:conf 1:security 3:object 3:event 3:json 3:file 1:util 1:cpu"
+lib/nova_plugins/functions-libvirt:        local log_outputs="1:file:/var/log/libvirt/libvirtd.log"
+lib/nova_plugins/functions-libvirt:        if ! sudo grep -q "^log_filters=\"$log_filters\"" /etc/libvirt/libvirtd.conf; then
+lib/nova_plugins/functions-libvirt:            echo "log_filters=\"$log_filters\"" | sudo tee -a /etc/libvirt/libvirtd.conf
+lib/nova_plugins/functions-libvirt:        if ! sudo grep -q "^log_outputs=\"$log_outputs\"" /etc/libvirt/libvirtd.conf; then
+lib/nova_plugins/functions-libvirt:            echo "log_outputs=\"$log_outputs\"" | sudo tee -a /etc/libvirt/libvirtd.conf
+lib/nova_plugins/functions-libvirt:        sudo mkdir -p /etc/pki/libvirt-vnc
+lib/nova_plugins/functions-libvirt:        deploy_int_CA /etc/pki/libvirt-vnc/ca-cert.pem
+lib/nova_plugins/functions-libvirt:        deploy_int_cert /etc/pki/libvirt-vnc/server-cert.pem /etc/pki/libvirt-vnc/server-key.pem
+lib/nova_plugins/functions-libvirt:        # Change ownership of everything under /etc/pki/libvirt-vnc to
+lib/nova_plugins/functions-libvirt:        # libvirt-qemu:libvirt-qemu so that libvirt-qemu can read the key
+lib/nova_plugins/functions-libvirt:        sudo chown -R libvirt-qemu:libvirt-qemu /etc/pki/libvirt-vnc
+lib/nova_plugins/functions-libvirt:    restart_service libvirtd
+lib/nova_plugins/functions-libvirt:    #  https://bugs.launchpad.net/ubuntu/+source/libvirt/+bug/1577455
+lib/nova_plugins/functions-libvirt:    # (not all platforms have it; libvirt 1.3+ only, thus the ignore)
+lib/nova_plugins/hypervisor-libvirt:# lib/nova_plugins/hypervisor-libvirt
+lib/nova_plugins/hypervisor-libvirt:# Configure the libvirt hypervisor
+lib/nova_plugins/hypervisor-libvirt:# VIRT_DRIVER=libvirt
+lib/nova_plugins/hypervisor-libvirt:source $TOP_DIR/lib/nova_plugins/functions-libvirt
+lib/nova_plugins/hypervisor-libvirt:    configure_libvirt
+lib/nova_plugins/hypervisor-libvirt:    iniset $NOVA_CONF libvirt virt_type "$LIBVIRT_TYPE"
+lib/nova_plugins/hypervisor-libvirt:    iniset $NOVA_CONF libvirt cpu_mode "$LIBVIRT_CPU_MODE"
+lib/nova_plugins/hypervisor-libvirt:    iniset $NOVA_CONF libvirt live_migration_uri "qemu+ssh://$STACK_USER@%s/system"
+lib/nova_plugins/hypervisor-libvirt:    iniset $NOVA_CONF DEFAULT compute_driver "libvirt.LibvirtDriver"
+lib/nova_plugins/hypervisor-libvirt:        iniset $NOVA_CONF libvirt cpu_mode "host-passthrough"
+lib/nova_plugins/hypervisor-libvirt:            iniset $NOVA_CONF libvirt inject_partition '-1'
+lib/nova_plugins/hypervisor-libvirt:        iniset $NOVA_CONF libvirt connection_uri "parallels+unix:///system"
+lib/nova_plugins/hypervisor-libvirt:        iniset $NOVA_CONF libvirt images_type "ploop"
+lib/nova_plugins/hypervisor-libvirt:        iniset $NOVA_CONF libvirt images_type "lvm"
+lib/nova_plugins/hypervisor-libvirt:        iniset $NOVA_CONF libvirt images_volume_group $DEFAULT_VOLUME_GROUP_NAME
+lib/nova_plugins/hypervisor-libvirt:            iniset $NOVA_CONF libvirt volume_clear "$LVM_VOLUME_CLEAR"
+lib/nova_plugins/hypervisor-libvirt:    install_libvirt
+lib/nova_plugins/hypervisor-ironic:source $TOP_DIR/lib/nova_plugins/functions-libvirt
+lib/nova_plugins/hypervisor-ironic:        configure_libvirt
+lib/nova_plugins/hypervisor-ironic:    install_libvirt
+lib/glance:    if [ "$VIRT_DRIVER" = 'libvirt' ] && [ "$LIBVIRT_TYPE" = 'parallels' ]; then
+stack.sh:# pages if KSM is enabled. This is particularly useful for nova + libvirt
+stackrc:    # Nova - services to support libvirt based openstack clouds
+stackrc:# libvirt backends. This reduces memory usage at the cost of CPU overhead
+stackrc:# volume multiattach is supported. In Queens, only the libvirt compute driver
+stackrc:# or libvirt must be greater than or equal to 3.10.
+stackrc:# Nova hypervisor configuration.  We default to libvirt with **kvm** but will
+stackrc:DEFAULT_VIRT_DRIVER=libvirt
+stackrc:    ironic|libvirt)
+stackrc:            # The groups change with newer libvirt. Older Ubuntu used
+stackrc:            # 'libvirtd', but now uses libvirt like Debian. Do a quick check
+stackrc:            # to see if libvirtd group already exists to handle grenade's case.
+stackrc:            LIBVIRT_GROUP=$(cut -d ':' -f 1 /etc/group | grep 'libvirtd$' || true)
+stackrc:            LIBVIRT_GROUP=${LIBVIRT_GROUP:-libvirt}
+stackrc:            LIBVIRT_GROUP=libvirtd
+stackrc:        libvirt)
+stackrc:            # Use the same as the default for libvirt
+doc/source/guides/devstack-with-nested-kvm.rst:Edit the VM's libvirt XML configuration via ``virsh`` utility:
+doc/source/guides/devstack-with-nested-kvm.rst:libvirt driver in nova, the below config attribute can be used in
+doc/source/guides/multinode-lab.rst:    sudo rm -rf /etc/libvirt/qemu/inst*
+doc/source/guides/multinode-lab.rst:    [libvirt]
+doc/source/guides/multinode-lab.rst:The above steps are necessary because libvirtd runs as root when the
+doc/source/guides/multinode-lab.rst:information, see the `libvirt documentation`_.
+doc/source/guides/multinode-lab.rst:.. _libvirt documentation: https://libvirt.org/drvqemu.html#securitydriver
+doc/source/plugin-registry.rst:x/devstack-plugin-libvirt-qemu           `https://opendev.org/x/devstack-plugin-libvirt-qemu <https://opendev.org/x/devstack-plugin-libvirt-qemu>`__
+doc/source/zuul_ci_jobs_migration.rst:     - *LIBVIRT_TYPE: [libvirt type]* in devstack_localrc in the job
+doc/source/systemd.rst:  Group = libvirt
+doc/source/systemd.rst:  sg libvirt -c '/usr/local/bin/nova-compute --config-file /etc/nova/nova-cpu.conf'
+Binary file .git/objects/pack/pack-d16f0396cca877c287a62880f6fb3b41c135de06.pack matches
+Binary file .git/index matches
+
+
+ vim lib/nova_plugins/functions-libvirt
+
+INFO nova.virt.driver [None req-d0bdd1f6-17fd-4e83-8ca1-38e7920d0d7d None None] Loading compute driver 'libvirt.LibvirtDriver'
+ERROR nova.virt.driver [None req-d0bdd1f6-17fd-4e83-8ca1-38e7920d0d7d None None] Unable to load the virtualization driver: ModuleNotFoundError: No module named 'libvirt'
+ERROR nova.virt.driver Traceback (most recent call last):
+ERROR nova.virt.driver   File "/opt/stack/nova/nova/virt/driver.py", line 1818, in load_compute_driver
+ERROR nova.virt.driver     virtapi)
+ERROR nova.virt.driver   File "/usr/local/lib/python3.6/dist-packages/oslo_utils/importutils.py", line 44, in import_object
+ERROR nova.virt.driver     return import_class(import_str)(*args, **kwargs)
+ERROR nova.virt.driver   File "/opt/stack/nova/nova/virt/libvirt/driver.py", line 432, in __init__
+ERROR nova.virt.driver     libvirt = importutils.import_module('libvirt')
+ERROR nova.virt.driver   File "/usr/local/lib/python3.6/dist-packages/oslo_utils/importutils.py", line 73, in import_module
+ERROR nova.virt.driver     __import__(import_str)
+ERROR nova.virt.driver ModuleNotFoundError: No module named 'libvirt'
+ERROR nova.virt.driver
+stack@devstack-controller:/etc/systemd/system$ pip search libvirt
+/usr/lib/python3/dist-packages/secretstorage/dhcrypto.py:15: CryptographyDeprecationWarning: int_from_bytes is deprecated, use int.from_bytes instead
+  from cryptography.utils import int_from_bytes
+/usr/lib/python3/dist-packages/secretstorage/util.py:19: CryptographyDeprecationWarning: int_from_bytes is deprecated, use int.from_bytes instead
+  from cryptography.utils import int_from_bytes
+ERROR: XMLRPC request failed [code: -32500]
+RuntimeError: PyPI no longer supports 'pip search' (or XML-RPC search). Please use https://pypi.org/search (via a browser) instead. See https://warehouse.pypa.io/api-reference/xml-rpc.html#deprecated-methods for more information.
+s
+
+https://blog.csdn.net/liushall/article/details/124498509
+
