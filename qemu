@@ -1805,3 +1805,884 @@ s
 
 https://blog.csdn.net/liushall/article/details/124498509
 
+--------------------
+
+=========================
+DevStack Component Timing
+ (times are in seconds)
+=========================
+wait_for_service      10
+pip_install          115
+apt-get               11
+run_process           13
+dbsync                42
+git_timed            248
+apt-get-update        11
+test_with_retry        2
+async_wait             0
+osc                  103
+-------------------------
+Unaccounted time     823
+=========================
+Total runtime        1378
+
+
+
+This is your host IP address: 192.168.10.8
+This is your host IPv6 address: ::1
+Horizon is now available at http://192.168.10.8/dashboard
+Keystone is serving at http://192.168.10.8/identity/
+The default users are: admin and demo
+The password: admin
+
+Services are running under systemd unit files.
+For more information see:
+https://docs.openstack.org/devstack/latest/systemd.html
+
+DevStack Version: wallaby
+Change: ec783f0b044012d3d7e1410d3b599e67fc9dd624 Drop the devstack-single-node-centos-7 nodeset 2024-03-04 19:50:20 +0000
+OS Version: Ubuntu 20.04 focal
+
+安装成功
+/etc/hosts
+192.168.10.8 devstack-controller
+192.168.10.9 devstack-compute
+
+root@devstack-controller:~# history
+    1  ls
+    2  apt-get update
+    3  apt-get install libvirt-bin
+    4  apt-cache search libvirt
+    5  apt-get install libvirt-clients libvirt-daemon
+    6  apt-cache
+    7  apt-cache show libvirt-daemon
+    8  git clone https://git.openstack.org/openstack-dev/devstack -b unmaintained/wallaby
+    9  devstack/tools/create-stack-user.sh
+   10  mv devstack /opt/stack
+   11  chown -R stack:stack /opt/stack/devstack
+   12  su - stack
+   13  history
+
+stack@devstack-controller:~/devstack$ history
+    1  cd devstack/
+    2  ls
+    3  vim inc/python
+# Wrapper for ``pip install`` to set cache and proxy environment variables
+# Uses globals ``OFFLINE``, ``PIP_VIRTUAL_ENV``,
+# ``PIP_UPGRADE``, ``*_proxy``,
+# Usage:
+#  pip_install pip_arguments
+function pip_install {
+    local xtrace result
+    xtrace=$(set +o | grep xtrace)
+    set +o xtrace
+    local upgrade=""
+    local offline=${OFFLINE:-False}
+    if [[ "$offline" == "True" || -z "$@" ]]; then
+        $xtrace
+        return
+    fi
+
+    time_start "pip_install"
+
+    PIP_UPGRADE=$(trueorfalse False PIP_UPGRADE)
+    if [[ "$PIP_UPGRADE" = "True" ]] ; then
+        upgrade="--upgrade"
+    fi
+
+    if [[ -z "$os_PACKAGE" ]]; then
+        GetOSVersion
+    fi
+
+    # Try to extract the path of the package we are installing into
+    # package_dir.  We need this to check for test-requirements.txt,
+    # at least.
+    #
+    # ${!#} expands to the last positional argument to this function.
+    # With "extras" syntax included, our arguments might be something
+    # like:
+    #  -e /path/to/fooproject[extra]
+    # Thus this magic line grabs just the path without extras
+    #
+    # Note that this makes no sense if this is a pypi (rather than
+    # local path) install; ergo you must check this path exists before
+    # use.  Also, if we had multiple or mixed installs, we would also
+    # likely break.  But for historical reasons, it's basically only
+    # the other wrapper functions in here calling this to install
+    # local packages, and they do so with single call per install.  So
+    # this works (for now...)
+    local package_dir=${!#%\[*\]}
+
+    if [[ -n ${PIP_VIRTUAL_ENV:=} && -d ${PIP_VIRTUAL_ENV} ]]; then
+        local cmd_pip=$PIP_VIRTUAL_ENV/bin/pip
+        local sudo_pip="env"
+    else
+        local cmd_pip="python$PYTHON3_VERSION -m pip"
+        # See
+        #  https://github.com/pypa/setuptools/issues/2232
+        #  http://lists.openstack.org/pipermail/openstack-discuss/2020-August/016905.html
+        # this makes setuptools >=50 use the platform distutils.
+        # We only want to do this on global pip installs, not if
+        # installing in a virtualenv
+        local sudo_pip="sudo -H LC_ALL=en_US.UTF-8 SETUPTOOLS_USE_DISTUTILS=stdlib "
+        echo "Using python $PYTHON3_VERSION to install $package_dir"
+    fi
+
+    cmd_pip="$cmd_pip install"
+    # Always apply constraints
+    cmd_pip="$cmd_pip -c $REQUIREMENTS_DIR/upper-constraints.txt"
+
+    $xtrace
+
+    $sudo_pip \
+        http_proxy="${http_proxy:-}" \
+        https_proxy="${https_proxy:-}" \
+        no_proxy="${no_proxy:-}" \
+        PIP_FIND_LINKS=$PIP_FIND_LINKS \
+        $cmd_pip $upgrade \
+        $@ \
+        -i https://pypi.tuna.tsinghua.edu.cn/simple \
+        --default-timeout=30000
+    result=$?
+
+    time_stop "pip_install"
+    return $result
+}
+    4  vim lib/tempest
+# install_tempest() - Collect source and prepare
+function install_tempest {
+    git_clone $TEMPEST_REPO $TEMPEST_DIR $TEMPEST_BRANCH
+    # NOTE(gmann): Pinning tox<4.0.0 for stable/zed and lower. Tox 4.0.0
+    # released after zed was released and has some incompatible changes
+    # and it is ok not to fix the issues caused by tox 4.0.0 in stable
+    # beanches jobs. We can continue testing the stable/zed and lower
+    # branches with tox<4.0.0
+    pip_install 'tox!=2.8.0,<4.0.0'
+    pushd $TEMPEST_DIR
+    # NOTE(gmann): checkout the TEMPEST_BRANCH in case TEMPEST_BRANCH
+    # is tag name not master. git_clone would not checkout tag because
+    # TEMPEST_DIR already exist until RECLONE is true.
+    git checkout $TEMPEST_BRANCH
+
+    local tmp_u_c_m
+    tmp_u_c_m=$(mktemp -t tempest_u_c_m.XXXXXXXXXX)
+    set_tempest_venv_constraints $tmp_u_c_m
+
+    tox -r --notest -efull -i https://pypi.tuna.tsinghua.edu.cn/simple
+    # NOTE(mtreinish) Respect constraints in the tempest full venv, things that
+    # are using a tox job other than full will not be respecting constraints but
+    # running pip install -U on tempest requirements
+    $TEMPEST_DIR/.tox/tempest/bin/pip install -c $tmp_u_c_m -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+    PROJECT_VENV["tempest"]=${TEMPEST_DIR}/.tox/tempest
+    rm -f $tmp_u_c_m
+    popd
+}
+++ lib/tempest:configure_tempest:642        :   tox -revenv-tempest --notest
+
+    5  grep -r "ENABLED_SERVICES"
+    6  vim stackrc
+# Set the target branch. This is used so that stable branching
+# does not need to update each repo below.
+TARGET_BRANCH=unmaintained/wallaby
+    7  vim local.conf
+root@devstack-controller:/opt/stack/devstack# cat local.conf
+[[local|localrc]]
+MULTI_HOST=true
+HOST_IP=192.168.10.8
+LOGFILE=/opt/stack/logs/stack.sh.log
+
+# Credentials
+ADMIN_PASSWORD=admin
+MYSQL_PASSWORD=secret
+RABBIT_PASSWORD=secret
+SERVICE_PASSWORD=secret
+SERVICE_TOKEN=abcdefghijklmnopqrstuvwxyz
+
+# enable neutron-ml2-vlan
+disable_service n-net
+enable_service q-svc,q-agt,q-dhcp,q-l3,q-meta,neutron,q-lbaas,q-fwaas,q-vpn
+Q_AGENT=openvswitch
+ENABLE_TENANT_VLANS=True
+TENANT_VLAN_RANGE=3001:4000
+PHYSICAL_NETWORK=default
+
+LOG_COLOR=False
+LOGDIR=$DEST/logs
+SCREEN_LOGDIR=$LOGDIR/screen
+    8  ip addr
+    9  cd /opt/stack/devstack/files/
+   10  ls
+   11  wget https://github.com/etcd-io/etcd/releases/download/v3.3.12/etcd-v3.3.12-linux-amd64.tar.gz
+   12  ls
+   13  rm etcd-v3.3.12-linux-amd64.tar.gz
+   14  ls
+   15  mv /opt/stack/etcd-v3.3.12-linux-amd64.tar.gz ./
+   16  ls
+   17  cd ..
+   18  ls
+   19  cat stackrc
+   20  ls
+   21  vim stackrc
+   22  ./stack.sh
+   23  curl -f --retry 6 --retry-delay 5 -o /opt/stack/devstack/files/get-pip.py https://bootstrap.pypa.io/get-pip.py
+   24  ./stack.sh
+   25  sudo -H -E python3.8 /opt/stack/devstack/files/get-pip.py
+   26  ./stack.sh
+   27  git clone https://github.com/novnc/noVNC.git /opt/stack/noVNC --branch v1.1.0
+   28  ls
+   29  cd ..
+   30  ls
+   31  pwd
+   32  unzip noVNC-1.1.0.zip
+   33  ls
+   34  cd noVNC-1.1.0/
+   35  ls
+   36  cd ..
+   37  ls
+   38  mv noVNC-1.1.0 noVNC
+   39  ls
+   40  rm -rf noVNC
+   41  ls
+   42  cd noVNC/
+   43  ls
+   44  git status
+   45  ls -l
+   46  cd ..
+   47  ls -l
+   48  sudo chown -R stack:stack noVNC
+   49  sudo chown -R stack:stack cirros-0.5.2-x86_64-disk.img
+   50  ls
+   51  cd noVNC/
+   52  ls
+   53  git status
+   54  ls
+   55  cd ..
+   56  ls
+   57  cd devstack/
+   58  ls
+   59  ./stack.sh
+   60  history
+
+
+devstack 重启服务
+
+Ceilometer  
+
+Restart the Ceilometer services:
+
+# service ceilometer-agent-central restart
+# service ceilometer-api restart
+# service ceilometer-agent-notification restart
+# service ceilometer-collector status restart
+Verify the status of the Ceilometer services. See Verify an OpenStack service status.
+
+Cinder  
+
+Restart the Cinder services:
+
+# service cinder-api restart
+# service cinder-scheduler restart
+Verify the status of the Cinder services. See Verify an OpenStack service status.
+
+
+On every node with Cinder role, run:
+
+# service cinder-volume restart
+# service cinder-backup restart
+Verify the status of the cinder-volume and cinder-backup services.
+
+Corosync/Pacemaker  
+
+Restart the Corosync and Pacemaker services:
+
+# service corosync restart
+# service pacemaker restart
+Verify the status of the Corosync and Pacemaker services. See Verify an OpenStack service status.
+
+Repeat step 1 - 3 on all controller nodes.
+
+Glance  
+Log in to a controller node CLI.
+
+Restart the Glance services:
+
+# service glance-api restart
+# service glance-registry restart
+Verify the status of the Glance services. See Verify an OpenStack service status.
+
+Repeat step 1 - 3 on all controller nodes.
+
+Horizon 
+Since the Horizon service is available through the Apache server, you should restart the Apache service on all controller nodes:
+
+Log in to a controller node CLI.
+
+Restart the Apache server:
+
+# service apache2 restart
+Verify whether the Apache service is successfully running after restart:
+
+# service apache2 status
+Verify whether the Apache ports are opened and listening:
+
+# netstat -nltp | egrep apache2
+Repeat step 1 - 3 on all controller nodes.
+
+Ironic  
+Log in to a controller node CLI.
+
+Restart the Ironic services:
+
+# service ironic-api restart
+# service ironic-conductor restart
+Verify the status of the Ironic services. See Verify an OpenStack service status.
+
+Repeat step 1 - 3 on all controller nodes.
+
+On any controller node, run the following command for the nova-compute service configured to work with Ironic:
+
+# crm resource restart p_nova_compute_ironic
+Verify the status of the p_nova_compute_ironic service.
+
+Keystone    
+Since the Keystone service is available through the Apache server, complete the following steps on all controller nodes:
+
+Log in to a controller node CLI.
+
+Restart the Apache server:
+
+# service apache2 restart
+Verify whether the Apache service is successfully running after restart:
+
+# service apache2 status
+Verify whether the Apache ports are opened and listening:
+
+# netstat -nltp | egrep apache2
+Repeat step 1 - 3 on all controller nodes.
+
+MySQL   
+Log in to any controller node CLI.
+
+Run the following command:
+
+# pcs status | grep -A1 mysql
+In the output, the resource clone_p_mysql should be in the Started status.
+
+Disable the clone_p_mysql resource:
+
+# pcs resource disable clone_p_mysqld
+Verify that the resource clone_p_mysqld is in the Stopped status:
+
+# pcs status | grep -A2 mysql
+It may take some time for this resource to be stopped on all controller nodes.
+
+Disable the clone_p_mysql resource:
+
+# pcs resource enable clone_p_mysqld
+Verify that the resource clone_p_mysqld is in the Started status again on all controller nodes:
+
+# pcs status | grep -A2 mysql
+Warning
+
+Use the pcs commands instead of crm for restarting the service. The pcs tool correctly stops the service according to the quorum policy preventing MySQL failures.
+
+Neutron 
+Use the following restart steps for the DHCP Neutron agent as an example for all Neutron agents.
+
+Log in to any controller node CLI.
+
+Verify the DHCP agent status:
+
+# pcs resource show | grep -A1 neutron-dhcp-agent
+The output should contain the list of all controllers in the Started status.
+
+Stop the DHCP agent:
+
+# pcs resource disable clone_neutron-dhcp-agent
+Verify the Corosync status of the DHCP agent:
+
+# pcs resource show | grep -A1 neutron-dhcp-agent
+The output should contain the list of all controllers in the Stopped status.
+
+Verify the neutron-dhcp-agent status on the OpenStack side:
+
+# neutron agent-list
+The output table should contain the DHCP agents for every controller node with xxx in the alive column.
+
+Start the DHCP agent on every controller node:
+
+# pcs resource enable clone_neutron-dhcp-agent
+Verify the DHCP agent status:
+
+# pcs resource show | grep -A1 neutron-dhcp-agent
+The output should contain the list of all controllers in the Started status.
+
+Verify the neutron-dhcp-agent status on the OpenStack side:
+
+# neutron agent-list
+The output table should contain the DHCP agents for every controller node with :-) in the alive column and True in the admin_state_up column.
+
+Nova    
+Log in to a controller node CLI.
+
+Restart the Nova services:
+
+# service nova-api restart
+# service nova-cert restart
+# service nova-compute restart
+# service nova-conductor restart
+# service nova-consoleauth restart
+# service nova-novncproxy restart
+# service nova-scheduler restart
+# service nova-spicehtml5proxy restart
+# service nova-xenvncproxy restart
+Verify the status of the Nova services. See Verify an OpenStack service status.
+
+Repeat step 1 - 3 on all controller nodes.
+
+On every compute node, run:
+
+# service nova-compute restart
+Verify the status of the nova-compute service.
+
+RabbitMQ    
+Log in to any controller node CLI.
+
+Disable the RabbitMQ service:
+
+# pcs resource disable master_p_rabbitmq-server
+Verify whether the service is stopped:
+
+# pcs status | grep -A2 rabbitmq
+Enable the service:
+
+# pcs resource enable master_p_rabbitmq-server
+During the startup process, the output of the pcs status command can show all existing RabbitMQ services in the Slaves mode.
+
+Verify the service status:
+
+# rabbitmqctl cluster_status
+In the output, the running_nodes field should contain all controllers’ host names in the rabbit@<HOSTNAME> format. The partitions field should be empty.
+
+Swift   
+Log in to a controller node CLI.
+
+Restart the Swift services:
+
+# service swift-account-auditor restart
+# service swift-account restart
+# service swift-account-reaper restart
+# service swift-account-replicator restart
+# service swift-container-auditor restart
+# service swift-container restart
+# service swift-container-reconciler restart
+# service swift-container-replicator restart
+# service swift-container-sync restart
+# service swift-container-updater restart
+# service swift-object-auditor restart
+# service swift-object restart
+# service swift-object-reconstructor restart
+# service swift-object-replicator restart
+# service swift-object-updater restart
+# service swift-proxy restart
+Verify the status of the Swift services. See Verify an OpenStack service status.
+
+Repeat step 1 - 3 on all controller nodes.
+
+Operating on more than one unit at a time
+Systemd supports wildcarding for unit operations. To restart every service in devstack you can do that following:
+
+sudo systemctl restart devstack@*
+Or to see the status of all Nova processes you can do:
+
+sudo systemctl status devstack@n-*
+We’ll eventually make the unit names a bit more meaningful so that it’s easier to understand what you are restarting.
+
+https://docs.openstack.org/fuel-docs/newton/userdocs/fuel-user-guide/troubleshooting/service-status.html
+
+由于新版devstack使用systemd的方式来管理OpenStack各项服务，所以查询日志的方式也有所不同，现记录：
+
+systemd附带的主要功能之一是日志记录，这是一种访问日志的综合方式。这需要管理员通过 journalctl来进行访问。journalctl拥有强大的查询功能，我们从一些常见的选项开始。
+
+
+查看特定的服务日志：
+sudo journalctl -f --unit devstack@n-cpu.service
+
+查看多个服务的日志：
+sudo journalctl -f --unit devstack@n-cpu.service --unit devstack@n-cond.service
+
+或者你可以使用通配符查看多个服务的日志：
+sudo journalctl -f --unit devstack@n-*
+
+使用更精准的时间戳：
+sudo journalctl -f -o short-precise --unit devstack@n-cpu.service
+
+使用ASCII编码格式，可以显示字体颜色和使用一些命令，比如less，也是使用 最多的命令：
+sudo journalctl -a --unit devstack@n-cpu.service
+
+使用grep命令结合journalctl使用，比如检索实例的 uuid：
+sudo journalctl -a --unit devstack@n-* | grep 58391b5c-036f-44d5-bd68-21d3c26349e6
+
+netstat -ntlp   //查看当前所有tcp端口
+netstat -ntulp |grep 80   //查看所有80端口使用情况
+netstat -an | grep 3306   //查看所有3306端口使用情况
+netstat -nlp |grep LISTEN   //查看当前所有监听端口
+
+Keystone is serving at http://192.168.10.8/identity/
+
+export OS_IDENTITY_API_VERSION=3
+export OS_AUTH_URL=http://192.168.10.8/identity/
+export OS_USERNAME=admin
+export OS_USER_DOMAIN_ID=default
+export OS_PASSWORD=secret
+export OS_PROJECT_NAME=admin
+export OS_PROJECT_DOMAIN_ID=default
+export OS_REGION_NAME=RegionOne
+
+
++ functions-common:save_stackenv:62        :   time_stamp=2024-05-10-154325
++ functions-common:save_stackenv:63        :   echo '# 2024-05-10-154325 '
++ functions-common:save_stackenv:64        :   for i in $STACK_ENV_VARS
++ functions-common:save_stackenv:65        :   echo BASE_SQL_CONN=mysql+pymysql://root:secret@192.168.10.8
++ functions-common:save_stackenv:64        :   for i in $STACK_ENV_VARS
++ functions-common:save_stackenv:65        :   echo DATA_DIR=/opt/stack/data
++ functions-common:save_stackenv:64        :   for i in $STACK_ENV_VARS
++ functions-common:save_stackenv:65        :   echo DEST=/opt/stack
++ functions-common:save_stackenv:64        :   for i in $STACK_ENV_VARS
++ functions-common:save_stackenv:65        :   echo ENABLED_SERVICES=n-cpu,q-agt,neutron
++ functions-common:save_stackenv:64        :   for i in $STACK_ENV_VARS
++ functions-common:save_stackenv:65        :   echo HOST_IP=192.168.10.9
++ functions-common:save_stackenv:64        :   for i in $STACK_ENV_VARS
++ functions-common:save_stackenv:65        :   echo KEYSTONE_SERVICE_URI=http://192.168.10.8/identity
++ functions-common:save_stackenv:64        :   for i in $STACK_ENV_VARS
++ functions-common:save_stackenv:65        :   echo LOGFILE=
++ functions-common:save_stackenv:64        :   for i in $STACK_ENV_VARS
++ functions-common:save_stackenv:65        :   echo OS_CACERT=
++ functions-common:save_stackenv:64        :   for i in $STACK_ENV_VARS
++ functions-common:save_stackenv:65        :   echo SERVICE_HOST=192.168.10.8
++ functions-common:save_stackenv:64        :   for i in $STACK_ENV_VARS
++ functions-common:save_stackenv:65        :   echo STACK_USER=stack
++ functions-common:save_stackenv:64        :   for i in $STACK_ENV_VARS
++ functions-common:save_stackenv:65        :   echo TLS_IP=
++ functions-common:save_stackenv:64        :   for i in $STACK_ENV_VARS
++ functions-common:save_stackenv:65        :   echo HOST_IPV6=::1
++ functions-common:save_stackenv:64        :   for i in $STACK_ENV_VARS
++ functions-common:save_stackenv:65        :   echo SERVICE_IP_VERSION=4
++ ./stack.sh:main:1405                     :   merge_config_group /opt/stack/devstack/local.conf extra
++ inc/meta-config:merge_config_group:171   :   local localfile=/opt/stack/devstack/local.conf
+
+安全组需要开通
+
+stack@devstack-compute:/etc/systemd/system$ /usr/local/bin/nova-compute --config-file /etc/nova/nova-cpu.conf
+DEBUG os_vif [-] Loaded VIF plugin class '<class 'vif_plug_linux_bridge.linux_bridge.LinuxBridgePlugin'>' with name 'linux_bridge' {{(pid=125168) initialize /usr/local/lib/python3.8/dist-packages/os_vif/__init__.py:44}}
+DEBUG os_vif [-] Loaded VIF plugin class '<class 'vif_plug_noop.noop.NoOpPlugin'>' with name 'noop' {{(pid=125168) initialize /usr/local/lib/python3.8/dist-packages/os_vif/__init__.py:44}}
+DEBUG os_vif [-] Loaded VIF plugin class '<class 'vif_plug_ovs.ovs.OvsPlugin'>' with name 'ovs' {{(pid=125168) initialize /usr/local/lib/python3.8/dist-packages/os_vif/__init__.py:44}}
+INFO os_vif [-] Loaded VIF plugins: linux_bridge, noop, ovs
+DEBUG oslo_concurrency.processutils [-] Running cmd (subprocess): grep -F node.session.scan /sbin/iscsiadm {{(pid=125168) execute /usr/local/lib/python3.8/dist-packages/oslo_concurrency/processutils.py:384}}
+DEBUG oslo_concurrency.processutils [-] CMD "grep -F node.session.scan /sbin/iscsiadm" returned: 0 in 0.005s {{(pid=125168) execute /usr/local/lib/python3.8/dist-packages/oslo_concurrency/processutils.py:422}}
+CRITICAL nova [None req-27de18ff-84c3-41c7-996b-0b2fb79f58b2 None None] Unhandled error: keystoneauth1.exceptions.auth_plugins.MissingAuthPlugin: An auth plugin is required to determine endpoint URL
+ERROR nova Traceback (most recent call last):
+ERROR nova   File "/usr/local/bin/nova-compute", line 10, in <module>
+ERROR nova     sys.exit(main())
+ERROR nova   File "/opt/stack/nova/nova/cmd/compute.py", line 58, in main
+ERROR nova     server = service.Service.create(binary='nova-compute',
+ERROR nova   File "/opt/stack/nova/nova/service.py", line 252, in create
+ERROR nova     service_obj = cls(host, binary, topic, manager,
+ERROR nova   File "/opt/stack/nova/nova/service.py", line 116, in __init__
+ERROR nova     self.manager = manager_class(host=self.host, *args, **kwargs)
+ERROR nova   File "/opt/stack/nova/nova/compute/manager.py", line 535, in __init__
+ERROR nova     self.reportclient = report.SchedulerReportClient()
+ERROR nova   File "/opt/stack/nova/nova/scheduler/client/report.py", line 188, in __init__
+ERROR nova     self._client = self._create_client()
+ERROR nova   File "/opt/stack/nova/nova/scheduler/client/report.py", line 231, in _create_client
+ERROR nova     client = self._adapter or utils.get_sdk_adapter('placement')
+ERROR nova   File "/opt/stack/nova/nova/utils.py", line 989, in get_sdk_adapter
+ERROR nova     return getattr(conn, service_type)
+ERROR nova   File "/usr/local/lib/python3.8/dist-packages/openstack/service_description.py", line 93, in __get__
+ERROR nova     endpoint = proxy_mod.Proxy.get_endpoint(proxy)
+ERROR nova   File "/usr/local/lib/python3.8/dist-packages/keystoneauth1/adapter.py", line 291, in get_endpoint
+ERROR nova     return self.session.get_endpoint(auth or self.auth, **kwargs)
+ERROR nova   File "/usr/local/lib/python3.8/dist-packages/keystoneauth1/session.py", line 1241, in get_endpoint
+ERROR nova     auth = self._auth_required(auth, 'determine endpoint URL')
+ERROR nova   File "/usr/local/lib/python3.8/dist-packages/keystoneauth1/session.py", line 1181, in _auth_required
+ERROR nova     raise exceptions.MissingAuthPlugin(msg_fmt % msg)
+ERROR nova keystoneauth1.exceptions.auth_plugins.MissingAuthPlugin: An auth plugin is required to determine endpoint URL
+ERROR nova
+
+
+stack@devstack-controller:~/devstack$ cat /etc/nova/nova-cpu.conf
+
+[DEFAULT]
+vif_plugging_timeout = 300
+vif_plugging_is_fatal = True
+compute_driver = libvirt.LibvirtDriver
+default_ephemeral_format = ext4
+pointer_model = ps2mouse
+graceful_shutdown_timeout = 5
+metadata_workers = 2
+osapi_compute_workers = 2
+transport_url = rabbit://stackrabbit:secret@192.168.10.8:5672/nova_cell1
+logging_exception_prefix = ERROR %(name)s %(instance)s
+logging_default_format_string = %(color)s%(levelname)s %(name)s [-%(color)s] %(instance)s%(color)s%(message)s
+logging_context_format_string = %(color)s%(levelname)s %(name)s [%(global_request_id)s %(request_id)s %(project_name)s %(user_name)s%(color)s] %(instance)s%(color)s%(message)s
+logging_debug_format_suffix = {{(pid=%(process)d) %(funcName)s %(pathname)s:%(lineno)d}}
+instances_path = /opt/stack/data/nova/instances
+state_path = /opt/stack/data/nova
+enabled_apis = osapi_compute
+shutdown_timeout = 0
+metadata_listen = 0.0.0.0
+osapi_compute_listen = 0.0.0.0
+instance_name_template = instance-%08x
+my_ip = 192.168.10.8
+rootwrap_config = /etc/nova/rootwrap.conf
+allow_resize_to_same_host = True
+debug = True
+
+[wsgi]
+api_paste_config = /etc/nova/api-paste.ini
+
+[filter_scheduler]
+track_instance_changes = False
+enabled_filters = AvailabilityZoneFilter,ComputeFilter,ComputeCapabilitiesFilter,ImagePropertiesFilter,ServerGroupAntiAffinityFilter,ServerGroupAffinityFilter,SameHostFilter,DifferentHostFilter
+
+[scheduler]
+workers = 2
+
+[neutron]
+service_metadata_proxy = True
+region_name = RegionOne
+auth_strategy = keystone
+project_domain_name = Default
+project_name = service
+user_domain_name = Default
+password = secret
+username = neutron
+auth_url = http://192.168.10.8/identity
+auth_type = password
+default_floating_pool = public
+
+[key_manager]
+fixed_key = bae3516cc1c0eb18b05440eba8012a4a880a2ee04d584a9c1579445e675b12defdc716ec
+backend = nova.keymgr.conf_key_mgr.ConfKeyManager
+
+[database]
+
+[api_database]
+
+[cache]
+memcache_servers = localhost:11211
+backend = dogpile.cache.memcached
+enabled = True
+
+[keystone_authtoken]
+memcached_servers = localhost:11211
+cafile = /opt/stack/data/ca-bundle.pem
+project_domain_name = Default
+project_name = service
+user_domain_name = Default
+password = secret
+username = nova
+auth_url = http://192.168.10.8/identity
+interface = public
+auth_type = password
+
+[cinder]
+project_domain_name = Default
+project_name = service
+user_domain_name = Default
+password = secret
+username = nova
+auth_url = http://192.168.10.8/identity
+auth_type = password
+os_region_name = RegionOne
+
+[oslo_concurrency]
+lock_path = /opt/stack/data/nova
+
+[upgrade_levels]
+compute = auto
+
+[oslo_messaging_notifications]
+transport_url = rabbit://stackrabbit:secret@192.168.10.8:5672/
+driver = messagingv2
+
+[notifications]
+notification_format = unversioned
+
+[conductor]
+workers = 2
+
+[service_user]
+auth_strategy = keystone
+project_domain_name = Default
+project_name = service
+user_domain_name = Default
+password = secret
+username = nova
+auth_url = http://192.168.10.8/identity
+auth_type = password
+send_service_user_token = True
+
+[libvirt]
+live_migration_uri = qemu+ssh://stack@%s/system
+cpu_mode = none
+virt_type = qemu
+
+[placement]
+region_name = RegionOne
+project_domain_name = Default
+project_name = service
+user_domain_name = Default
+password = secret
+username = placement
+auth_url = http://192.168.10.8/identity
+auth_type = password
+
+[workarounds]
+libvirt_disable_apic = True
+disable_group_policy_check_upcall = True
+
+[vnc]
+server_proxyclient_address = 192.168.10.8
+server_listen = 0.0.0.0
+novncproxy_base_url = http://192.168.10.8:6080/vnc_lite.html
+
+[spice]
+html5proxy_base_url = http://192.168.10.8:6081/spice_auto.html
+
+stack@devstack-compute:~/devstack$ cat /etc/nova/nova-cpu.conf
+
+[DEFAULT]
+vif_plugging_timeout = 300
+vif_plugging_is_fatal = True
+compute_driver = libvirt.LibvirtDriver
+default_ephemeral_format = ext4
+pointer_model = ps2mouse
+graceful_shutdown_timeout = 5
+metadata_workers = 2
+osapi_compute_workers = 2
+transport_url = rabbit://stackrabbit:secret@192.168.10.8:5672/nova_cell1
+logging_exception_prefix = ERROR %(name)s %(instance)s
+logging_default_format_string = %(color)s%(levelname)s %(name)s [-%(color)s] %(instance)s%(color)s%(message)s
+logging_context_format_string = %(color)s%(levelname)s %(name)s [%(global_request_id)s %(request_id)s %(project_name)s %(user_name)s%(color)s] %(instance)s%(color)s%(message)s
+logging_debug_format_suffix = {{(pid=%(process)d) %(funcName)s %(pathname)s:%(lineno)d}}
+instances_path = /opt/stack/data/nova/instances
+state_path = /opt/stack/data/nova
+shutdown_timeout = 0
+metadata_listen = 0.0.0.0
+osapi_compute_listen = 0.0.0.0
+instance_name_template = instance-%08x
+my_ip = 192.168.10.9
+rootwrap_config = /etc/nova/rootwrap.conf
+allow_resize_to_same_host = True
+debug = True
+
+[wsgi]
+api_paste_config = /etc/nova/api-paste.ini
+
+[filter_scheduler]
+track_instance_changes = False
+enabled_filters = AvailabilityZoneFilter,ComputeFilter,ComputeCapabilitiesFilter,ImagePropertiesFilter,ServerGroupAntiAffinityFilter,ServerGroupAffinityFilter,SameHostFilter,DifferentHostFilter
+
+[scheduler]
+workers = 2
+
+[neutron]
+region_name = RegionOne
+auth_strategy = keystone
+project_domain_name = Default
+project_name = service
+user_domain_name = Default
+password = secret
+username = neutron
+auth_url = http://192.168.10.8/identity
+auth_type = password
+default_floating_pool = public
+
+[key_manager]
+fixed_key = bae3516cc1c0eb18b05440eba8012a4a880a2ee04d584a9c1579445e675b12defdc716ec
+backend = nova.keymgr.conf_key_mgr.ConfKeyManager
+
+[oslo_concurrency]
+lock_path = /opt/stack/data/nova
+
+[upgrade_levels]
+compute = auto
+
+[oslo_messaging_notifications]
+transport_url = rabbit://stackrabbit:secret@192.168.10.8:5672/
+driver = messagingv2
+
+[notifications]
+notification_format = unversioned
+
+[conductor]
+workers = 2
+
+[service_user]
+auth_strategy = keystone
+project_domain_name = Default
+project_name = service
+user_domain_name = Default
+password = secret
+username = nova
+auth_url = http://192.168.10.8/identity
+auth_type = password
+send_service_user_token = True
+
+[libvirt]
+live_migration_uri = qemu+ssh://stack@%s/system
+cpu_mode = none
+virt_type = qemu
+
+[workarounds]
+libvirt_disable_apic = True
+disable_group_policy_check_upcall = True
+
+[vnc]
+server_proxyclient_address = 192.168.10.9
+server_listen = 192.168.10.9
+novncproxy_base_url = http://192.168.10.8:6080/vnc_auto.html
+
+[spice]
+html5proxy_base_url = http://192.168.10.8:6081/spice_auto.html
+
+通过对比在compute节点上， /etc/nova/nova-cpu.conf中要有这一项
+
+[placement]
+region_name = RegionOne
+project_domain_name = Default
+project_name = service
+user_domain_name = Default
+password = secret
+username = placement
+auth_url = http://192.168.10.8/identity
+auth_type = password
+
+
+lib/nova:function configure_placement_nova_compute {
+lib/nova:    iniset $conf placement auth_type "password"
+lib/nova:    iniset $conf placement auth_url "$KEYSTONE_SERVICE_URI"
+lib/nova:    iniset $conf placement username placement
+lib/nova:    iniset $conf placement password "$SERVICE_PASSWORD"
+lib/nova:    iniset $conf placement user_domain_name "$SERVICE_DOMAIN_NAME"
+lib/nova:    iniset $conf placement project_name "$SERVICE_TENANT_NAME"
+lib/nova:    iniset $conf placement project_domain_name "$SERVICE_DOMAIN_NAME"
+lib/nova:    iniset $conf placement region_name "$REGION_NAME"
+
+# Configure access to placement from a nova service, usually
+# compute, but sometimes conductor.
+function configure_placement_nova_compute {
+    # Use the provided config file path or default to $NOVA_CONF.
+    local conf=${1:-$NOVA_CONF}
+    iniset $conf placement auth_type "password"
+    iniset $conf placement auth_url "$KEYSTONE_SERVICE_URI"
+    iniset $conf placement username placement
+    iniset $conf placement password "$SERVICE_PASSWORD"
+    iniset $conf placement user_domain_name "$SERVICE_DOMAIN_NAME"
+    iniset $conf placement project_name "$SERVICE_TENANT_NAME"
+    iniset $conf placement project_domain_name "$SERVICE_DOMAIN_NAME"
+    iniset $conf placement region_name "$REGION_NAME"
+}
+
+https://blog.csdn.net/liushall/article/details/124498509
