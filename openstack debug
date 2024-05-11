@@ -298,3 +298,343 @@ start_libvirtd="yes"
  virPidFileAcquirePath:367 : Failed to acquire pid file '/run/libvirtd.pid': Resource temporarily unavailable
 
  daemonSetupNetworking:421 : --listen parameter not permitted with systemd activation sockets, see 'man libvirtd' for further guidance
+
+ stack@devstack-controller:~$ history
+    1  cd devstack/
+    2  ls
+    3  vim inc/python
+    4  vim lib/tempest
+    5  grep -r "ENABLED_SERVICES"
+    6  vim stackrc
+    7  vim local.conf
+    8  ip addr
+    9  cd /opt/stack/devstack/files/
+   10  ls
+   11  wget https://github.com/etcd-io/etcd/releases/download/v3.3.12/etcd-v3.3.12-linux-amd64.tar.gz
+   12  ls
+   13  rm etcd-v3.3.12-linux-amd64.tar.gz
+   14  ls
+   15  mv /opt/stack/etcd-v3.3.12-linux-amd64.tar.gz ./
+   16  ls
+   17  cd ..
+   18  ls
+   19  cat stackrc
+   20  ls
+   21  vim stackrc
+   22  ./stack.sh
+   23  curl -f --retry 6 --retry-delay 5 -o /opt/stack/devstack/files/get-pip.py https://bootstrap.pypa.io/get-pip.py
+   24  ./stack.sh
+   25  sudo -H -E python3.8 /opt/stack/devstack/files/get-pip.py
+   26  ./stack.sh
+   27  git clone https://github.com/novnc/noVNC.git /opt/stack/noVNC --branch v1.1.0
+   28  ls
+   29  cd ..
+   30  ls
+   31  pwd
+   32  unzip noVNC-1.1.0.zip
+   33  ls
+   34  cd noVNC-1.1.0/
+   35  ls
+   36  cd ..
+   37  ls
+   38  mv noVNC-1.1.0 noVNC
+   39  ls
+   40  rm -rf noVNC
+   41  ls
+   42  cd noVNC/
+   43  ls
+   44  git status
+   45  ls -l
+   46  cd ..
+   47  ls -l
+   48  sudo chown -R stack:stack noVNC
+   49  sudo chown -R stack:stack cirros-0.5.2-x86_64-disk.img
+   50  ls
+   51  cd noVNC/
+   52  ls
+   53  git status
+   54  ls
+   55  cd ..
+   56  ls
+   57  cd devstack/
+   58  ls
+   59  ./stack.sh
+   60  history
+   61  exit
+   62  ls
+   63  cd devstack/
+   64  ls
+   65  grep -r "OS_IDENTITY_API_VERSION"
+   66  ls
+   67  cd ..
+   68  ls
+   69  cd logs/
+   70  ls
+   71  grep -r "Keystone is serving at"
+   72  cd ~
+   73  netstat -napl | grep 80
+   74  netstat -napl | grep keystone
+   75  netstat -nap | grep keystone
+   76  netstat -nap | grep 80
+   77  sudo systemctl restart devstack@*
+   78  ps aux | grep nova
+   79  ps aux | grep keystone/
+   80  ps aux | grep keystone
+   81  netstat -nap | grep 80
+   82  netstat -ntlp
+   83  cd /var/log/
+   84  ls
+   85  journalctl -f --unit devstack@keystone.service
+   86  sudo journalctl -f --unit devstack@keystone.service
+   87  cd ~
+   88  ls
+   89  export OS_IDENTITY_API_VERSION=3
+   90  export OS_AUTH_URL=http://192.168.10.8/identity/
+   91  export OS_USERNAME=admin
+   92  export OS_USER_DOMAIN_ID=default
+   93  export OS_PASSWORD=secret
+   94  export OS_PROJECT_NAME=admin
+   95  export OS_PROJECT_DOMAIN_ID=default
+   96  export OS_REGION_NAME=RegionOne
+   97  openstack --debug --os-cloud devstack-admin --os-region RegionOne compute service list
+   98  ls
+   99  cd devstack/
+  100  ls
+  101  cat /etc/hosts
+  102  ls
+  103  ./stack.sh
+  104  exit
+  105  cd devstack/
+  106  ls
+  107  ./stack.sh
+  108  ./unstack.sh
+  109  ./stack.sh
+  110  vim lib/tempest:configure_tempest
+  111  vim lib/tempest
+  112  ./stack.sh
+  113  ./unstack.sh
+  114  ./stack.sh
+  115  openstack --debug --os-cloud devstack-admin --os-region RegionOne compute service list
+  116  netstat -naptl
+  117  netstat -naptl | grep 80
+  118  nc -l -p 11011
+  119  nc -h
+  120  nc -l -p 80
+  121  sudo nc -l -p 80
+  122  sudo nc -l -p 81
+  123  cat local.conf
+  124  ls
+  125  pip install keystoneauth1
+  126  vim /usr/local/lib/python3.8/dist-packages/keystoneauth1/session.py
+  127  cat /etc/nova/nova-cpu.conf
+  128  vim /usr/local/lib/python3.8/dist-packages/keystoneauth1/adapter.py
+  129  ps aux | grep nova
+  130  ps aux | grep cinder
+  131  ls
+  132  sudo journalctl -f --unit devstack@n-cpu.service
+  133  sudo journalctl -f --unit devstack@c-vol.service
+  134  ps aux | grep etcd
+  135  date
+  136  sudo journalctl -f --unit devstack@c-vol.service
+  137  sudo journalctl --unit devstack@c-vol.service
+  138  sudo systemctl restart devstack@c-vol.service
+  139  sudo journalctl -f --unit devstack@c-vol.service
+  140  sudo systemctl stop devstack@c-vol.service
+  141  sudo journalctl --unit devstack@c-vol.service | grep req-ca933115-7c29-4d3d-b8a0-796cecf36d12
+  142  sudo journalctl --unit devstack@* | grep req-ca933115-7c29-4d3d-b8a0-796cecf36d12
+  143  sudo journalctl --unit devstack@n-api.service
+  144  sudo openstack endpoint list
+  145  ls
+  146  vim openstackrc
+  147  source openstackrc
+  148  sudo openstack endpoint list
+  149  cat openstackrc ]
+  150  cat openstackrc
+  151  cd ..
+  152  ls
+  153  cd logs/
+  154  ls
+  155  grep -r "endpoint list"
+  156  grep -r "openstack"
+  157  openstack --os-cloud devstack-admin --os-region RegionOne compute service list
+  158  cd ~
+  159  openstack --os-cloud devstack-admin --os-region RegionOne compute service list
+  160  sudo openstack --os-cloud devstack-admin --os-region RegionOne compute service list
+  161  sudo openstack --os-cloud devstack-admin --os-region RegionOne service list
+  162  sudo openstack --os-cloud devstack-admin --os-region RegionOne compute cell
+  163  sudo journalctl --unit devstack@n-api.service
+  164  nova-manage cell_v2 discover_hosts --verbose
+  165  nova-manage cell_v2
+  166  nova-manage cell_v2 list_cells
+  167  nova-manage cell_v2 list_hosts
+  168  nova-manage cell_v2 map_cell_and_hosts
+  169  nova-manage cell_v2 map_cell_and_hosts
+  170  nova-manage cell_v2 discover_hosts --verbose
+  171  cinder-manage --h
+  172  sudo journalctl --unit devstack@* | grep missing required parameter 'source_id'
+  173  sudo journalctl --unit devstack@* | grep 'missing required parameter'
+  174  cat /etc/systemd/journald.conf
+  175  cd /var/log/journal/
+  176  ls
+  177  ls -l
+  178  cd 05d38496f22af8b0bf8877e719388b9d/
+  179  ls
+  180  vim system@de375e6aef894d4e8aa646d66cff039f-0000000000000001-00061803a7684dd1.journal
+  181  cd ~
+  182  sudo journalctl --unit devstack@* | grep 'missing required parameter'
+  183  sudo journalctl --unit devstack@* | grep ERROR
+  184  sudo journalctl -f --unit devstack@* | grep ERROR
+  185  sudo journalctl -f --unit devstack@*
+  186  ls
+  187  cd devstack/
+  188  ls
+  189  cat local.conf
+  190  cat /etc/nova/nova-cpu.conf
+  191  cd /etc/
+  192  ls
+  193  sudo grep -r "vnc"
+  194  cd ~
+  195  ls
+  196  sudo journalctl -f --unit devstack@n-cpu.service
+  197  virsh list
+  198  sudo journalctl -f --unit devstack@n-cpu.service
+  199  ping devstack-compute
+  200  virsh list qemu+ssh://stack@devstack-compute/
+  201  virsh -c qemu+ssh://stack@devstack-compute/ list
+  202  ls
+  203  cd devstack/
+  204  ls
+  205  cd tools/
+  206  ls
+  207  cat create-stack-user.sh
+  208  cd ~
+  209  ssh-keygen -t rsa
+  210  cd .ssh/
+  211  ls
+  212  pwd
+  213  ls
+  214  cp id_rsa.pub authorized_keys
+  215  ls
+  216  ssh localhost
+  217  ls -l
+  218  cd ~
+  219  ls
+  220  virsh -c qemu+ssh://stack@devstack-compute/ list
+  221  virsh -c qemu+ssh://stack@devstack-compute list
+  222  virsh list
+  223  ssh stack@devstack-compute
+  224  cd .ssh/
+  225  ls -l
+  226  virsh -c qemu+ssh://stack@devstack-compute list
+  227  virsh -c qemu+ssh://stack@devstack-compute/ list
+  228  virsh -c qemu+tls://stack@devstack-compute/ list
+  229  virsh -c qemu+ssh://stack@devstack-compute/ list
+  230  virsh -c qemu+ssh://stack@devstack-compute/system list
+  231  cd ~
+  232  ls
+  233  history
+  234  sudo journalctl -f --unit devstack@n-cpu.service
+  235  virsh -c qemu+ssh://stack@devstack-compute/system list
+  236  systemctl restart devstack@n-cpu.service
+  237  sudo systemctl restart devstack@n-cpu.service
+  238  sudo journalctl -f --unit devstack@n-cpu.service
+  239  vim /etc/libvirt/libvirtd.conf
+  240  sudo vim /etc/libvirt/libvirtd.conf
+  241  whereis libvirtd
+  242  sudo systemctl show libvirtd.service
+  243  sudo systemctl -h
+  244  sudo systemctl status libvirtd.service
+  245  sudo vim /lib/systemd/system/libvirtd.service
+  246  sudo systemctl restart libvirtd.service
+  247  ps aux | grep libvirt
+  248  sudo netstat napl | grep libvirt
+  249  sudo netstat -napl
+  250  sudo netstat -napl  | grep libvirt
+  251  sudo vim /lib/systemd/system/libvirtd.service
+  252  sudo systemctl restart libvirtd.service
+  253  systemctl daemon-reload
+  254  sudo systemctl restart libvirtd.service
+  255  sudo systemctl -xe libvirtd.service
+  256  sudo journalctl -xe libvirtd.service
+  257  sudo systemctl status libvirtd.service
+  258  /usr/sbin/libvirtd --listen
+  259  vim /etc/libvirt/libvirtd.conf
+  260  /usr/sbin/libvirtd -
+  261  /usr/sbin/libvirtd --listen --config /etc/libvirt/libvirtd.conf
+  262  sudo /usr/sbin/libvirtd --listen --config /etc/libvirt/libvirtd.conf
+  263  sudo vim /lib/systemd/system/libvirtd.service
+  264  systemctl daemon-reload
+  265  sudo systemctl daemon-reload
+  266  sudo systemctl restart libvirtd.service
+  267  sudo systemctl status libvirtd.service
+  268  sudo systemctl start libvirtd.service
+  269  ps aux | grep libvirt
+  270  journalctl -xe
+  271  sudo systemctl start libvirtd.service
+  272  sudo vim /lib/systemd/system/libvirtd.service
+  273  sudo /usr/sbin/libvirtd --listen --config /etc/libvirt/libvirtd.conf
+  274  sudo systemctl start libvirtd.service
+  275  exit
+  276  history
+
+不用修改libvirt的配置，仍然按libvirtd启动
+
+不但要配置stack用户直接免密登录，root之间，root和stack直接，都要免密登录，可以热迁移了。
+
+https://www.server-world.info/en/note?os=Ubuntu_22.04&p=kvm&f=5
+
+Unable to complete install: 'Cannot access storage file '/path/to/vms' (as uid:64055, gid:108): Permission denied'
+
+To do that....
+
+Edit...
+
+sudo vi /etc/libvirt/qemu.conf
+And set...
+
+user = "root"
+group = "root"
+And then...
+
+sudo systemctl restart libvirtd
+
+https://www.server-world.info/en/note?os=Ubuntu_22.04&p=kvm&f=5
+
+https://zhuanlan.zhihu.com/p/61584503/
+
+https://blog.csdn.net/weixin_43863487/article/details/104939023
+
+https://www.vinchin.cn/blog/vinchin-technique-share-details.html?id=10939
+
+root@devstack-controller:~# virsh qemu-agent-command 1 '{"execute":"guest-exec","arguments":{"path":"mkdir","arg":["-p","/root/test/"],"capture-output":true}}'
+{"return":{"pid":3922}}
+
+root@devstack-controller:~# virsh qemu-agent-command 1 '{"execute":"guest-exec-status","arguments":{"pid":3922}}'
+{"return":{"exitcode":0,"exited":true}}
+
+qemu-guest-agent功能异常
+Linux:
+虚机修改密码或主机名失败
+
+原因1：
+
+使用的不是定制化的qemu-ga
+
+解决方法：
+
+替换成定制化的qemu-ga（详细步骤见附录）。
+
+原因2：
+
+查看相关状态、日志信息，权限问题导致修改失败;
+
+
+
+解决方法：
+
+关闭虚机的selinux服务
+
+# setenforce 0
+# vim /etc/selinux/config
+
+SELINUX=disabled

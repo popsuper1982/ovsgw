@@ -1,0 +1,108 @@
+Linux 网络工具详解之 ip tuntap 和 tunctl 创建 tap/tun 设备
+本文首发于我的公众号 Linux云计算网络（id: cloud_dev），专注于干货分享，号内有 10T 书籍和视频资源，后台回复「1024」即可领取，欢迎大家关注，二维码文末可以扫。
+
+在前面一篇文章中，我们已经介绍了 tap/tun 的基本原理，本文将介绍如何使用工具 tunctl 和 ip tuntap 来创建并使用 tap/tun 设备。
+
+tunctl#
+安装#
+首先在 centos 的环境中安装 tunctl。
+
+Copy
+[root@localhost ~]# vim /etc/yum.repos.d/nux-misc.repo
+
+[nux-misc]
+name=Nux Misc
+baseurl=http://li.nux.ro/download/nux/misc/el7/x86_64/
+enabled=0
+gpgcheck=1
+gpgkey=http://li.nux.ro/download/nux/RPM-GPG-KEY-nux.ro
+ubuntu 是 apt-get install uml-utilities。
+
+man tunctl 查看 tunctl 手册，用法如下：
+
+Copy
+Synopsis
+tunctl [ OPTIONS ] [ -u owner ] [-g group] [ -t device-name ]
+-u 参数指定用户名，表明这个接口只受该用户控制，这个接口发生的事不会影响到系统的接口。
+-g 指定一组用户
+-t 指定要创建的 tap/tun 设备名。
+[OPTIONS] 部分：
+
+-b 简单打印创建的接口名字
+-n 创建 tun 设备
+-p 创建 tap 设备，默认创建该设备
+-f tun-clone-device 指定 tun 设备对应的文件名，默认是 /dev/net/tun，有些系统是 /dev/misc/net/tun。
+-d interfacename 删除指定接口
+使用#
+常见用法：
+
+默认创建 tap 接口：
+
+Copy
+tunctl
+以上等价于 tunctl -p
+
+为用户 user 创建一个 tap 接口：
+
+Copy
+# tunctl -u user
+创建 tun 接口：
+
+Copy
+tunctl -n
+为接口配置 IP 并启用：
+
+Copy
+# ifconfig tap0 192.168.0.254 up
+为接口添加路由：
+
+Copy
+# route add -host 192.168.0.1 dev tap0
+删除接口：
+
+Copy
+# tunctl -d tap0
+ip tuntap#
+安装#
+命令行输入 ip help 查看 ip 命令是否支持 tuntap 工具，支持的话就会显示 tuntap 选项：
+
+Copy
+[root@localhost ~]# ip help
+Usage: ip [ OPTIONS ] OBJECT { COMMAND | help }
+       ip [ -force ] -batch filename
+where  OBJECT := { link | addr | addrlabel | route | rule | neigh | ntable |
+                   tunnel | tuntap | maddr | mroute | mrule | monitor | xfrm |
+                   netns | l2tp | tcp_metrics | token }
+不支持就请升级或下载最新的 iproute2 工具包，或者使用上面介绍的 tunctl 工具。
+
+使用#
+输入 ip tuntap help 查看详细使用命令：
+
+Copy
+[root@localhost ~]# ip tuntap help
+Usage: ip tuntap { add | del } [ dev PHYS_DEV ]
+          [ mode { tun | tap } ] [ user USER ] [ group GROUP ]
+          [ one_queue ] [ pi ] [ vnet_hdr ] [ multi_queue ]
+
+Where: USER  := { STRING | NUMBER }
+       GROUP := { STRING | NUMBER }
+常见用法：
+
+创建 tap/tun 设备：
+
+Copy
+ip tuntap add dev tap0 mod tap # 创建 tap 
+ip tuntap add dev tun0 mod tun # 创建 tun
+删除 tap/tun 设备：
+
+Copy
+ip tuntap del dev tap0 mod tap # 删除 tap 
+ip tuntap del dev tun0 mod tun # 删除 tun
+PS: user 和 group 参数和 tunctl 的 -u、 -g 参数是一样的。
+
+以上两个工具，我们更推荐使用 ip tuntap，一个是因为 iproute2 更全更新，已经逐步在替代老旧的一些工具，另一个是因为 tunctl 在某些 Debian 类的系统上支持不全。
+
+总结#
+tunctl 和 ip tuntap 的常见使用方式。
+
+更推荐使用 ip tuntap 工具。
