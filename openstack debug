@@ -1,0 +1,300 @@
+openstack debug
+
+1. Host is not mapped to any cell
+在控制节点执行nova-manage cell_v2 discover_hosts --verbose对自动匹配上
+
+
+2.missing required parameter 'source_id'
+原来是没有选择镜像
+
+
+3. VNC登不上去
+
+正确
+
+[vnc]
+server_proxyclient_address = 192.168.10.8
+server_listen = 0.0.0.0
+novncproxy_base_url = http://192.168.10.8:6080/vnc_lite.html
+
+[spice]
+html5proxy_base_url = http://192.168.10.8:6081/spice_auto.html
+
+错误
+
+[vnc]
+server_proxyclient_address = 192.168.10.9
+server_listen = 192.168.10.9
+novncproxy_base_url = http://192.168.10.8:6080/vnc_auto.html
+
+[spice]
+html5proxy_base_url = http://192.168.10.8:6081/spice_auto.html
+
+
+May 11 14:17:56 devstack-controller nova-compute[417688]:  {{(pid=417688) _update_vif_xml /opt/stack/nova/nova/virt/libvirt/migration.py:375}}
+May 11 14:17:56 devstack-controller nova-compute[417688]: DEBUG nova.virt.libvirt.driver [-] [instance: 799d6be3-8259-45d1-992e-d8485957f30b] About to invoke the migrate API {{(pid=417688) _live_migration_operation /opt/stack/nova/nova/virt/libvirt/driver.py:9678}}
+May 11 14:17:56 devstack-controller nova-compute[417688]: ERROR nova.virt.libvirt.driver [-] [instance: 799d6be3-8259-45d1-992e-d8485957f30b] Live Migration failure: operation failed: Failed to connect to remote libvirt URI qemu+ssh://stack@devstack-compute/system: Cannot recv data: Host key verification failed.: Connection reset by peer: libvirt.libvirtError: operation failed: Failed to connect to remote libvirt URI qemu+ssh://stack@devstack-compute/system: Cannot recv data: Host key verification failed.: Connection reset by peer
+May 11 14:17:56 devstack-controller nova-compute[417688]: DEBUG nova.virt.libvirt.driver [-] [instance: 799d6be3-8259-45d1-992e-d8485957f30b] Migration operation thread notification {{(pid=417688) thread_finished /opt/stack/nova/nova/virt/libvirt/driver.py:10036}}
+May 11 14:17:56 devstack-controller nova-compute[417688]: Traceback (most recent call last):
+May 11 14:17:56 devstack-controller nova-compute[417688]:   File "/usr/local/lib/python3.8/dist-packages/eventlet/hubs/hub.py", line 476, in fire_timers
+May 11 14:17:56 devstack-controller nova-compute[417688]:     timer()
+May 11 14:17:56 devstack-controller nova-compute[417688]:   File "/usr/local/lib/python3.8/dist-packages/eventlet/hubs/timer.py", line 59, in __call__
+May 11 14:17:56 devstack-controller nova-compute[417688]:     cb(*args, **kw)
+May 11 14:17:56 devstack-controller nova-compute[417688]:   File "/usr/local/lib/python3.8/dist-packages/eventlet/event.py", line 175, in _do_send
+May 11 14:17:56 devstack-controller nova-compute[417688]:     waiter.switch(result)
+May 11 14:17:56 devstack-controller nova-compute[417688]:   File "/usr/local/lib/python3.8/dist-packages/eventlet/greenthread.py", line 221, in main
+May 11 14:17:56 devstack-controller nova-compute[417688]:     result = function(*args, **kwargs)
+May 11 14:17:56 devstack-controller nova-compute[417688]:   File "/opt/stack/nova/nova/utils.py", line 660, in context_wrapper
+May 11 14:17:56 devstack-controller nova-compute[417688]:     return func(*args, **kwargs)
+May 11 14:17:56 devstack-controller nova-compute[417688]:   File "/opt/stack/nova/nova/virt/libvirt/driver.py", line 9691, in _live_migration_operation
+May 11 14:17:56 devstack-controller nova-compute[417688]:     LOG.error("Live Migration failure: %s", e, instance=instance)
+May 11 14:17:56 devstack-controller nova-compute[417688]:   File "/usr/local/lib/python3.8/dist-packages/oslo_utils/excutils.py", line 227, in __exit__
+May 11 14:17:56 devstack-controller nova-compute[417688]:     self.force_reraise()
+May 11 14:17:56 devstack-controller nova-compute[417688]:   File "/usr/local/lib/python3.8/dist-packages/oslo_utils/excutils.py", line 200, in force_reraise
+May 11 14:17:56 devstack-controller nova-compute[417688]:     raise self.value
+May 11 14:17:56 devstack-controller nova-compute[417688]:   File "/opt/stack/nova/nova/virt/libvirt/driver.py", line 9679, in _live_migration_operation
+May 11 14:17:56 devstack-controller nova-compute[417688]:     guest.migrate(self._live_migration_uri(dest),
+May 11 14:17:56 devstack-controller nova-compute[417688]:   File "/opt/stack/nova/nova/virt/libvirt/guest.py", line 623, in migrate
+May 11 14:17:56 devstack-controller nova-compute[417688]:     self._domain.migrateToURI3(
+May 11 14:17:56 devstack-controller nova-compute[417688]:   File "/usr/local/lib/python3.8/dist-packages/eventlet/tpool.py", line 190, in doit
+May 11 14:17:56 devstack-controller nova-compute[417688]:     result = proxy_call(self._autowrap, f, *args, **kwargs)
+May 11 14:17:56 devstack-controller nova-compute[417688]:   File "/usr/local/lib/python3.8/dist-packages/eventlet/tpool.py", line 148, in proxy_call
+May 11 14:17:56 devstack-controller nova-compute[417688]:     rv = execute(f, *args, **kwargs)
+May 11 14:17:56 devstack-controller nova-compute[417688]:   File "/usr/local/lib/python3.8/dist-packages/eventlet/tpool.py", line 129, in execute
+May 11 14:17:56 devstack-controller nova-compute[417688]:     six.reraise(c, e, tb)
+May 11 14:17:56 devstack-controller nova-compute[417688]:   File "/usr/local/lib/python3.8/dist-packages/six.py", line 703, in reraise
+May 11 14:17:56 devstack-controller nova-compute[417688]:     raise value
+May 11 14:17:56 devstack-controller nova-compute[417688]:   File "/usr/local/lib/python3.8/dist-packages/eventlet/tpool.py", line 83, in tworker
+May 11 14:17:56 devstack-controller nova-compute[417688]:     rv = meth(*args, **kwargs)
+May 11 14:17:56 devstack-controller nova-compute[417688]:   File "/usr/lib/python3/dist-packages/libvirt.py", line 1943, in migrateToURI3
+May 11 14:17:56 devstack-controller nova-compute[417688]:     if ret == -1: raise libvirtError ('virDomainMigrateToURI3() failed', dom=self)
+May 11 14:17:56 devstack-controller nova-compute[417688]: libvirt.libvirtError: operation failed: Failed to connect to remote libvirt URI qemu+ssh://stack@devstack-compute/system: Cannot recv data: Host key verification failed.: Connection reset by peer
+
+
+stack@devstack-controller:~$ virsh list qemu+ssh://stack@devstack-compute/
+error: unexpected data 'qemu+ssh://stack@devstack-compute/'
+stack@devstack-controller:~$ virsh -c qemu+ssh://stack@devstack-compute/ list
+The authenticity of host 'devstack-compute (192.168.10.9)' can't be established.
+ECDSA key fingerprint is SHA256:2pQphoPW/Go8XnLOhBslD1LO6NG+s26OgZ3qo3yWYpY.
+Are you sure you want to continue connecting (yes/no/[fingerprint])? yes
+stack@devstack-compute's password:
+
+
+没有配置两台机器免密登录
+
+  209  ssh-keygen -t rsa
+
+PS C:\Users\liuchao> scp root@192.168.10.8:/opt/stack/.ssh/* ./
+root@192.168.10.8's password:
+authorized_keys                                                     100%  579   525.0KB/s   00:00
+id_rsa                                                              100% 2610     4.8MB/s   00:00
+id_rsa.pub                                                          100%  579     1.1MB/s   00:00
+known_hosts                                                         100%  444     0.4KB/s   00:00
+PS C:\Users\liuchao> scp .\id_rsa .\Desktop\noVNC root@192.168.10.8:/opt/stack/.ssh/
+root@192.168.10.8's password:
+id_rsa                                                              100% 2610     1.6MB/s   00:00
+./Desktop/noVNC: not a regular file
+PS C:\Users\liuchao> scp .\id_rsa.pub root@192.168.10.8:/opt/stack/.ssh/
+root@192.168.10.8's password:
+id_rsa.pub                                                          100%  579   539.5KB/s   00:00
+PS C:\Users\liuchao>
+PS C:\Users\liuchao> scp .\authorized_keys root@192.168.10.8:/opt/stack/.ssh/
+root@192.168.10.8's password:
+authorized_keys                                                     100%  579   544.7KB/s   00:00
+PS C:\Users\liuchao>
+PS C:\Users\liuchao>
+PS C:\Users\liuchao> scp .\id_rsa .\Desktop\noVNC root@192.168.10.9:/opt/stack/.ssh/
+The authenticity of host '192.168.10.9 (192.168.10.9)' can't be established.
+ECDSA key fingerprint is SHA256:2pQphoPW/Go8XnLOhBslD1LO6NG+s26OgZ3qo3yWYpY.
+Are you sure you want to continue connecting (yes/no/[fingerprint])?
+Warning: Permanently added '192.168.10.9' (ECDSA) to the list of known hosts.
+root@192.168.10.9's password:
+id_rsa                                                              100% 2610     2.4MB/s   00:00
+./Desktop/noVNC: not a regular file
+PS C:\Users\liuchao> scp .\id_rsa.pub root@192.168.10.9:/opt/stack/.ssh/
+root@192.168.10.9's password:
+id_rsa.pub                                                          100%  579   536.4KB/s   00:00
+PS C:\Users\liuchao> scp .\authorized_keys root@192.168.10.9:/opt/stack/.ssh/
+root@192.168.10.9's password:
+authorized_keys                                                     100%  579   534.5KB/s   00:00
+PS C:\Users\liuchao>
+
+第一台机器
+  210  cd .ssh/
+  211  ls
+  212  pwd
+  213  ls
+  214  cp id_rsa.pub authorized_keys
+  215  ls
+  216  ssh localhost
+  223  ssh stack@devstack-compute
+
+第二台机器
+  146  mkdir .ssh
+  147  cd .ssh/
+  148  ls
+  149  ls -l
+  150  sudo chown -R stack:stack *
+  151  ls -l
+  152  ssh stack@devstack-controller
+  153  ls
+  154  sudo chmod 600 id_rsa
+  155  sudo chmod 644 id_rsa.pub
+  156  ls
+  157  sudo chmod 644 authorized_keys
+  158  ssh stack@devstack-controller
+
+stack@devstack-controller:~/.ssh$ virsh -c qemu+ssh://stack@devstack-compute/system list
+ Id   Name                State
+-----------------------------------
+ 2    instance-00000003   running
+
+
+May 11 14:46:12 devstack-controller nova-compute[417688]:  {{(pid=417688) _update_vif_xml /opt/stack/nova/nova/virt/libvirt/migration.py:375}}
+May 11 14:46:12 devstack-controller nova-compute[417688]: DEBUG nova.virt.libvirt.driver [-] [instance: 799d6be3-8259-45d1-992e-d8485957f30b] About to invoke the migrate API {{(pid=417688) _live_migration_operation /opt/stack/nova/nova/virt/libvirt/driver.py:9678}}
+May 11 14:46:12 devstack-controller nova-compute[417688]: ERROR nova.virt.libvirt.driver [-] [instance: 799d6be3-8259-45d1-992e-d8485957f30b] Live Migration failure: operation failed: Failed to connect to remote libvirt URI qemu+ssh://stack@devstack-compute/system: Cannot recv data: Host key verification failed.: Connection reset by peer: libvirt.libvirtError: operation failed: Failed to connect to remote libvirt URI qemu+ssh://stack@devstack-compute/system: Cannot recv data: Host key verification failed.: Connection reset by peer
+May 11 14:46:12 devstack-controller nova-compute[417688]: DEBUG nova.virt.libvirt.driver [-] [instance: 799d6be3-8259-45d1-992e-d8485957f30b] Migration operation thread notification {{(pid=417688) thread_finished /opt/stack/nova/nova/virt/libvirt/driver.py:10036}}
+May 11 14:46:12 devstack-controller nova-compute[417688]: Traceback (most recent call last):
+May 11 14:46:12 devstack-controller nova-compute[417688]:   File "/usr/local/lib/python3.8/dist-packages/eventlet/hubs/hub.py", line 476, in fire_timers
+May 11 14:46:12 devstack-controller nova-compute[417688]:     timer()
+May 11 14:46:12 devstack-controller nova-compute[417688]:   File "/usr/local/lib/python3.8/dist-packages/eventlet/hubs/timer.py", line 59, in __call__
+May 11 14:46:12 devstack-controller nova-compute[417688]:     cb(*args, **kw)
+May 11 14:46:12 devstack-controller nova-compute[417688]:   File "/usr/local/lib/python3.8/dist-packages/eventlet/event.py", line 175, in _do_send
+May 11 14:46:12 devstack-controller nova-compute[417688]:     waiter.switch(result)
+May 11 14:46:12 devstack-controller nova-compute[417688]:   File "/usr/local/lib/python3.8/dist-packages/eventlet/greenthread.py", line 221, in main
+May 11 14:46:12 devstack-controller nova-compute[417688]:     result = function(*args, **kwargs)
+May 11 14:46:12 devstack-controller nova-compute[417688]:   File "/opt/stack/nova/nova/utils.py", line 660, in context_wrapper
+May 11 14:46:12 devstack-controller nova-compute[417688]:     return func(*args, **kwargs)
+May 11 14:46:12 devstack-controller nova-compute[417688]:   File "/opt/stack/nova/nova/virt/libvirt/driver.py", line 9691, in _live_migration_operation
+May 11 14:46:12 devstack-controller nova-compute[417688]:     LOG.error("Live Migration failure: %s", e, instance=instance)
+May 11 14:46:12 devstack-controller nova-compute[417688]:   File "/usr/local/lib/python3.8/dist-packages/oslo_utils/excutils.py", line 227, in __exit__
+May 11 14:46:12 devstack-controller nova-compute[417688]:     self.force_reraise()
+May 11 14:46:12 devstack-controller nova-compute[417688]:   File "/usr/local/lib/python3.8/dist-packages/oslo_utils/excutils.py", line 200, in force_reraise
+May 11 14:46:12 devstack-controller nova-compute[417688]:     raise self.value
+May 11 14:46:12 devstack-controller nova-compute[417688]:   File "/opt/stack/nova/nova/virt/libvirt/driver.py", line 9679, in _live_migration_operation
+May 11 14:46:12 devstack-controller nova-compute[417688]:     guest.migrate(self._live_migration_uri(dest),
+May 11 14:46:12 devstack-controller nova-compute[417688]:   File "/opt/stack/nova/nova/virt/libvirt/guest.py", line 623, in migrate
+May 11 14:46:12 devstack-controller nova-compute[417688]:     self._domain.migrateToURI3(
+May 11 14:46:12 devstack-controller nova-compute[417688]:   File "/usr/local/lib/python3.8/dist-packages/eventlet/tpool.py", line 190, in doit
+May 11 14:46:12 devstack-controller nova-compute[417688]:     result = proxy_call(self._autowrap, f, *args, **kwargs)
+May 11 14:46:12 devstack-controller nova-compute[417688]:   File "/usr/local/lib/python3.8/dist-packages/eventlet/tpool.py", line 148, in proxy_call
+May 11 14:46:12 devstack-controller nova-compute[417688]:     rv = execute(f, *args, **kwargs)
+May 11 14:46:12 devstack-controller nova-compute[417688]:   File "/usr/local/lib/python3.8/dist-packages/eventlet/tpool.py", line 129, in execute
+May 11 14:46:12 devstack-controller nova-compute[417688]:     six.reraise(c, e, tb)
+May 11 14:46:12 devstack-controller nova-compute[417688]:   File "/usr/local/lib/python3.8/dist-packages/six.py", line 703, in reraise
+May 11 14:46:12 devstack-controller nova-compute[417688]:     raise value
+May 11 14:46:12 devstack-controller nova-compute[417688]:   File "/usr/local/lib/python3.8/dist-packages/eventlet/tpool.py", line 83, in tworker
+May 11 14:46:12 devstack-controller nova-compute[417688]:     rv = meth(*args, **kwargs)
+May 11 14:46:12 devstack-controller nova-compute[417688]:   File "/usr/lib/python3/dist-packages/libvirt.py", line 1943, in migrateToURI3
+May 11 14:46:12 devstack-controller nova-compute[417688]:     if ret == -1: raise libvirtError ('virDomainMigrateToURI3() failed', dom=self)
+May 11 14:46:12 devstack-controller nova-compute[417688]: libvirt.libvirtError: operation failed: Failed to connect to remote libvirt URI qemu+ssh://stack@devstack-compute/system: Cannot recv data: Host key verification failed.: Connection reset by peer
+
+https://blog.csdn.net/SpiritedAway1106/article/details/120939053
+
+root@devstack-controller:~# systemctl status libvirtd.service
+● libvirtd.service - Virtualization daemon
+     Loaded: loaded (/lib/systemd/system/libvirtd.service; enabled; vendor preset: enabled)
+     Active: failed (Result: exit-code) since Sat 2024-05-11 15:13:13 CST; 4h 2min ago
+TriggeredBy: ● libvirtd-admin.socket
+             ● libvirtd.socket
+             ● libvirtd-ro.socket
+       Docs: man:libvirtd(8)
+             https://libvirt.org
+    Process: 539547 ExecStart=/usr/sbin/libvirtd --listen --config /etc/libvirt/libvirtd.conf (code=exited, status=6)
+   Main PID: 539547 (code=exited, status=6)
+      Tasks: 2 (limit: 32768)
+     Memory: 10.4M
+     CGroup: /system.slice/libvirtd.service
+             ├─537565 /usr/sbin/dnsmasq --conf-file=/var/lib/libvirt/dnsmasq/default.conf --leasefile-ro --dhcp-script=/usr/lib/libvirt/libvirt_leaseshelper
+             └─537566 /usr/sbin/dnsmasq --conf-file=/var/lib/libvirt/dnsmasq/default.conf --leasefile-ro --dhcp-script=/usr/lib/libvirt/libvirt_leaseshelper
+
+May 11 15:13:12 devstack-controller systemd[1]: libvirtd.service: Main process exited, code=exited, status=6/NOTCONFIGURED
+May 11 15:13:12 devstack-controller systemd[1]: libvirtd.service: Failed with result 'exit-code'.
+May 11 15:13:12 devstack-controller systemd[1]: Failed to start Virtualization daemon.
+May 11 15:13:13 devstack-controller systemd[1]: libvirtd.service: Scheduled restart job, restart counter is at 5.
+May 11 15:13:13 devstack-controller systemd[1]: Stopped Virtualization daemon.
+May 11 15:13:13 devstack-controller systemd[1]: libvirtd.service: Start request repeated too quickly.
+May 11 15:13:13 devstack-controller systemd[1]: libvirtd.service: Failed with result 'exit-code'.
+May 11 15:13:13 devstack-controller systemd[1]: Failed to start Virtualization daemon.
+
+root@devstack-controller:~# cat /lib/systemd/system/libvirtd.service
+[Unit]
+Description=Virtualization daemon
+Requires=virtlogd.socket
+Requires=virtlockd.socket
+# Use Wants instead of Requires so that users
+# can disable these three .socket units to revert
+# to a traditional non-activation deployment setup
+Wants=libvirtd.socket
+Wants=libvirtd-ro.socket
+Wants=libvirtd-admin.socket
+Wants=systemd-machined.service
+Before=libvirt-guests.service
+After=network.target
+After=dbus.service
+After=iscsid.service
+After=apparmor.service
+After=local-fs.target
+After=remote-fs.target
+After=systemd-logind.service
+After=systemd-machined.service
+After=xencommons.service
+Conflicts=xendomains.service
+Documentation=man:libvirtd(8)
+Documentation=https://libvirt.org
+
+[Service]
+Type=notify
+EnvironmentFile=-/etc/default/libvirtd
+ExecStart=/usr/sbin/libvirtd --listen --config /etc/libvirt/libvirtd.conf
+ExecReload=/bin/kill -HUP $MAINPID
+KillMode=process
+Restart=on-failure
+# At least 1 FD per guest, often 2 (eg qemu monitor + qemu agent).
+# eg if we want to support 4096 guests, we'll typically need 8192 FDs
+# If changing this, also consider virtlogd.service & virtlockd.service
+# limits which are also related to number of guests
+LimitNOFILE=8192
+# The cgroups pids controller can limit the number of tasks started by
+# the daemon, which can limit the number of domains for some hypervisors.
+# A conservative default of 8 tasks per guest results in a TasksMax of
+# 32k to support 4096 guests.
+TasksMax=32768
+# With cgroups v2 there is no devices controller anymore, we have to use
+# eBPF to control access to devices.  In order to do that we create a eBPF
+# hash MAP which locks memory.  The default map size for 64 devices together
+# with program takes 12k per guest.  After rounding up we will get 64M to
+# support 4096 guests.
+LimitMEMLOCK=64M
+
+[Install]
+WantedBy=multi-user.target
+Also=virtlockd.socket
+Also=virtlogd.socket
+Also=libvirtd.socket
+Also=libvirtd-ro.socket
+
+root@devstack-controller:~# cat /etc/default/libvirtd
+# Defaults for libvirtd initscript (/etc/init.d/libvirtd)
+# This is a POSIX shell fragment
+
+# Start libvirtd to handle qemu/kvm:
+start_libvirtd="yes"
+
+# options passed to libvirtd, see man libvirtd for details.
+# For example to enable listening on tcp add -l here
+# and set up the TLS Certificates that libvirtd will need.
+#libvirtd_opts=""
+
+# pass in location of kerberos keytab
+#export KRB5_KTNAME=/etc/libvirt/libvirt.keytab
+
+# Whether to mount a systemd like cgroup layout (only
+# useful when not running systemd)
+#mount_cgroups=yes
+# Which cgroups to mount
+#cgroups="memory devices"
+
+ virPidFileAcquirePath:367 : Failed to acquire pid file '/run/libvirtd.pid': Resource temporarily unavailable
+
+ daemonSetupNetworking:421 : --listen parameter not permitted with systemd activation sockets, see 'man libvirtd' for further guidance
