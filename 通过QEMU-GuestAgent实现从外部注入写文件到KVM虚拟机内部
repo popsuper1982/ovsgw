@@ -1,0 +1,197 @@
+通过QEMU-GuestAgent实现从外部注入写文件到KVM虚拟机内部
+2021-03-03
+
+本文将以宿主上直接写文件到VM内部为例讲解为何要注入以及如何实现
+
+tag: qemu-ga, qemu guest agent, kvm, guest-file-write, inject
+
+小慢哥的原创文章，欢迎转载
+
+目录
+▪ 为什么要“注入”到VM内部 ▪ 如何实现“注入” ▪ Step1. 为VM配置channel ▪ Step2. 部署qemu-ga ▪ Step3. 注入操作说明 ▪ Step4. Base64计算 ▪ Step5. 开始注入 ▪ 附1. qemu-ga支持的所有指令 ▪ 附2. 配置多个channel ▪ 参考文档
+
+为什么要“注入”到VM内部
+原因很简单：在VM外部无法实现，只能进入到VM内来实现
+
+KVM不像Docker(container)只是对进程进行cgroup隔离，KVM是全封闭的环境。
+
+对于基于KVM的虚拟机来说，通常存在如下需求：
+
+▷ 在线修改密码 ▷ 在线增加公钥 ▷ 在线采集性能（如cpu使用率、负载、内存使用量等性能指标） ▷ 其他各种在线功能
+
+上述这些场景的共性：仅在VM外部是无法实现的。因此就有了多种解决方案，但无论哪种解决方案都要同时满足以下2点才能实现：
+
+▷ 通道：在VM内部与外部（宿主）之间打开一个通道，可以进行数据交互 ▷ agent：在VM内部种下一个agent，用于接收外部的指令并反馈结果
+
+在VM内部种下agent的做法可以形象地称之为**"inject 注入"**
+
+如何实现“注入”
+第一步，打开通道
+
+有2类方法：
+
+▷ 走网络：会复杂一些，需要提前预插入一张管理网卡，或者利用已有网卡+特殊的路由来确保数据能走出去，这带来了较为复杂的网络拓扑 ▷ 走设备：简单很多，只需在VM内部和宿主之间建立一个设备通道即可。比如为KVM虚拟机增加一个字符设备，并在宿主上映射为一个socket文件。字符设备与socket之间形成了一个channel，通过该channel就可以进行内外数据互通
+
+“走网络”不是本文想要介绍的，接下来所有内容均为“走设备”
+
+第二步，启动agent
+
+在虚拟机里启动一个agent，实时读取字符设备，实现与宿主的数据交互。
+
+在channel中发送与接收什么样的数据，是可以自己定义的，也可以使用KVM官方实现的解决方案，称为Qemu Guest Agent，简称qemu-ga。它包含2方面：
+
+▷ channel中传送数据的协议定义：基于JSON的格式 ▷ VM内的agent：启动一个名叫qemu-ga的守护进程，该进程将从字符设备里获取传进来的json指令，然后根据指令执行相关命令，并将结果通过字符设备返回给宿主
+
+qemu-ga的好用之处在于其封装的指令兼容了一些不同的操作系统，比如写文件指令guest-file-write，既可以用于linux也可以用于windows。
+
+关于qemu-ga的配置与使用，笔者之前已写过一篇文章《基于QMP实现对qemu虚拟机进行交互》，详细介绍其工作原理及基本使用方法，这里附上地址
+
+
+由于本文主题是“注入写文件”，因此接下来将重点阐述如何写文件，不过也会将qemu-ga的部署与启用方法再次贴出。
+
+Step1. 为VM配置channel
+通过libvirt启动的虚拟机，可以在XML里增加一段配置
+
+<channel type='unix'>
+  <source mode='bind' path='/tmp/channel.sock'/>
+  <target type='virtio' name='org.qemu.guest_agent.0'/>
+</channel>
+注意：上面这段配置要放在<devices>段落中
+
+Step2. 部署qemu-ga
+1️⃣ 安装qemu-ga
+
+在VM内部安装并启动qemu-ga，linux和windows均支持qemu-ga，许多linux发行商都会提供自己的qemu-ga，比如rhel/centos、fedora、ubuntu、opensuse都有提供编译好的qemu-ga，可以直接下载使用。而windows系统需要下载virtio-win，其中有包含一些virtio的win驱动以及qemu-ga安装包，也可以仅下载qemu-ga安装包
+
+# rhel/centos
+yum install qemu-guest-agent
+
+# windows，最新virtio-win iso
+
+# windows，最新qemu-ga安装包
+通过QEMU-GuestAgent实现从外部注入写文件到KVM虚拟机内部
+
+2️⃣ 启动qemu-ga
+
+以centos7为例
+
+# 启动qemu-ga守护进程
+systemctl start qemu-guest-agent
+
+# 加入开机启动
+systemctl enable qemu-guest-agent
+启动后通过systemctl status qemu-guest-agent应当能看到进程已启动，如图所示
+
+通过QEMU-GuestAgent实现从外部注入写文件到KVM虚拟机内部
+
+注意：有的qemu-ga会拒绝部分指令，这是因为qemu-ga的配置文件里将某些指令给禁用了，比如在centos7里，配置文件为/etc/sysconfig/qemu-ga
+
+# 修改/etc/sysconfig/qemu-ga，将以下内容注释掉，或直接删掉
+BLACKLIST_RPC=guest-file-open,guest-file-close,guest-file-read,guest-file-write,guest-file-seek,guest-file-flush,guest-exec,guest-exec-status
+
+# 重启qemu-ga才能生效
+systemctl restart qemu-guest-agent
+3️⃣ 测试qemu-ga
+
+在VM的宿主机上，执行以下命令：
+
+# ${DOMAIN}表示虚拟机名字或UUID
+virsh qemu-agent-command ${DOMAIN} '{"execute":"guest-ping"}'
+如果返回以下内容则表示qemu-ga可用
+
+{"return":{}}
+接下来查看下qemu-ga支持哪些指令
+
+virsh qemu-agent-command ${DOMAIN} --pretty '{"execute":"guest-info"}'
+应该会看到支持很多命令，由于接下来做的实验需要用到如下命令，因此请先确认是否均支持
+
+▪ guest-exec：执行命令（异步操作） ▪ guest-exec-status：查看执行命令的结果 ▪ guest-file-open：打开文件，获得句柄 ▪ guest-file-write：写文件（传递base64） ▪ guest-file-close：关闭文件
+
+Step3. 注入操作说明
+实验目标：将RSA的公钥内容写入到/root/.ssh/authorized_keys
+
+这涉及到如下3个步骤：
+
+1. 创建/root/.ssh目录且权限为700 2. 创建/root/.ssh/authorized_keys文件且权限为600 3. 将RSA公钥文本进行Base64编码（guest-file-write不支持明文，仅支持base64），并将编码后的内容写入/root/.ssh/authorized_keys
+
+Step4. Base64计算
+这里先假设RSA公钥内容为
+
+ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDVKog04pbbLaarjbpvK7CRaIuUwWxehJIH8tqtX/oV4GYN5WGYPFa1tzsd4Vyoblm4LePX79WeI4kFHgSbH5P6H9i8l3KCTFHHeJT/g0P55/c60yDb3o6lqpWu9IKE3I4lsTp05Y/W0Ks7W27Jndr162ni0Ybthgd9CQyoiburoh35ECiPGwWUOBVJ4IEpSpOZdDUJLS/vVuSQgvEH0fq/G1DP3SOyR+DNasJ00mwonfaUKHZXmWAlH8marNwPmWapyTSQwCFKKh1HwlJEWETV4fYuFwm3iennb8cX1y4aX9AJWnA2cc35rpulivMijeXs/ssT5iFljXXGYzmkX6nR root@localhost.localdomain
+进行Base64编码
+
+echo 'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDVKog04pbbLaarjbpvK7CRaIuUwWxehJIH8tqtX/oV4GYN5WGYPFa1tzsd4Vyoblm4LePX79WeI4kFHgSbH5P6H9i8l3KCTFHHeJT/g0P55/c60yDb3o6lqpWu9IKE3I4lsTp05Y/W0Ks7W27Jndr162ni0Ybthgd9CQyoiburoh35ECiPGwWUOBVJ4IEpSpOZdDUJLS/vVuSQgvEH0fq/G1DP3SOyR+DNasJ00mwonfaUKHZXmWAlH8marNwPmWapyTSQwCFKKh1HwlJEWETV4fYuFwm3iennb8cX1y4aX9AJWnA2cc35rpulivMijeXs/ssT5iFljXXGYzmkX6nR root@localhost.localdomain' | base64 -w 0
+这样就获得了base64编码内容
+
+c3NoLXJzYSBBQUFBQjNOemFDMXljMkVBQUFBREFRQUJBQUFCQVFEVktvZzA0cGJiTGFhcmpicHZLN0NSYUl1VXdXeGVoSklIOHRxdFgvb1Y0R1lONVdHWVBGYTF0enNkNFZ5b2JsbTRMZVBYNzlXZUk0a0ZIZ1NiSDVQNkg5aThsM0tDVEZISGVKVC9nMFA1NS9jNjB5RGIzbzZscXBXdTlJS0UzSTRsc1RwMDVZL1cwS3M3VzI3Sm5kcjE2Mm5pMFlidGhnZDlDUXlvaWJ1cm9oMzVFQ2lQR3dXVU9CVko0SUVwU3BPWmREVUpMUy92VnVTUWd2RUgwZnEvRzFEUDNTT3lSK0ROYXNKMDBtd29uZmFVS0haWG1XQWxIOG1hck53UG1XYXB5VFNRd0NGS0toMUh3bEpFV0VUVjRmWXVGd20zaWVubmI4Y1gxeTRhWDlBSlduQTJjYzM1cnB1bGl2TWlqZVhzL3NzVDVpRmxqWFhHWXpta1g2blIgcm9vdEBsb2NhbGhvc3QubG9jYWxkb21haW4K
+Step5. 开始注入
+1️⃣ 创建/root/.ssh目录且权限为700
+
+# mkdir /root/.ssh
+virsh qemu-agent-command ${DOMAIN} '{"execute":"guest-exec","arguments":{"path":"mkdir","arg":["-p","/root/.ssh"],"capture-output":true}}'
+
+# 假设上一步返回{"return":{"pid":911}}，接下来查看结果（通常可忽略）
+virsh qemu-agent-command ${DOMAIN} '{"execute":"guest-exec-status","arguments":{"pid":911}}' 
+
+# chmod 700 /root/.ssh，此行其实可不执行，因为上面创建目录后就是700，但为了防止权限不正确导致无法使用，这里还是再刷一次700比较稳妥
+virsh qemu-agent-command ${DOMAIN} '{"execute":"guest-exec","arguments":{"path":"chmod","arg":["700","/root/.ssh"],"capture-output":true}}' 
+
+# 假设上一步返回{"return":{"pid":912}}，接下来查看结果（通常可忽略）
+virsh qemu-agent-command ${DOMAIN} '{"execute":"guest-exec-status","arguments":{"pid":912}}'
+2️⃣ 创建/root/.ssh/authorized_keys文件且权限为600
+
+# touch /root/.ssh/authorized_keys
+virsh qemu-agent-command ${DOMAIN} '{"execute":"guest-exec","arguments":{"path":"touch","arg":["/root/.ssh/authorized_keys"],"capture-output":true}}'
+
+# 假设上一步返回{"return":{"pid":913}}，接下来查看结果（通常可忽略）
+virsh qemu-agent-command ${DOMAIN} '{"execute":"guest-exec-status","arguments":{"pid":913}}'
+
+# chmod 600 /root/.ssh/authorized_keys，此行其实可不执行，因为上面创建文件后就是600，但为了防止权限不正确导致无法使用，这里还是再刷一次600比较稳妥
+virsh qemu-agent-command ${DOMAIN} '{"execute":"guest-exec","arguments":{"path":"chmod","arg":["600","/root/.ssh/authorized_keys"],"capture-output":true}}'
+
+# 假设上一步返回{"return":{"pid":914}}，接下来查看结果（通常可忽略）
+virsh qemu-agent-command ${DOMAIN} '{"execute":"guest-exec-status","arguments":{"pid":914}}'
+3️⃣ 将Base64编码写入/root/.ssh/authorized_keys
+
+# 打开文件（以读写方式打开），获得句柄
+virsh qemu-agent-command ${DOMAIN} '{"execute":"guest-file-open", "arguments":{"path":"/root/.ssh/authorized_keys","mode":"w+"}}'
+
+# 写文件，假设上一步返回{"return":1000}，1000就是句柄
+virsh qemu-agent-command ${DOMAIN} '{"execute":"guest-file-write", "arguments":{"handle":1000,"buf-b64":"c3NoLXJzYSBBQUFBQjNOemFDMXljMkVBQUFBREFRQUJBQUFCQVFEVktvZzA0cGJiTGFhcmpicHZLN0NSYUl1VXdXeGVoSklIOHRxdFgvb1Y0R1lONVdHWVBGYTF0enNkNFZ5b2JsbTRMZVBYNzlXZUk0a0ZIZ1NiSDVQNkg5aThsM0tDVEZISGVKVC9nMFA1NS9jNjB5RGIzbzZscXBXdTlJS0UzSTRsc1RwMDVZL1cwS3M3VzI3Sm5kcjE2Mm5pMFlidGhnZDlDUXlvaWJ1cm9oMzVFQ2lQR3dXVU9CVko0SUVwU3BPWmREVUpMUy92VnVTUWd2RUgwZnEvRzFEUDNTT3lSK0ROYXNKMDBtd29uZmFVS0haWG1XQWxIOG1hck53UG1XYXB5VFNRd0NGS0toMUh3bEpFV0VUVjRmWXVGd20zaWVubmI4Y1gxeTRhWDlBSlduQTJjYzM1cnB1bGl2TWlqZVhzL3NzVDVpRmxqWFhHWXpta1g2blIgcm9vdEBsb2NhbGhvc3QubG9jYWxkb21haW4K"}}'
+
+# 关闭文件
+virsh qemu-agent-command ${DOMAIN} '{"execute":"guest-file-close", "arguments":{"handle":1000}}'
+查看效果：此时到VM里查看/root/.ssh/authorized_keys，应该能看到新增加的一行
+
+附1. qemu-ga支持的所有指令
+不同的qemu-ga版本、不同的操作系统，支持的指令都会有所差异，下面是从官网上看到的当前所有参数
+
+▪ guest-exec ▪ guest-exec-status ▪ guest-file-close ▪ guest-file-flush ▪ guest-file-open ▪ guest-file-read ▪ guest-file-seek ▪ guest-file-write ▪ guest-fsfreeze-freeze ▪ guest-fsfreeze-freeze-list ▪ guest-fsfreeze-status ▪ guest-fsfreeze-thaw ▪ guest-fstrim ▪ guest-get-fsinfo ▪ guest-get-host-name ▪ guest-get-memory-block-info ▪ guest-get-memory-blocks ▪ guest-get-osinfo ▪ guest-get-time ▪ guest-get-timezone ▪ guest-get-users ▪ guest-get-vcpus ▪ guest-info ▪ guest-network-get-interfaces ▪ guest-ping ▪ guest-set-memory-blocks ▪ guest-set-time ▪ guest-set-user-password ▪ guest-set-vcpus ▪ guest-shutdown ▪ guest-suspend-disk ▪ guest-suspend-hybrid ▪ guest-suspend-ram ▪ guest-sync ▪ guest-sync-delimited
+
+
+附2. 配置多个channel
+1️⃣ 可以在XML里配置多个channel，这样就可以创建多个设备通道
+
+<channel type='unix'>
+  <source mode='bind' path='/tmp/channel.sock'/>
+  <target type='virtio' name='org.qemu.guest_agent.0'/>
+</channel>
+<channel type='unix'>
+  <source mode='bind' path='/tmp/channel.sock-1'/>
+  <target type='virtio' name='org.qemu.guest_agent.1'/>
+</channel>
+2️⃣ 在VM里要启动2个qemu-ga守护进程，可以将原有的service文件拷贝一份出来进行修改
+
+cd /usr/lib/systemd/system
+cp qemu-guest-agent.service qemu-guest-agent-1.service
+然后修改qemu-guest-agent-1.service
+
+通过QEMU-GuestAgent实现从外部注入写文件到KVM虚拟机内部
+
+3️⃣ 启动服务
+
+systemctl start qemu-guest-agent-1
+参考文档
+# qemu-ga介绍与使用：QEMU Guest Agent
+# qemu-ga完整参数：https://qemu.weilnetz.de/doc/qemu-ga-ref.html
+# 笔者另一篇相关文章《基于QMP实现对qemu虚拟机进行交互》：

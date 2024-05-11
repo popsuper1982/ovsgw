@@ -1,0 +1,56 @@
+Openstack平台配置云服务器qemu-guest-agent服务
+
+weixin_30338461
+
+于 2019-03-07 15:01:00 发布
+
+阅读量514
+ 收藏
+
+点赞数
+文章标签： shell awk json
+版权
+openstack配置虚机qga
+1、 停止对应计算节点宿主机的nova-compute服务
+shell systemctl stop openstack-nova-compute
+2、shutdown对应的虚机
+shell virsh shutdown domid/uuid
+3、编辑对应的虚机的xml配置文件(/etc/libvirt/qemu/[domid/uuid].xml //!!!!!重要，必须通过virsh命令编辑)
+
+virsh edit domid/uuid   
+操作内容如下：
+在devices的配置段中增加下面的配置，这里是增加guest_agent设备，不然在虚机上安装了qemu-guest-agent也是启动失败。
+
+<channel type='unix'>
+  <source mode='bind' path='/var/lib/libvirt/qemu/instance-000000a1.sock'/>
+  <target type='virtio' name='org.qemu.guest_agent.0'/>
+  <address type='virtio-serial' controller='0' bus='0' port='1'/>
+</channel>
+注意事项：一定对齐其余设备的配置行字段。
+4、启动虚机
+
+virsh start domid/uuid   
+5、 启动宿主机计算节点的nova-compute服务
+
+systemctl start openstack-nova-compute
+6、 在虚机上安装rpm包
+
+yum install qemu-guest-agent -y
+7、应该是默认安装完成之后就是启动的。
+
+systemctl status qemu-guest-agent  
+systemctl start qemu-guest-agent  
+systemctl status qemu-guest-agent  
+宿主机向虚机发送命令：
+
+virsh qemu-agent-command domid/uuid '{"execute":"guest-get-cpuinfo"}'
+virsh qemu-agent-command domid/uuid '{"execute":"guest-get-memory-status"}'|python -m json.tool
+virsh qemu-agent-command domid/uuid '{"execute":"guest-get-disk-status"}'
+测试脚本
+
+for i in `virsh list|awk '{print $1}'|tail -n +3` ;
+do 
+echo $i;virsh domuuid $i;
+virsh qemu-agent-command $i '{"execute":"guest-get-memory-status"}';
+done;
+转载于:https://www.cnblogs.com/jlunzi/p/10489655.html

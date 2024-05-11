@@ -638,3 +638,6 @@ Linux:
 # vim /etc/selinux/config
 
 SELINUX=disabled
+
+https://www.qemu.org/docs/master/interop/qemu-ga-ref.html
+
