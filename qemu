@@ -2890,3 +2890,314 @@ if is_service_enabled placement placement-client; then
         configure_placement_nova_compute
     fi
 fi
+
+https://cloud.centos.org/centos/7/images/
+
+metadata server成功
+
+namespace里面可以连接
+
+root@devstack-controller:~# ip netns
+qdhcp-83a685f7-9673-4a50-a043-1f950e768482 (id: 4)
+qrouter-a131cd6f-fb82-4197-9c71-c3d421e61df3 (id: 3)
+qdhcp-59734805-75eb-4460-821d-7d538472cd45 (id: 0)
+
+ip netns exec qrouter-a131cd6f-fb82-4197-9c71-c3d421e61df3 ssh -i /root/openstack.pem centos@10.0.0.49
+
+root@devstack-controller:~# ip netns exec qrouter-a131cd6f-fb82-4197-9c71-c3d421e61df3 ip addr
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+    inet6 ::1/128 scope host
+       valid_lft forever preferred_lft forever
+29: qr-bc2016fc-00: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1450 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/ether fa:16:3e:14:41:19 brd ff:ff:ff:ff:ff:ff
+    inet 10.0.0.1/26 brd 10.0.0.63 scope global qr-bc2016fc-00
+       valid_lft forever preferred_lft forever
+    inet6 fe80::f816:3eff:fe14:4119/64 scope link
+       valid_lft forever preferred_lft forever
+30: qg-700b1130-29: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/ether fa:16:3e:d3:7e:aa brd ff:ff:ff:ff:ff:ff
+    inet 172.24.4.117/24 brd 172.24.4.255 scope global qg-700b1130-29
+       valid_lft forever preferred_lft forever
+    inet 172.24.4.109/32 brd 172.24.4.109 scope global qg-700b1130-29
+       valid_lft forever preferred_lft forever
+    inet6 2001:db8::1/64 scope global
+       valid_lft forever preferred_lft forever
+    inet6 fe80::f816:3eff:fed3:7eaa/64 scope link
+       valid_lft forever preferred_lft forever
+31: qr-41ff8123-10: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1450 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/ether fa:16:3e:01:59:93 brd ff:ff:ff:ff:ff:ff
+    inet6 fd66:894f:7f3::1/64 scope global
+       valid_lft forever preferred_lft forever
+    inet6 fe80::f816:3eff:fe01:5993/64 scope link
+       valid_lft forever preferred_lft forever
+root@devstack-controller:~# ovs-vsctl show
+1a861be3-e69d-4bd7-94f7-aa5350d6934c
+    Manager "ptcp:6640:127.0.0.1"
+        is_connected: true
+    Bridge br-ex
+        Controller "tcp:127.0.0.1:6633"
+            is_connected: true
+        fail_mode: secure
+        datapath_type: system
+        Port br-ex
+            Interface br-ex
+                type: internal
+        Port phy-br-ex
+            Interface phy-br-ex
+                type: patch
+                options: {peer=int-br-ex}
+    Bridge br-tun
+        Controller "tcp:127.0.0.1:6633"
+            is_connected: true
+        fail_mode: secure
+        datapath_type: system
+        Port vxlan-c0a80a09
+            Interface vxlan-c0a80a09
+                type: vxlan
+                options: {df_default="true", egress_pkt_mark="0", in_key=flow, local_ip="192.168.10.8", out_key=flow, remote_ip="192.168.10.9"}
+        Port br-tun
+            Interface br-tun
+                type: internal
+        Port patch-int
+            Interface patch-int
+                type: patch
+                options: {peer=patch-tun}
+    Bridge br-int
+        Controller "tcp:127.0.0.1:6633"
+            is_connected: true
+        fail_mode: secure
+        datapath_type: system
+        Port tap79fa2fa9-09
+            tag: 2
+            Interface tap79fa2fa9-09
+                type: internal
+        Port qg-700b1130-29
+            tag: 4095
+            trunks: [4095]
+            Interface qg-700b1130-29
+                type: internal
+        Port qr-bc2016fc-00
+            tag: 1
+            Interface qr-bc2016fc-00
+                type: internal
+        Port int-br-ex
+            Interface int-br-ex
+                type: patch
+                options: {peer=phy-br-ex}
+        Port patch-tun
+            Interface patch-tun
+                type: patch
+                options: {peer=patch-int}
+        Port br-int
+            Interface br-int
+                type: internal
+        Port tap3b87c4a5-3e
+            tag: 1
+            Interface tap3b87c4a5-3e
+                type: internal
+        Port qr-41ff8123-10
+            tag: 1
+            Interface qr-41ff8123-10
+                type: internal
+    ovs_version: "2.13.8"
+
+
+root@devstack-controller:~# ip netns exec qrouter-a131cd6f-fb82-4197-9c71-c3d421e61df3 ip addr
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+    inet6 ::1/128 scope host
+       valid_lft forever preferred_lft forever
+29: qr-bc2016fc-00: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1450 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/ether fa:16:3e:14:41:19 brd ff:ff:ff:ff:ff:ff
+    inet 10.0.0.1/26 brd 10.0.0.63 scope global qr-bc2016fc-00
+       valid_lft forever preferred_lft forever
+    inet6 fe80::f816:3eff:fe14:4119/64 scope link
+       valid_lft forever preferred_lft forever
+30: qg-700b1130-29: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/ether fa:16:3e:d3:7e:aa brd ff:ff:ff:ff:ff:ff
+    inet 172.24.4.117/24 brd 172.24.4.255 scope global qg-700b1130-29
+       valid_lft forever preferred_lft forever
+    inet6 2001:db8::1/64 scope global
+       valid_lft forever preferred_lft forever
+    inet6 fe80::f816:3eff:fed3:7eaa/64 scope link
+       valid_lft forever preferred_lft forever
+31: qr-41ff8123-10: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1450 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/ether fa:16:3e:01:59:93 brd ff:ff:ff:ff:ff:ff
+    inet6 fd66:894f:7f3::1/64 scope global
+       valid_lft forever preferred_lft forever
+    inet6 fe80::f816:3eff:fe01:5993/64 scope link
+       valid_lft forever preferred_lft forever
+
+
+root@devstack-controller:~# ovs-vsctl show
+1a861be3-e69d-4bd7-94f7-aa5350d6934c
+    Manager "ptcp:6640:127.0.0.1"
+        is_connected: true
+    Bridge br-ex
+        Controller "tcp:127.0.0.1:6633"
+            is_connected: true
+        fail_mode: secure
+        datapath_type: system
+        Port br-ex
+            Interface br-ex
+                type: internal
+        Port phy-br-ex
+            Interface phy-br-ex
+                type: patch
+                options: {peer=int-br-ex}
+    Bridge br-tun
+        Controller "tcp:127.0.0.1:6633"
+            is_connected: true
+        fail_mode: secure
+        datapath_type: system
+        Port vxlan-c0a80a09
+            Interface vxlan-c0a80a09
+                type: vxlan
+                options: {df_default="true", egress_pkt_mark="0", in_key=flow, local_ip="192.168.10.8", out_key=flow, remote_ip="192.168.10.9"}
+        Port br-tun
+            Interface br-tun
+                type: internal
+        Port patch-int
+            Interface patch-int
+                type: patch
+                options: {peer=patch-tun}
+    Bridge br-int
+        Controller "tcp:127.0.0.1:6633"
+            is_connected: true
+        fail_mode: secure
+        datapath_type: system
+        Port tap79fa2fa9-09
+            tag: 2
+            Interface tap79fa2fa9-09
+                type: internal
+        Port qg-700b1130-29
+            tag: 4095
+            trunks: [4095]
+            Interface qg-700b1130-29
+                type: internal
+        Port qr-bc2016fc-00
+            tag: 1
+            Interface qr-bc2016fc-00
+                type: internal
+        Port int-br-ex
+            Interface int-br-ex
+                type: patch
+                options: {peer=phy-br-ex}
+        Port patch-tun
+            Interface patch-tun
+                type: patch
+                options: {peer=patch-int}
+        Port br-int
+            Interface br-int
+                type: internal
+        Port tap3b87c4a5-3e
+            tag: 1
+            Interface tap3b87c4a5-3e
+                type: internal
+        Port qr-41ff8123-10
+            tag: 1
+            Interface qr-41ff8123-10
+                type: internal
+    ovs_version: "2.13.8"
+
+
+https://www.cnblogs.com/popsuper1982/p/3849822.html
+
+创建新的网卡qg，attach到br-ex
+
+ovs-vsctl -- --if-exists del-port qg-700b1130-29 -- add-port br-ex qg-700b1130-29 -- set Interface qg-700b1130-29 type=internal -- set Interface qg-700b1130-29 external-ids:iface-id=556ca938-e11b-4246-bdc1-ef25c91b7593 -- set Interface qg-556ca938-e1 external-ids:iface-status=active -- set Interface qg-700b1130-29 external-ids:attached-mac=fa:16:3e:68:12:c0
+
+设置网卡mac
+
+ip link set qg-556ca938-e1 address fa:16:3e:68:12:c0
+
+br-ex的连接方式有所改变
+OpenStack实践(九):Open vSwitch方式实现floating IP
+https://www.yisu.com/jc/25322.html
+
+root@devstack-controller:~# ovs-ofctl dump-flows br-ex
+ cookie=0xc0b889cb790d0ee0, duration=782.423s, table=0, n_packets=8098, n_bytes=920156, priority=2,in_port="phy-br-ex" actions=drop
+ cookie=0xc0b889cb790d0ee0, duration=782.426s, table=0, n_packets=43, n_bytes=2518, priority=0 actions=NORMAL
+
+root@devstack-controller:~# ovs-ofctl dump-flows br-int
+ cookie=0x9dc6d4ee5354f700, duration=875.484s, table=0, n_packets=0, n_bytes=0, priority=65535,dl_vlan=4095 actions=drop
+ cookie=0x9dc6d4ee5354f700, duration=875.470s, table=0, n_packets=43, n_bytes=2518, priority=2,in_port="int-br-ex" actions=drop
+ cookie=0x9dc6d4ee5354f700, duration=875.486s, table=0, n_packets=12217, n_bytes=1298185, priority=0 actions=resubmit(,60)
+ cookie=0x9dc6d4ee5354f700, duration=875.487s, table=23, n_packets=0, n_bytes=0, priority=0 actions=drop
+ cookie=0x9dc6d4ee5354f700, duration=875.484s, table=24, n_packets=0, n_bytes=0, priority=0 actions=drop
+ cookie=0x9dc6d4ee5354f700, duration=797.988s, table=60, n_packets=3954, n_bytes=560540, priority=100,in_port="qr-41ff8123-10" actions=load:0x6->NXM_NX_REG5[],load:0x1->NXM_NX_REG6[],resubmit(,73)
+ cookie=0x9dc6d4ee5354f700, duration=797.988s, table=60, n_packets=1363, n_bytes=158534, priority=100,in_port="qr-bc2016fc-00" actions=load:0x4->NXM_NX_REG5[],load:0x1->NXM_NX_REG6[],resubmit(,73)
+ cookie=0x9dc6d4ee5354f700, duration=797.988s, table=60, n_packets=3, n_bytes=270, priority=100,in_port="tap79fa2fa9-09" actions=load:0x7->NXM_NX_REG5[],load:0x2->NXM_NX_REG6[],resubmit(,73)
+ cookie=0x9dc6d4ee5354f700, duration=797.988s, table=60, n_packets=846, n_bytes=75303, priority=100,in_port="tap3b87c4a5-3e" actions=load:0x3->NXM_NX_REG5[],load:0x1->NXM_NX_REG6[],resubmit(,73)
+ cookie=0x9dc6d4ee5354f700, duration=875.485s, table=60, n_packets=5639, n_bytes=467814, priority=3 actions=NORMAL
+ cookie=0x9dc6d4ee5354f700, duration=875.483s, table=62, n_packets=0, n_bytes=0, priority=3 actions=NORMAL
+ cookie=0x9dc6d4ee5354f700, duration=800.804s, table=71, n_packets=0, n_bytes=0, priority=110,ct_state=+trk actions=ct_clear,resubmit(,71)
+ cookie=0x9dc6d4ee5354f700, duration=800.824s, table=71, n_packets=0, n_bytes=0, priority=0 actions=drop
+ cookie=0x9dc6d4ee5354f700, duration=800.820s, table=72, n_packets=0, n_bytes=0, priority=0 actions=drop
+ cookie=0x9dc6d4ee5354f700, duration=797.988s, table=73, n_packets=3949, n_bytes=559950, priority=80,reg5=0x6 actions=resubmit(,94)
+ cookie=0x9dc6d4ee5354f700, duration=797.988s, table=73, n_packets=1297, n_bytes=151502, priority=80,reg5=0x4 actions=resubmit(,94)
+ cookie=0x9dc6d4ee5354f700, duration=797.988s, table=73, n_packets=3, n_bytes=270, priority=80,reg5=0x7 actions=resubmit(,94)
+ cookie=0x9dc6d4ee5354f700, duration=797.988s, table=73, n_packets=841, n_bytes=74421, priority=80,reg5=0x3 actions=resubmit(,94)
+ cookie=0x9dc6d4ee5354f700, duration=800.815s, table=73, n_packets=0, n_bytes=0, priority=0 actions=drop
+ cookie=0x9dc6d4ee5354f700, duration=800.812s, table=81, n_packets=0, n_bytes=0, priority=0 actions=drop
+ cookie=0x9dc6d4ee5354f700, duration=800.808s, table=82, n_packets=0, n_bytes=0, priority=0 actions=drop
+ cookie=0x9dc6d4ee5354f700, duration=800.795s, table=91, n_packets=0, n_bytes=0, priority=1 actions=resubmit(,94)
+ cookie=0x9dc6d4ee5354f700, duration=800.791s, table=92, n_packets=0, n_bytes=0, priority=0 actions=drop
+ cookie=0x9dc6d4ee5354f700, duration=800.787s, table=93, n_packets=0, n_bytes=0, priority=0 actions=drop
+ cookie=0x9dc6d4ee5354f700, duration=800.799s, table=94, n_packets=96, n_bytes=13148, priority=1 actions=NORMAL
+
+
+   28  ovs-ofctl dump-flows br-ex
+   29  ovs-ofctl dump-flows br-int
+   30  ovs-ofctl del-flows
+   31  ovs-ofctl del-flows br-ex priority=2,in_port="phy-br-ex" actions=drop
+   32  ovs-ofctl del-flows br-ex 'priority=2,in_port="phy-br-ex"'
+   33  ovs-ofctl del-flows -h
+   34  ovs-ofctl del-flows br-ex "priority=2,in_port=\"phy-br-ex\""
+   35  ovs-ofctl del-flows br-ex "in_port=\"phy-br-ex\""
+   36  ovs-ofctl del-flows br-int "in_port=\"int-br-ex\""
+   37  ovs-ofctl dump-flows br-ex
+   38  ovs-ofctl dump-flows br-int
+   39  ovs-ofctl del-flows br-int "dl_vlan=4095"
+   40  ovs-ofctl dump-flows br-int
+   41  tcpdump -n -i br-int
+   42  ovs-vsctl show
+   43  ovs-vsctl set port qg-700b1130-29 VLAN_mode=native-untagged
+   44  ovs-vsctl show
+   45  ovs-vsctl remove port qg-700b1130-29 tag 4095
+   46  ovs-vsctl show
+   47  ovs-vsctl remove port qg-700b1130-29 trunk 4095
+
+发现默认的flow里面的规则是drop掉的
+root@devstack-controller:~# ovs-ofctl dump-flows br-ex
+ cookie=0xc0b889cb790d0ee0, duration=782.423s, table=0, n_packets=8098, n_bytes=920156, priority=2,in_port="phy-br-ex" actions=drop
+root@devstack-controller:~# ovs-ofctl dump-flows br-int
+ cookie=0x9dc6d4ee5354f700, duration=875.484s, table=0, n_packets=0, n_bytes=0, priority=65535,dl_vlan=4095 actions=drop
+ cookie=0x9dc6d4ee5354f700, duration=875.470s, table=0, n_packets=43, n_bytes=2518, priority=2,in_port="int-br-ex" actions=drop
+
+VID（VLAN ID）：长度为12bit，取值范围是0~4095，其中0表示该帧不属于任何一个VLAN，而4095是保留值，不能给用户使用，所以实际可用的VLAN ID一共为4094个(1 ~ 4094)。
+
+删除这几个flow
+   35  ovs-ofctl del-flows br-ex "in_port=\"phy-br-ex\""
+   36  ovs-ofctl del-flows br-int "in_port=\"int-br-ex\""
+   39  ovs-ofctl del-flows br-int "dl_vlan=4095"
+
+在br-int上
+        Port qg-700b1130-29
+            tag: 4095
+            trunks: [4095]
+            Interface qg-700b1130-29
+                type: internal
+
+把tag去掉
+   45  ovs-vsctl remove port qg-700b1130-29 tag 4095
+   47  ovs-vsctl remove port qg-700b1130-29 trunk 4095
+
+通了
+
+可是devstack为什么要这样配置呢？

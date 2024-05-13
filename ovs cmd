@@ -1,0 +1,90 @@
+二、下载Ubuntu镜像
+docker search sshd-ubuntu
+docker pull boyanbonev/sshd-ubuntuF
+三、使用OVS创建网桥
+ovs-vsctl add-br vswitch0
+ovs-vsctl add-br vswitch1
+四、创建Docker容器做测试
+docker run -t -i -d --name vm01 --net=none --privileged boyanbonev/sshd-ubuntu /bin/bash
+docker run -t -i -d --name vm02 --net=none --privileged boyanbonev/sshd-ubuntu /bin/bash
+docker run -t -i -d --name vm03 --net=none --privileged boyanbonev/sshd-ubuntu /bin/bash
+docker run -t -i -d --name vm04 --net=none --privileged boyanbonev/sshd-ubuntu /bin/bash 五、使用OVS给容器添加网卡
+ovs-docker add-port vswitch0 eth0 vm01 --ipaddress=192.168.1.2/24
+ovs-docker add-port vswitch1 eth0 vm02 --ipaddress=192.168.1.3/24
+ovs-docker add-port vswitch0 eth0 vm03 --ipaddress=192.168.1.4/24
+ovs-docker add-port vswitch1 eth0 vm04 --ipaddress=192.168.1.5/24
+六、连接网桥
+1、将网卡添加到网桥（此处会出现错误，想想看为什么？）
+ovs-vsctl add-port vswitch0 patch_to_vswitch1
+ovs-vsctl add-port vswitch1 patch_to_vswitch0
+2、设置网卡连接模式
+ovs-vsctl set interface patch_to_vswitch1 type=patch
+ovs-vsctl set interface patch_to_vswitch0 type=patch
+3、设置网桥的连接
+ovs-vsctl set interface patch_to_vswitch0 options:peer=patch_to_vswitch1
+ovs-vsctl set interface patch_to_vswitch1 options:peer=patch_to_vswitch0
+七、查看接口
+ovs-vsctl show
+八、测试连通性
+root@user1-virtual-machine:~# docker attach vm01
+root@13a5e261a900:/#
+root@13a5e261a900:/# ping 192.168.1.3
+九、配置VLAN
+1、查看网桥接口 id和容器的对应关系
+# ovs-vsctl list interface 6eef85c4718a4_l | grep container_id
+external_ids : {container_id="vm04", container_iface="eth0"}
+2、设置该接口的vlan tag
+# ovs-vsctl set port 6eef85c4718a4_l tag=200
+3、其他操作意义同上
+# ovs-vsctl list interface 39c0765e1c964_l | grep container_id
+external_ids : {container_id="vm02", container_iface="eth0"}
+# ovs-vsctl set port 39c0765e1c964_l tag=100
+
+# ovs-vsctl list interface 2720669d9c064_l | grep container_id
+external_ids : {container_id="vm03", container_iface="eth0"}
+# ovs-vsctl set port 2720669d9c064_l tag=200
+
+# ovs-vsctl list interface f4e1ae64ef704_l | grep container_id
+external_ids : {container_id="vm01", container_iface="eth0"}
+# ovs-vsctl set port f4e1ae64ef704_l tag=100
+十、测试容器连通性
+1、 与相同vlan的连通性
+# docker attach vm01
+[root@ffa59e57d97f /]# ping 192.168.1.3
+2、 与不同vlan的连通性 [root@ffa59e57d97f /]# ping 192.168.1.4 -c 1
+十一、 设置网桥之间的Trunk
+1、 将trunk 设置为只允许 vlan100通过
+ovs-vsctl set port patch_to_vswitch1 VLAN_mode=trunk
+ovs-vsctl set port patch_to_vswitch0 VLAN_mode=trunk
+
+ovs-vsctl set port patch_to_vswitch0 trunk=100
+ovs-vsctl set port patch_to_vswitch1 trunk=100
+2、 使用vm03和vm04测试 vlan200则无法通信
+# docker attach vm03
+[root@c17ff55307d7 /]# ping 192.168.1.5
+十二、查看OVS的流表
+ovs-ofctl dump-flows vswitch0
+NXST_FLOW reply (xid=0x4):
+cookie=0x0, duration=2504.456s, table=0, n_packets=292, n_bytes=36188, idle_age=410,
+priority=0 actions=NORMAL
+
+ovs-ofctl dump-flows vswitch1
+NXST_FLOW reply (xid=0x4):
+cookie=0x0, duration=46151.880s, table=0, n_packets=155, n_bytes=10998, idle_age=63,
+priority=0 actions=NORMAL
+
+附加一些OVS配置命令：
+1、设置VLAN mode
+ovs-vsctl set port <port name> VLAN_mode=trunk|access|native-tagged|native-untagged
+2、设置VLAN tag
+ovs-vsctl set port <port name> tag=<tag 值>
+3、设置VLAN trunk
+ovs-vsctl set port <port name> trunk=100,200
+4、删除port 的配置
+ovs-vsctl remove port <port name> <config item> <config value>
+#例如
+ovs-vsctl remove port <port name> tag 100
+ovs-vsctl remove port <port name> trunk 200
+5、查看port 的属性
+Bash
+ovs-vsctl list interface <port name>
