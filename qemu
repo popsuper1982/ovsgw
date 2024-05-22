@@ -3201,3 +3201,9 @@ VID（VLAN ID）：长度为12bit，取值范围是0~4095，其中0表示该帧�
 通了
 
 可是devstack为什么要这样配置呢？
+
+--------------------------------
+
+
+oscwrap --os-cloud devstack-admin --os-region RegionOne router create --project 282bdbc6996f4aa48ed39016fc2c3344 router1
+

@@ -641,3 +641,122 @@ SELINUX=disabled
 
 https://www.qemu.org/docs/master/interop/qemu-ga-ref.html
 
+virsh migrate --verbose --live --copy-storage-all --persistent instance-200-new qemu+ssh://root@devstack-compute/system
+
+root@devstack-controller:/opt/stack/devstack# openstack --verbose --debug project show admin
+/usr/lib/python3/dist-packages/secretstorage/dhcrypto.py:15: CryptographyDeprecationWarning: int_from_bytes is deprecated, use int.from_bytes instead
+  from cryptography.utils import int_from_bytes
+/usr/lib/python3/dist-packages/secretstorage/util.py:19: CryptographyDeprecationWarning: int_from_bytes is deprecated, use int.from_bytes instead
+  from cryptography.utils import int_from_bytes
+START with options: --verbose --debug project show admin
+options: Namespace(access_key='', access_secret='***', access_token='***', access_token_endpoint='', access_token_type='', application_credential_id='', application_credential_name='', application_credential_secret='***', auth_methods='', auth_type='', auth_url='http://192.168.10.8/identity/', cacert=None, cert='', client_id='', client_secret='***', cloud='', code='', consumer_key='', consumer_secret='***', debug=True, default_domain='default', default_domain_id='', default_domain_name='', deferred_help=False, discovery_endpoint='', domain_id='', domain_name='', endpoint='', identity_provider='', identity_provider_url='', insecure=None, interface='public', key='', log_file=None, openid_scope='', os_beta_command=False, os_compute_api_version='', os_dns_api_version='2', os_identity_api_version='3', os_image_api_version='', os_key_manager_api_version='1', os_network_api_version='', os_object_api_version='', os_placement_api_version='1.0', os_project_id=None, os_project_name=None, os_volume_api_version='', passcode='', password='***', profile='', project_domain_id='default', project_domain_name='', project_id='', project_name='admin', protocol='', redirect_uri='', region_name='RegionOne', remote_project_domain_id='', remote_project_domain_name='', remote_project_id='', remote_project_name='', service_provider='', service_provider_endpoint='', service_provider_entity_id='', system_scope='', timing=False, token='***', trust_id='', user_domain_id='default', user_domain_name='', user_id='', username='admin', verbose_level=3, verify=None)
+Auth plugin password selected
+auth_config_hook(): {'api_timeout': None, 'verify': True, 'cacert': None, 'cert': None, 'key': None, 'baremetal_status_code_retries': '5', 'baremetal_introspection_status_code_retries': '5', 'image_status_code_retries': '5', 'disable_vendor_agent': {}, 'interface': 'public', 'floating_ip_source': 'neutron', 'image_api_use_tasks': False, 'image_format': 'qcow2', 'message': '', 'network_api_version': '2', 'object_store_api_version': '1', 'secgroup_source': 'neutron', 'status': 'active', 'auth': {'user_domain_id': 'default', 'project_domain_id': 'default', 'project_name': 'admin'}, 'verbose_level': 3, 'deferred_help': False, 'debug': True, 'region_name': 'RegionOne', 'default_domain': 'default', 'timing': False, 'username': 'admin', 'password': '***', 'auth_url': 'http://192.168.10.8/identity/', 'beta_command': False, 'identity_api_version': '3', 'dns_api_version': '2', 'key_manager_api_version': '1', 'placement_api_version': '1.0', 'auth_type': 'password', ': []}
+defaults: {'api_timeout': None, 'verify': True, 'cacert': None, 'cert': None, 'key': None, 'auth_type': 'password', 'baremetal_status_code_retries': 5, 'baremetal_introspection_status_code_retries': 5, 'image_status_code_retries': 5, 'disable_vendor_agent': {}, 'interface': None, 'floating_ip_source': 'neutron', 'image_api_use_tasks': False, 'image_format': 'qcow2', 'message': '', 'network_api_version': '2', 'object_store_api_version': '1', 'secgroup_source': 'neutron', 'status': 'active'}
+cloud cfg: {'api_timeout': None, 'verify': True, 'cacert': None, 'cert': None, 'key': None, 'baremetal_status_code_retries': '5', 'baremetal_introspection_status_code_retries': '5', 'image_status_code_retries': '5', 'disable_vendor_agent': {}, 'interface': 'public', 'floating_ip_source': 'neutron', 'image_api_use_tasks': False, 'image_format': 'qcow2', 'message': '', 'network_api_version': '2', 'object_store_api_version': '1', 'secgroup_source': 'neutron', 'status': 'active', 'auth': {'user_domain_id': 'default', 'project_domain_id': 'default', 'project_name': 'admin'}, 'verbose_level': 3, 'deferred_help': False, 'debug': True, 'region_name': 'RegionOne', 'default_domain': 'default', 'timing': False, 'username': 'admin', 'password': '***', 'auth_url': 'http://192.168.10.8/identity/', 'beta_command': False, 'identity_api_version': '3', 'dns_api_version': '2', 'key_manager_api_version': '1', 'placement_api_version': '1.0', 'auth_type': 'password', ': []}
+compute API version 2.1, cmd group openstack.compute.v2
+identity API version 3, cmd group openstack.identity.v3
+image API version 2, cmd group openstack.image.v2
+network API version 2, cmd group openstack.network.v2
+object_store API version 1, cmd group openstack.object_store.v1
+volume API version 3, cmd group openstack.volume.v3
+dns API version 2, cmd group openstack.dns.v2
+neutronclient API version 2, cmd group openstack.neutronclient.v2
+/usr/local/lib/python3.8/dist-packages/barbicanclient/__init__.py:57: UserWarning: The secrets module is moved to barbicanclient/v1 directory, direct import of barbicanclient.secrets will be deprecated. Please import barbicanclient.v1.secrets instead.
+  warnings.warn("The %s module is moved to barbicanclient/v1 "
+key_manager API version 1, cmd group openstack.key_manager.v1
+placement API version 1.0, cmd group openstack.placement.v1
+command: project show -> openstackclient.identity.v3.project.ShowProject (auth=True)
+Auth plugin password selected
+auth_config_hook(): {'api_timeout': None, 'verify': True, 'cacert': None, 'cert': None, 'key': None, 'baremetal_status_code_retries': '5', 'baremetal_introspection_status_code_retries': '5', 'image_status_code_retries': '5', 'disable_vendor_agent': {}, 'interface': 'public', 'floating_ip_source': 'neutron', 'image_api_use_tasks': False, 'image_format': 'qcow2', 'message': '', 'network_api_version': '2', 'object_store_api_version': '1', 'secgroup_source': 'neutron', 'status': 'active', 'auth': {'user_domain_id': 'default', 'project_domain_id': 'default', 'project_name': 'admin'}, 'additional_user_agent': [('osc-lib', '2.3.1')], 'verbose_level': 3, 'deferred_help': False, 'debug': True, 'region_name': 'RegionOne', 'default_domain': 'default', 'timing': False, 'username': 'admin', 'password': '***', 'auth_url': 'http://192.168.10.8/identity/', 'beta_command': False, 'identity_api_version': '3', 'dns_api_version': '2', 'key_manager_api_version': '1', 'placement_api_version': '1.0', 'auth_type': 'password', ': []}
+Using auth plugin: password
+Using parameters {'auth_url': 'http://192.168.10.8/identity/', 'project_name': 'admin', 'project_domain_id': 'default', 'username': 'admin', 'user_domain_id': 'default', 'password': '***'}
+Get auth_ref
+REQ: curl -g -i -X GET http://192.168.10.8/identity/ -H "Accept: application/json" -H "User-Agent: openstacksdk/0.55.1 keystoneauth1/4.3.1 python-requests/2.25.1 CPython/3.8.10"
+Starting new HTTP connection (1): 192.168.10.8:80
+http://192.168.10.8:80 "GET /identity/ HTTP/1.1" 300 271
+RESP: [300] Connection: close Content-Length: 271 Content-Type: application/json Date: Mon, 20 May 2024 02:00:03 GMT Location: http://192.168.10.8/identity/v3/ Server: Apache/2.4.41 (Ubuntu) Vary: X-Auth-Token x-openstack-request-id: req-9ec53e9f-ea2e-4d79-986a-d6dbf8ec1190
+RESP BODY: {"versions": {"values": [{"id": "v3.14", "status": "stable", "updated": "2020-04-07T00:00:00Z", "links": [{"rel": "self", "href": "http://192.168.10.8/identity/v3/"}], "media-types": [{"base": "application/json", "type": "application/vnd.openstack.identity-v3+json"}]}]}}
+GET call to http://192.168.10.8/identity/ used request id req-9ec53e9f-ea2e-4d79-986a-d6dbf8ec1190
+Making authentication request to http://192.168.10.8/identity/v3/auth/tokens
+Resetting dropped connection: 192.168.10.8
+http://192.168.10.8:80 "POST /identity/v3/auth/tokens HTTP/1.1" 201 3239
+{"token": {"methods": ["password"], "user": {"domain": {"id": "default", "name": "Default"}, "id": "9a5394d21895400eb233e109f7f0e7ab", "name": "admin", "password_expires_at": null}, "audit_ids": ["Dyn0f-h8Qgu85N3GhMYw2A"], "expires_at": "2024-05-20T03:00:03.000000Z", "issued_at": "2024-05-20T02:00:03.000000Z", "project": {"domain": {"id": "default", "name": "Default"}, "id": "313cf8edcbac4631a15ed781ffdfd275", "name": "admin"}, "is_domain": false, "roles": [{"id": "16603f05bf314b9da21a9264d87ceab0", "name": "member"}, {"id": "31015780f3e04c5eb4e1145e4ed984af", "name": "admin"}, {"id": "8554678f9d8e491ba379dabe6aabc478", "name": "reader"}], "catalog": [{"endpoints": [{"id": "5536e8a7bcaf4e4f85d0e646879b10f4", "interface": "public", "region_id": "RegionOne", "url": "http://192.168.10.8/identity", "region": "RegionOne"}, {"id": "e1860a15571e430cba3dc134f5def947", "interface": "admin", "region_id": "RegionOne", "url": "http://192.168.10.8/identity", "region": "RegionOne"}], "id": "0c08bb5598c94464be611114df84e8f2", "type": "identity", "name": "keystone"}, {"endpoints": [{"id": "751d02cabcc54540bc0721098eed0107", "interface": "public", "region_id": "RegionOne", "url": "http://192.168.10.8/volume/v2/313cf8edcbac4631a15ed781ffdfd275", "region": "RegionOne"}], "id": "12774bafe9ff459d8041ee780f2ccb77", "type": "volumev2", "name": "cinderv2"}, {"endpoints": [{"id": "489f5f0033cf489f8aff418594d2961a", "interface": "public", "region_id": "RegionOne", "url": "http://192.168.10.8/volume/v3/313cf8edcbac4631a15ed781ffdfd275", "region": "RegionOne"}], "id": "151a8ec5af6b429093458fa32c1b2b23", "type": "block-storage", "name": "cinder"}, {"endpoints": [{"id": "af88cf31ff89422280ba55167ff4fbd5", "interface": "public", "region_id": "RegionOne", "url": "http://192.168.10.8/placement", "region": "RegionOne"}], "id": "2c6cbdac04754feba7cd8181f6c46658", "type": "placement", "name": "placement"}, {"endpoints": [{"id": "8f59aa36416b49808ec5e5c4017931f4", "interface": "public", "region_id": "RegionOne", "url": "http://192.168.10.8/volume/v3/313cf8edcbac4631a15ed781ffdfd275", "region": "RegionOne"}], "id": "33b73e1464504fab902e23d3253221c5", "type": "volumev3", "name": "cinderv3"}, {"endpoints": [{"id": "1cbfa86690ef46c0988679ce96efda2f", "interface": "public", "region_id": "RegionOne", "url": "http://192.168.10.8/compute/v2.1", "region": "RegionOne"}], "id": "4c1042ab367043508f3fee84282ba262", "type": "compute", "name": "nova"}, {"endpoints": [{"id": "665ff0b325f34c448633a833ae743961", "interface": "public", "region_id": "RegionOne", "url": "http://192.168.10.8:9696/", "region": "RegionOne"}], "id": "82cd6b2260284144b0072fda34a2601e", "type": "network", "name": "neutron"}, {"endpoints": [{"id": "32db4240d94f477faf16ffb0ca8acb98", "interface": "public", "region_id": "RegionOne", "url": "http://192.168.10.8/compute/v2/313cf8edcbac4631a15ed781ffdfd275", "region": "RegionOne"}], "id": "bf825e66812846f3988ce33487ac304e", "type": "compute_legacy", "name": "nova_legacy"}, {"endpoints": [{"id": "d4af469c05d54a82af2d8bfa840790e8", "interface": "public", "region_id": "RegionOne", "url": "http://192.168.10.8/image", "region": "RegionOne"}], "id": "e38d4b265f8e4456a082a13a0104c338", "type": "image", "name": "glance"}]}}
+run(Namespace(children=False, columns=[], domain=None, fit_width=False, formatter='table', max_width=0, noindent=False, parents=False, prefix='', print_empty=False, project='admin', variables=[]))
+Instantiating identity client: <class 'keystoneclient.v3.client.Client'>
+REQ: curl -g -i -X GET http://192.168.10.8/identity -H "Accept: application/json" -H "User-Agent: openstacksdk/0.55.1 keystoneauth1/4.3.1 python-requests/2.25.1 CPython/3.8.10"
+Resetting dropped connection: 192.168.10.8
+http://192.168.10.8:80 "GET /identity HTTP/1.1" 300 271
+RESP: [300] Connection: close Content-Length: 271 Content-Type: application/json Date: Mon, 20 May 2024 02:00:03 GMT Location: http://192.168.10.8/identity/v3/ Server: Apache/2.4.41 (Ubuntu) Vary: X-Auth-Token x-openstack-request-id: req-92f1e686-f4e1-4a6a-a257-fecf528d8bce
+RESP BODY: {"versions": {"values": [{"id": "v3.14", "status": "stable", "updated": "2020-04-07T00:00:00Z", "links": [{"rel": "self", "href": "http://192.168.10.8/identity/v3/"}], "media-types": [{"base": "application/json", "type": "application/vnd.openstack.identity-v3+json"}]}]}}
+GET call to http://192.168.10.8/identity used request id req-92f1e686-f4e1-4a6a-a257-fecf528d8bce
+REQ: curl -g -i -X GET http://192.168.10.8/identity/v3/auth/tokens -H "Accept: application/json" -H "User-Agent: python-keystoneclient" -H "X-Auth-Token: {SHA256}c65c3ec17dd7253736ede4ad202eab3af352f3ea27115cca5d3d8e7a98a03558" -H "X-Subject-Token: {SHA256}c65c3ec17dd7253736ede4ad202eab3af352f3ea27115cca5d3d8e7a98a03558"
+Resetting dropped connection: 192.168.10.8
+http://192.168.10.8:80 "GET /identity/v3/auth/tokens HTTP/1.1" 200 3239
+RESP: [200] Connection: close Content-Length: 3239 Content-Type: application/json Date: Mon, 20 May 2024 02:00:03 GMT Server: Apache/2.4.41 (Ubuntu) Vary: X-Auth-Token X-Subject-Token: {SHA256}c65c3ec17dd7253736ede4ad202eab3af352f3ea27115cca5d3d8e7a98a03558 x-openstack-request-id: req-76c9cb5f-d600-45ac-be3a-df62b12e3b2d
+RESP BODY: {"token": {"methods": ["password"], "user": {"domain": {"id": "default", "name": "Default"}, "id": "9a5394d21895400eb233e109f7f0e7ab", "name": "admin", "password_expires_at": null}, "audit_ids": ["Dyn0f-h8Qgu85N3GhMYw2A"], "expires_at": "2024-05-20T03:00:03.000000Z", "issued_at": "2024-05-20T02:00:03.000000Z", "project": {"domain": {"id": "default", "name": "Default"}, "id": "313cf8edcbac4631a15ed781ffdfd275", "name": "admin"}, "is_domain": false, "roles": [{"id": "16603f05bf314b9da21a9264d87ceab0", "name": "member"}, {"id": "31015780f3e04c5eb4e1145e4ed984af", "name": "admin"}, {"id": "8554678f9d8e491ba379dabe6aabc478", "name": "reader"}], "catalog": "<removed>"}}
+GET call to identity for http://192.168.10.8/identity/v3/auth/tokens used request id req-76c9cb5f-d600-45ac-be3a-df62b12e3b2d
+REQ: curl -g -i -X GET http://192.168.10.8/identity/v3/projects/313cf8edcbac4631a15ed781ffdfd275 -H "Accept: application/json" -H "User-Agent: python-keystoneclient" -H "X-Auth-Token: {SHA256}c65c3ec17dd7253736ede4ad202eab3af352f3ea27115cca5d3d8e7a98a03558"
+
+Resetting dropped connection: 192.168.10.8
+http://192.168.10.8:80 "GET /identity/v3/projects/313cf8edcbac4631a15ed781ffdfd275 HTTP/1.1" 200 345
+RESP: [200] Connection: close Content-Length: 345 Content-Type: application/json Date: Mon, 20 May 2024 02:00:03 GMT Server: Apache/2.4.41 (Ubuntu) Vary: X-Auth-Token x-openstack-request-id: req-520edb3e-500c-484c-989c-102ef0454cc1
+RESP BODY: {"project": {"id": "313cf8edcbac4631a15ed781ffdfd275", "name": "admin", "domain_id": "default", "description": "Bootstrap project for initializing the cloud.", "enabled": true, "parent_id": "default", "is_domain": false, "tags": [], "options": {}, "links": {"self": "http://192.168.10.8/identity/v3/projects/313cf8edcbac4631a15ed781ffdfd275"}}}
+
+GET call to identity for http://192.168.10.8/identity/v3/projects/313cf8edcbac4631a15ed781ffdfd275 used request id req-520edb3e-500c-484c-989c-102ef0454cc1
++-------------+-----------------------------------------------+
+| Field       | Value                                         |
++-------------+-----------------------------------------------+
+| description | Bootstrap project for initializing the cloud. |
+| domain_id   | default                                       |
+| enabled     | True                                          |
+| id          | 313cf8edcbac4631a15ed781ffdfd275              |
+| is_domain   | False                                         |
+| name        | admin                                         |
+| options     | {}                                            |
+| parent_id   | default                                       |
+| tags        | []                                            |
++-------------+-----------------------------------------------+
+clean_up ShowProject:
+END return value: 0
+
+
+curl -i -H "Content-Type: application/json" -d '{ "auth": { "identity": { "methods": ["password"], "password": { "user": { "name": "admin", "domain": { "id": "default" }, "password": "admin" } } } } }' "http://192.168.10.8/identity/v3/auth/tokens"
+
+
+root@devstack-controller:/opt/stack/devstack# curl -i -H "Content-Type: application/json" -d '{ "auth": { "identity": { "methods": ["password"], "password": { "user": { "name": "admin", "domain": { "id": "default" }, "password": "admin" } } } } }' "http://192.168.10.8/identity/v3/auth/tokens"
+HTTP/1.1 201 CREATED
+Date: Mon, 20 May 2024 04:27:15 GMT
+Server: Apache/2.4.41 (Ubuntu)
+Content-Type: application/json
+Content-Length: 312
+X-Subject-Token: gAAAAABmStEjODaboZo4Zc3KfbzfaFsIgNsl9-7d6-EHaRm_5Lhr7RXzkarr9-1dFDRlFPOrlwIgMIQ5tVhGlpx_x7WJMhJKHjZSNLy3WENrLU3jMfzFbYcnm0HoXoiyFvy2F2s4xd4fbw1aGirYAOyQh6BJzUwLUg
+Vary: X-Auth-Token
+x-openstack-request-id: req-f0385056-0820-4d79-a207-125fe3f898e3
+Connection: close
+
+{"token": {"methods": ["password"], "user": {"domain": {"id": "default", "name": "Default"}, "id": "9a5394d21895400eb233e109f7f0e7ab", "name": "admin", "password_expires_at": null}, "audit_ids": ["iLxMrrvNTkWTNYz-p5r2iw"], "expires_at": "2024-05-20T05:27:15.000000Z", "issued_at": "2024-05-20T04:27:15.000000Z"}}
+
+
+root@devstack-controller:/usr/local/lib/python3.8/dist-packages# grep -r "RESP:"
+keystoneauth1/session.py:            string_parts.append('RESP:')
+Binary file keystoneauth1/__pycache__/session.cpython-38.pyc matches
+neutronclient/common/utils.py:    _logger.debug("RESP: %(code)s %(headers)s %(body)s",
+Binary file neutronclient/common/__pycache__/utils.cpython-38.pyc matches
+cinderclient/client.py:            "RESP: [%s] %s\nRESP BODY: %s\n",
+Binary file cinderclient/__pycache__/client.cpython-38.pyc matches
+keystoneclient/session.py:            'RESP:',
+Binary file keystoneclient/__pycache__/session.cpython-38.pyc matches
+
+root@devstack-controller:/usr/local/lib/python3.8/dist-packages# grep -r "{SHA256}"
+keystoneauth1/session.py:            return (header[0], '{SHA256}%s' % token_hash)
+keystoneauth1/tests/unit/test_session.py:            self.assertIn('%s: {SHA256}' % k, self.logger.output)
+Binary file keystoneauth1/tests/unit/__pycache__/test_session.cpython-38.pyc matches
+Binary file keystoneauth1/__pycache__/session.cpython-38.pyc matches
+neutronclient/common/utils.py:            value = "{SHA256}%s" % d
+Binary file neutronclient/common/__pycache__/utils.cpython-38.pyc matches
+
+root@devstack-controller:/usr/local/lib/python3.8/dist-packages/keystoneauth1# grep -r "Making authentication request"
+identity/v3/base.py:        _logger.debug('Making authentication request to %s', token_url)
+Binary file identity/v3/__pycache__/base.cpython-38.pyc matches
+identity/v2.py:        _logger.debug('Making authentication request to %s', url)
