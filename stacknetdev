@@ -1,0 +1,579 @@
+ovs-vsctl -- add-br br-test
+
+在机器A上
+
+ip addr add 192.168.34.101/24 dev br-test
+ip link set br-test up
+ovs-vsctl add-port br-test vx01 -- set Interface vx01 type="vxlan" options:remote_ip=192.168.10.9 options:key=1111
+
+
+  962  virsh list
+  963  ovs-vsctl -- add-br br0
+  964  ovs-vsctl -- add-br br-test
+  965  ovs-vsctl add-port br-test vx01 -- set Interface vx01 type="vxlan" options:remote_ip=192.168.10.9 options:key=1111
+  966  ip addr add 192.168.34.101/24 dev br-test
+  967  ip link set br-test up
+  968  ip addr
+  969  ping 192.168.34.101
+  970  ping 192.168.34.102
+  971  ls
+  972  cp centos7_1.xml netnode.xml
+  973  ls
+  974  vim netnode.xml
+  975  scp netnode.xml root@192.168.10.9:/root/
+  976  virsh define netnode.xml
+  977  virsh list
+  978  virsh start instance-200
+  979  ls -l
+  980  vim /etc/libvirt/libvirt.conf
+  981  vim /etc/libvirt/libvirtd.conf
+  982  vim /etc/libvirt/qemu.conf
+  983  ps aux
+  984  ps aux | grep qemu
+  985  ip addr
+  986  ip route
+  987  ip route add 172.17.8.2 dev veth1 scope link
+  988  ip route add 192.168.34.11 dev tap111 scope link
+  989  ip route
+  990  ping 192.168.34.102
+  991  sysctl -w "net.ipv4.conf.br-test.proxy_arp=1"
+  992  sysctl -p
+  993  tcpdump -n -i br-test icmp
+  994  ip addr
+  995  ping 192.168.34.102
+  996  tcpdump -n -i br-test
+  997  ovs-tcpdump -n -i br-test
+  998  tcpdump -n -i eth0 icmp
+  999  ovs-vsctl show
+ 1000  ovs-tcpdump -n -i vx01
+ 1001  ip route
+ 1002  sysctl -p
+ 1003  sysctl -w "net.ipv4.conf.br-test.proxy_arp=1"
+ 1004  sysctl -p
+ 1005  cd /proc/sys/net/ipv4/conf/
+ 1006  ls
+ 1007  cd br-test/
+ 1008  ls
+ 1009  cat proxy_arp
+ 1010  cat forwarding
+ 1011  cd ..
+ 1012  ls
+ 1013  cd all/
+ 1014  ls
+ 1015  cat forwarding
+ 1016  cat proxy_arp
+ 1017  echo 1 > proxy_arp
+ 1018  cat proxy_arp
+ 1019  cd ~
+ 1020  ls
+ 1021  virsh list
+ 1022  virsh destroy instance-200
+ 1023  ls
+ 1024  ovs-vsctl show
+ 1025  history
+
+
+ip link add vlan101_br type veth peer name vlan101_if
+ip link add vlan102_br type veth peer name vlan102_if
+ip link add vlan103_br type veth peer name vlan103_if
+
+ip link set vlan101_if up
+ip link set vlan102_if up
+ip link set vlan103_if up
+ip link set vlan101_br up
+ip link set vlan102_br up
+ip link set vlan103_br up
+
+ovs-vsctl add-port br-test vlan101_br
+ovs-vsctl add-port br-test vlan102_br
+ovs-vsctl add-port br-test vlan103_br
+
+vconfig add vlan101_if 101
+vconfig add vlan102_if 102
+vconfig add vlan103_if 103
+
+ip link add link vlan101_if name vlan101_if.101 type vlan id 101
+ip link add link vlan102_if name vlan102_if.102 type vlan id 102
+ip link add link vlan103_if name vlan103_if.103 type vlan id 103
+
+ip link set vlan101_if.101 up
+ip link set vlan102_if.102 up
+ip link set vlan103_if.103 up
+
+ifconfig vlan101_if.101 192.168.35.101/24
+ifconfig vlan102_if.102 192.168.36.101/24
+ifconfig vlan103_if.103 192.168.37.101/24
+
+ip route add 192.168.35.11 dev tap101 scope link
+ip route add 192.168.36.11 dev tap102 scope link
+ip route add 192.168.37.11 dev tap103 scope link
+
+
+
+
+ovs-vsctl add-port br-test vlan101_br -- set Port vlan101_if trunks
+ovs-vsctl add-port br-test vlan102_br -- set Port vlan102_if trunks
+ovs-vsctl add-port br-test vlan103_br -- set Port vlan103_if trunks
+
+ovs-vsctl add-port br-test vlan101_br -- set Port vlan101_if tag=101
+ovs-vsctl add-port br-test vlan102_br -- set Port vlan102_if tag=102
+ovs-vsctl add-port br-test vlan103_br -- set Port vlan103_if tag=103
+
+ip link set vlan101_if up
+ip link set vlan102_if up
+ip link set vlan103_if up
+
+ifconfig vlan101_if 192.168.35.101/24
+ifconfig vlan102_if 192.168.36.101/24
+ifconfig vlan103_if 192.168.37.101/24
+
+ip route add 192.168.34.11 dev tap101 scope link
+ip route add 192.168.34.11 dev tap101 scope link
+ip route add 192.168.34.11 dev tap101 scope link
+
+vconfig add eth0 100
+ifconfig veth0.100 up
+
+
+ 1080  vim netnode.xml
+ 1081  virsh define netnode.xml
+ 1082  virsh start instance-200
+ 1083  ip addr
+ 1084  ip route add 192.168.34.11 dev tap101 scope link
+ 1085  ip route add 192.168.35.11 dev tap102 scope link
+ 1086  ip route add 192.168.36.11 dev tap103 scope link
+ 1087  ip route
+ 1088  ip route del 192.168.34.11 dev tap101 scope link
+ 1089  ip route del 192.168.35.11 dev tap102 scope link
+ 1090  ip route del 192.168.36.11 dev tap103 scope link
+ 1091  ip route add 192.168.35.11 dev tap101 scope link
+ 1092  ip route add 192.168.36.11 dev tap102 scope link
+ 1093  ip route add 192.168.37.11 dev tap103 scope link
+ 1094  ip route
+ 1095  ip addr
+ 1096  tcpdump -n -i vlan103_if.103
+ 1097  tcpdump -n -i vlan101_if.101
+ 1098  tcpdump -n -i vlan101_if
+ 1099  tcpdump -n -i tap101
+ 1100  tcpdump -n -i tap101 -v
+ 1101  tcpdump -n -i tap101 -vv
+ 1102  tcpdump -n -i tap101 -vvv
+ 1103  tcpdump -n -i tap101 -e
+ 1104  ip addr
+ 1105  tcpdump -n -i  vlan101_if -e
+ 1106  tcpdump -n -i  vlan101_br -e
+ 1107  vconfig add tap101 101
+ 1108  vconfig add tap102 101
+ 1109  vconfig add tap102 102
+ 1110  vconfig add tap103 103
+ 1111  ip addr
+ 1112  ip link del tap102.101
+ 1113  ip addr
+ 1114  ip link set tap101.101 up
+ 1115  ip link set tap102.102 up
+ 1116  ip link set tap103.103 up
+ 1117  ip addr
+ 1118  ip route del 192.168.35.11 dev tap101 scope link
+ 1119  ip route del 192.168.36.11 dev tap102 scope link
+ 1120  ip route del 192.168.37.11 dev tap103 scope link
+ 1121  ip route add 192.168.35.11 dev tap101.101 scope link
+ 1122  ip route add 192.168.36.11 dev tap102.102 scope link
+ 1123  ip route add 192.168.37.11 dev tap103.103 scope link
+ 1124  history
+
+root@devstack-controller:~# cat netnode.xml
+<domain type='qemu' id='200'>
+  <name>instance-200</name>
+  <memory unit='KiB'>262144</memory>
+  <currentMemory unit='KiB'>262144</currentMemory>
+  <vcpu placement='static'>1</vcpu>
+  <cputune>
+    <shares>1024</shares>
+  </cputune>
+  <resource>
+    <partition>/machine</partition>
+  </resource>
+  <sysinfo type='smbios'>
+    <system>
+      <entry name='manufacturer'>OpenStack Foundation</entry>
+      <entry name='product'>OpenStack Nova</entry>
+      <entry name='version'>23.2.3</entry>
+      <entry name='serial'>59bca235-9d4e-43d9-a7b8-0e97bdc4d553</entry>
+      <entry name='uuid'>59bca235-9d4e-43d9-a7b8-0e97bdc4d553</entry>
+      <entry name='family'>Virtual Machine</entry>
+    </system>
+  </sysinfo>
+  <os>
+    <type arch='x86_64' machine='pc-i440fx-4.2'>hvm</type>
+    <boot dev='hd'/>
+    <smbios mode='sysinfo'/>
+  </os>
+  <features>
+    <acpi/>
+  </features>
+  <cpu mode='custom' match='exact' check='full'>
+    <model fallback='forbid'>qemu64</model>
+    <topology sockets='1' cores='1' threads='1'/>
+    <feature policy='require' name='hypervisor'/>
+    <feature policy='require' name='lahf_lm'/>
+  </cpu>
+  <clock offset='utc'/>
+  <on_poweroff>destroy</on_poweroff>
+  <on_reboot>restart</on_reboot>
+  <on_crash>destroy</on_crash>
+  <devices>
+    <emulator>/usr/bin/qemu-system-x86_64</emulator>
+    <disk type='file' device='disk'>
+      <driver name='qemu' type='qcow2' cache='none'/>
+      <source file='/root/centos7_1.qcow2' index='1'/>
+      <target dev='vda' bus='virtio'/>
+      <alias name='virtio-disk0'/>
+    </disk>
+    <controller type='pci' index='0' model='pci-root'>
+    </controller>
+    <interface type='ethernet'>
+      <mac address='fa:16:3e:19:cb:91'/>
+      <target dev='tap101'/>
+      <model type='virtio'/>
+      <driver name='qemu'/>
+      <mtu size='1450'/>
+    </interface>
+    <interface type='ethernet'>
+      <mac address='fa:16:3e:19:cb:92'/>
+      <target dev='tap102'/>
+      <model type='virtio'/>
+      <driver name='qemu'/>
+      <mtu size='1450'/>
+    </interface>
+    <interface type='ethernet'>
+      <mac address='fa:16:3e:19:cb:93'/>
+      <target dev='tap103'/>
+      <model type='virtio'/>
+      <driver name='qemu'/>
+      <mtu size='1450'/>
+    </interface>
+    <serial type='pty'>
+      <source path='/dev/pts/1'/>
+      <log file='/root/console1.log' append='off'/>
+      <target type='isa-serial' port='0'>
+        <model name='isa-serial'/>
+      </target>
+      <alias name='serial0'/>
+    </serial>
+    <console type='pty' tty='/dev/pts/1'>
+      <source path='/dev/pts/1'/>
+      <log file='/root/console1.log' append='off'/>
+      <target type='serial' port='0'/>
+      <alias name='serial0'/>
+    </console>
+    <channel type='unix'>
+      <source mode='bind' path='/var/lib/libvirt/qemu/instance-200.sock'/>
+      <target type='virtio' name='org.qemu.guest_agent.0'/>
+      <address type='virtio-serial' controller='0' bus='0' port='1'/>
+    </channel>
+    <input type='mouse' bus='ps2'>
+      <alias name='input0'/>
+    </input>
+    <input type='keyboard' bus='ps2'>
+      <alias name='input1'/>
+    </input>
+    <graphics type='vnc' port='5900' autoport='yes' listen='192.168.10.8'>
+      <listen type='address' address='192.168.10.8'/>
+    </graphics>
+    <memballoon model='virtio'>
+      <stats period='10'/>
+      <alias name='balloon0'/>
+    </memballoon>
+    <rng model='virtio'>
+      <backend model='random'>/dev/urandom</backend>
+      <alias name='rng0'/>
+    </rng>
+  </devices>
+</domain>
+
+虚拟机里面
+
+   94  cd /etc/sysconfig/network-scripts/
+   95  ls
+   96  ip addr
+   97  ls
+   98  cp ifcfg-eth0 ifcfg-eth1
+   99  cp ifcfg-eth0 ifcfg-eth2
+  100  vconfig
+  101  vim ifcfg-eth1
+  102  vim ifcfg-eth2
+  103  ls
+  104  vim ifcfg-eth0
+  105  vim ifcfg-eth1
+  106  vim ifcfg-eth2
+  107  service network restart
+  108  ip addr
+  109  ping 192,168.35.101
+  110  ping 192.168.35.101
+  111  ping 192.168.35.102
+  112  ip addr
+  113  ip link add link eth0 name eth0.101 type vlan id 101
+  114  ip link add link eth1 name eth1.102 type vlan id 102
+  115  ip link add link eth2 name eth2.103 type vlan id 103
+  116  ip addr
+  117  ifconfig eth0 0
+  118  ifconfig eth1 0
+  119  ifconfig eth2 0
+  120  ip addr
+  121  ifconfig eth0.101 192.168.35.11/24
+  122  ip addr
+  123  ip route
+  124  ifconfig eth1.102 192.168.36.11/24
+  125  ifconfig eth2.103 192.168.37.11/24
+  126  ip addr
+  127  ping 192.168.35.101
+  128  ip route add default via 192.168.35.101 dev eth0.101
+  129  ping 192.168.35.101
+  130  ip route
+  131  ping 192.168.35.101
+  132  ping 192.168.35.102
+  133  ip route
+  134  ip addr
+  135  ping 192.168.35.101
+  136  ip addr
+  137  ping 192.168.35.101
+  138  ping 192.168.35.102
+  139  ip route
+  140  ip route del default
+  141  ip route
+  142  ping 192.168.35.102
+  143  ping 192.168.36.102
+  144  ping 192.168.37.102
+  145  history
+
+[root@localhost ~]# cat /etc/sysconfig/network-scripts/ifcfg-eth0
+TYPE="Ethernet"
+BOOTPROTO="static"
+DEFROUTE="yes"
+PEERDNS="yes"
+PEERROUTES="yes"
+IPV4_FAILURE_FATAL="no"
+IPV6INIT="yes"
+IPV6_AUTOCONF="yes"
+IPV6_DEFROUTE="yes"
+IPV6_PEERDNS="yes"
+IPV6_PEERROUTES="yes"
+IPV6_FAILURE_FATAL="no"
+NAME="eth0"
+DEVICE="eth0"
+ONBOOT="yes"
+IPADDR="192.168.35.11"
+GATEWAY="192.168.35.101"
+NETMASK="255.255.255.0"
+DNS1="8.8.8.8"
+DNS2="114.114.114.114"
+[root@localhost ~]# cat /etc/sysconfig/network-scripts/ifcfg-eth1
+TYPE="Ethernet"
+BOOTPROTO="static"
+DEFROUTE="yes"
+PEERDNS="yes"
+PEERROUTES="yes"
+IPV4_FAILURE_FATAL="no"
+IPV6INIT="yes"
+IPV6_AUTOCONF="yes"
+IPV6_DEFROUTE="yes"
+IPV6_PEERDNS="yes"
+IPV6_PEERROUTES="yes"
+IPV6_FAILURE_FATAL="no"
+NAME="eth1"
+DEVICE="eth1"
+ONBOOT="yes"
+IPADDR="192.168.36.11"
+GATEWAY="192.168.36.101"
+NETMASK="255.255.255.0"
+DNS1="8.8.8.8"
+DNS2="114.114.114.114"
+[root@localhost ~]# cat /etc/sysconfig/network-scripts/ifcfg-eth2
+TYPE="Ethernet"
+BOOTPROTO="static"
+DEFROUTE="yes"
+PEERDNS="yes"
+PEERROUTES="yes"
+IPV4_FAILURE_FATAL="no"
+IPV6INIT="yes"
+IPV6_AUTOCONF="yes"
+IPV6_DEFROUTE="yes"
+IPV6_PEERDNS="yes"
+IPV6_PEERROUTES="yes"
+IPV6_FAILURE_FATAL="no"
+NAME="eth2"
+DEVICE="eth2"
+ONBOOT="yes"
+IPADDR="192.168.37.11"
+GATEWAY="192.168.37.101"
+NETMASK="255.255.255.0"
+DNS1="8.8.8.8"
+DNS2="114.114.114.114"
+
+
+在机器B上
+
+ip addr add 192.168.34.102/24 dev br-test
+ip link set br-test up
+ovs-vsctl add-port br-test vx01 -- set Interface vx01 type="vxlan" options:remote_ip=192.168.10.8 options:key=1111
+
+ip link add vlan101_br type veth peer name vlan101_if
+ip link add vlan102_br type veth peer name vlan102_if
+ip link add vlan103_br type veth peer name vlan103_if
+
+ip link set vlan101_if up
+ip link set vlan102_if up
+ip link set vlan103_if up
+ip link set vlan101_br up
+ip link set vlan102_br up
+ip link set vlan103_br up
+
+ovs-vsctl add-port br-test vlan101_br
+ovs-vsctl add-port br-test vlan102_br
+ovs-vsctl add-port br-test vlan103_br
+
+vconfig add vlan101_if 101
+vconfig add vlan102_if 102
+vconfig add vlan103_if 103
+
+ip link set vlan101_if.101 up
+ip link set vlan102_if.102 up
+ip link set vlan103_if.103 up
+
+ifconfig vlan101_if.101 192.168.35.102/24
+ifconfig vlan102_if.102 192.168.36.102/24
+ifconfig vlan103_if.103 192.168.37.102/24
+
+  310  vim netnode.xml
+  311  virsh define netnode.xml
+  312  virsh start instance-201
+  313  sysctl -w "net.ipv4.conf.br-test.proxy_arp=1"
+  314  sysctl -p
+  315  ip route
+  316  cd /proc/sys/net/ipv4/conf/br-test
+  317  ls
+  318  cat proxy_arp
+  319  cat forwarding
+  320  ls
+  321  cd ..
+  322  ls
+  323  cd all/
+  324  ls
+  325  cat forwarding
+  326  cat proxy_arp
+  327  echo 1 > proxy_arp
+  328  cat proxy_arp
+  329  cd ~
+  330  ls
+  331  virsh list
+  332  virsh destroy instance-201
+  333  history
+  334  ls
+  335  ip addr
+  336  ifconfig br-test 0
+  337  ls
+  338  ip addr
+  339  ip link add vlan101_br type veth peer name vlan101_if
+  340  ip link add vlan102_br type veth peer name vlan102_if
+  341  ip link add vlan103_br type veth peer name vlan103_if
+  342  ip link set vlan101_if up
+  343  ip link set vlan102_if up
+  344  ip link set vlan103_if up
+  345  ip link set vlan101_br up
+  346  ip link set vlan102_br up
+  347  ip link set vlan103_br up
+  348  ovs-vsctl add-port br-test vlan101_br
+  349  ovs-vsctl add-port br-test vlan102_br
+  350  ovs-vsctl add-port br-test vlan103_br
+  351  vconfig add vlan101_if 101
+  352  vconfig add vlan102_if 102
+  353  vconfig add vlan103_if 103
+  354  ip link set vlan101_if.101 up
+  355  ip link set vlan102_if.102 up
+  356  ip link set vlan103_if.103 up
+  357  ifconfig vlan101_if.101 192.168.35.102/24
+  358  ifconfig vlan102_if.102 192.168.36.102/24
+  359  ifconfig vlan103_if.103 192.168.37.102/24
+  360  ip addr
+  361  ls
+  362  vim netnode.xml
+  363  virsh define netnode.xml
+  364  virsh start instance-201
+  365  ip addr
+  366  ls
+  367  vim netnode.xml
+  368  virsh list
+  369  ip addr
+  370  ip route
+  371  vconfig add tap101 101
+  372  vconfig add tap102 102
+  373  vconfig add tap103 103
+  374  ip addr
+  375  ip link set tap101.101 up
+  376  ip link set tap102.102 up
+  377  ip link set tap103.103 up
+  378  ip addr
+  379  ip route add 192.168.35.22 dev tap101.101 scope link
+  380  ip route add 192.168.36.22 dev tap102.102 scope link
+  381  ip route add 192.168.37.22 dev tap103.103 scope link
+  382  ip addr
+  383  ip route
+  384  ip route del 192.168.35.22 dev tap101.101 scope link
+  385  ip route del 192.168.36.22 dev tap102.102 scope link
+  386  ip route 192.168.37.22 dev tap103.103 scope link
+  387  ip route del 192.168.37.22 dev tap103.103 scope link
+  388  ip addr
+  389  ip link del tap101.101
+  390  ip link del tap102.102
+  391  ip link del tap103.103
+  392  ip addr
+  393  history
+
+
+Ubuntu supports VLANs out of the box but a userspace tool needs to be installed to create the VLAN aware interfaces.
+
+Scenario
+We have a router/firewall with two NICs one used to connect to the Internet (WAN) and the other to connect to the local network (LAN). We would like to beef up the security aspect of our site and introduce a Demilitarized Zone (DMZ). If this should be implemented without the use of VLANs we would have to buy a new switch and a third NIC for our router/firewall.
+
+Luckily the switch used supports 802.1q. The switch configuration is done by adding a new VLAN. How this is done should be documented in the switch documentation.
+
+Networks
+
+WAN 172.16.0.0/24
+LAN 192.168.0.0/24
+DMZ 10.0.0.0/24
+In the following steps we provide commands which you will have to enter in a terminal.
+
+Installation
+
+sudo apt-get install vlan
+Configuration
+1. Load the 8021q module into the kernel.
+
+sudo modprobe 8021q
+2. Create a new interface that is a member of a specific VLAN, VLAN id 10 is used in this example. Keep in mind you can only use physical interfaces as a base, creating VLAN's on virtual interfaces (i.e. eth0:1) will not work. We use the physical interface eth1 in this example. This command will add an additional interface next to the interfaces which have been configured already, so your existing configuration of eth1 will not be affected.
+
+sudo vconfig add eth1 10
+vconfig is deprecated and might be removed in the future, please migrate to ip(route2) as soon as possible! The ip(route2) replacement command is:
+
+sudo ip link add link eth1 name eth1.10 type vlan id 10
+3. Assign an address to the new interface.
+
+sudo ip addr add 10.0.0.1/24 dev eth1.10
+4. Starting the new interface.
+
+sudo ip link set up eth1.10
+Making it permanent
+To make this setup permanent, the following lines have to be added a couple of configuration files.
+
+1. Add the module to the kernel on boot:
+
+sudo su -c 'echo "8021q" >> /etc/modules'
+2. Create the interface and make it available when the system boots. Add the following lines to /etc/network/interfaces (change the values according to your scenario):
+
+auto eth1.10
+iface eth1.10 inet static
+    address 10.0.0.1
+    netmask 255.255.255.0
+    vlan-raw-device eth1
+
