@@ -1797,7 +1797,39 @@ static int do_execute_actions(struct datapath *dp, struct sk_buff *skb,
 
 ///////////////////////////////////////////////////////////////////
 
-接下来一是了解linux内核netfilter的实现，二是看ovs如何调用的netfilter，三是看ovs是否可以通过调研netfilter来实现ACL
+接下来一是了解linux内核netfilter的实现，二是看ovs如何调用的netfilter，三是看ovs是否可以通过调研netfilter来实现ACL——不需要，用流表drop就可以，ACL不需要conntrack，security group才需要conntrack
+
+根据aws的安全组和ACL的设计
+
+Security group connection tracking
+Your security groups use connection tracking to track information about traffic to and from the instance. Rules are applied based on the connection state of the traffic to determine if the traffic is allowed or denied. With this approach, security groups are stateful. This means that responses to inbound traffic are allowed to flow out of the instance regardless of outbound security group rules, and vice versa.
+安全组使用连接追踪，是因为对于流量是否通过，不仅仅基于安全组规则，也同时会根据连接状态。
+安全组是有状态的。
+从一个方向发送的流量的回复包是运行从另一个方向返回的，即便返回方向的安全组配置了不允许通过。
+As an example, suppose that you initiate a command such as netcat or similar to your instances from your home computer, and your inbound security group rules allow ICMP traffic. Information about the connection (including the port information) is tracked. Response traffic from the instance for the command is not tracked as a new request, but rather as an established connection, and is allowed to flow out of the instance, even if your outbound security group rules restrict outbound ICMP traffic.
+假设从你的笔记本电脑上通过netcat发送icmp包连接一个云内的虚拟机，入方向的安全组是允许icmp包的。出方向的安全组是不允许icmp包的。
+从笔记本电脑发送的icmp包会被安全组的连接追踪记录，返回的icmp包认为这是一个返回包，而不是一个新的主动发起的连接，因而出方向的安全组会放行。
+For protocols other than TCP, UDP, or ICMP, only the IP address and protocol number is tracked. If your instance sends traffic to another host, and the host sends the same type of traffic to your instance within 600 seconds, the security group for your instance accepts it regardless of inbound security group rules. The security group accepts it because it’s regarded as response traffic for the original traffic.
+只有TCP,UDP,ICMP这三个协议的连接追踪是会追踪真正的连接状态五元组。
+对于其他的协议，只追踪IP地址和端口，一个方向的网络包发过去之后，反方向的网络包只要在600s之内发送就可通过，安全组不管是不是真的是一个连接。
+When you change a security group rule, its tracked connections are not immediately interrupted. The security group continues to allow packets until existing connections time out. To ensure that traffic is immediately interrupted, or that all traffic is subject to firewall rules regardless of the tracking state, you can use a network ACL for your subnet. Network ACLs are stateless and therefore do not automatically allow response traffic. Adding a network ACL that blocks traffic in either direction breaks existing connections. For more information, see Network ACLs in the Amazon VPC User Guide.
+当修改一个安全组规则的时候，已经被track的连接并不会马上被关闭，而是要等连接超时后，才会关闭。
+这一点和Network ACL不同，ACL是无状态的，是不管连接状态的。对于ACL，如果只配置了一个方向的放行策略，没有配置另一个方向的，同样会被阻拦。
+ACL配置完毕后马上就起作用。
+
+Compare security groups and network ACLs
+
+The following table summarizes the basic differences between security groups and network ACLs.
+
+Security group                                                    | Network ACL
+Operates at the instance level                                    | Operates at the subnet level
+Applies to an instance only if it is associated with the instance |	Applies to all instances deployed in the associated subnet (providing an additional layer of defense if security group rules are too permissive)
+Supports allow rules only                                         | Supports allow rules and deny rules
+Evaluates all rules before deciding whether to allow traffic      | Evaluates rules in order, starting with the lowest numbered rule, when deciding whether to allow traffic
+Stateful: Return traffic is allowed, regardless of the rules      | Stateless: Return traffic must be explicitly allowed by the rules
+
+
+--------------------
 
 我们先来看linux内核netfilter的实现
 
