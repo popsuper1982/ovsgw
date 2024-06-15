@@ -150,6 +150,88 @@ ovs-ofctl add-flow sdmn_br "hard_timeout=0 idle_timeout=0 priority=1 table=0 dl_
 
 ovs-dpctl set-gateway-params ovs-system operation=1 param1=2,param2=3,param3=06:92:57:3f:6a:c8
 
+
+-----------------------
+
+核心流表
+
+# 第一次收到的包不管是入流量还是出流量都要到conntrack table里lookup里查找entry匹配-trk
+ovs-ofctl add-flow br-int 'table=0,priority=10,ip,ct_state=-trk,action=ct(nat,table=1)'
+# 出流量：去conntrack table里lookup里查询之后状态变为+trk，首包同时要匹配+new，对于其他-est-inv-rel状态，明确不匹配才可以commit到conntrack table
+ovs-ofctl add-flow br-int 'table=1,in_port=1,ip,ct_state=+trk+new-est-inv-rel,action=ct(nat(src=172.93.74.5-172.93.74.15:5000-50000),commit),mod_dl_src:xx:xx:xx:xx:xx:xx,mod_dl_dst:xx:xx:xx:xx:xx:xx,3'
+# 出流量：去conntrack table里lookup里查询之后状态变为+trk，非首包代表已经commit到conntrack table，要匹配+est，明确不匹配
+ovs-ofctl add-flow br-int 'table=1,in_port=1,ip,ct_state=+trk+est-new-inv-rel,action=mod_dl_src:xx:xx:xx:xx:xx:xx,mod_dl_dst:xx:xx:xx:xx:xx:xx,3'
+# 入流量：去conntrack table里lookup里查询之后状态变为+trk，不管是不是首包定匹配+est，明确不匹配-est-inv-rel状态
+ovs-ofctl add-flow br-int 'table=1,in_port=3,ip,ct_state=+trk+est-new-inv-rel,action=mod_dl_src:xx:xx:xx:xx:xx:xx,mod_dl_dst:xx:xx:xx:xx:xx:xx,1'
+
+环境准备
+
+#1、创建2个ns模拟虚拟机
+ip netns add ns1
+ip netns add ns2
+
+#2、创建2个网桥，ns连接在br-int
+ovs-vsctl add-br br-int
+ovs-vsctl add-br net-br
+ovs-vsctl add-port br-int vif_1 -- set Interface vif_1 type=internal
+ip link set vif_1 netns ns1
+ip netns exec ns1 ip link set dev vif_1 up
+ovs-vsctl add-port br-int vif_2 -- set Interface vif_2 type=internal
+ip link set vif_2 netns ns2
+ip netns exec ns2 ip link set dev vif_2 up
+
+#3、给vm配置ip
+ip netns exec ns1 ip addr add 192.168.1.102/24 dev vif_1
+ip netns exec ns2 ip addr add 192.168.1.1/24 dev vif_2
+ip netns exec ns1 ip link set lo up
+ip netns exec ns2 ip link set lo up
+
+#4、测试vm之间连通性
+ip netns exec ns1 ping -c 1 192.168.1.102
+ip netns exec ns1 ping -c 1 192.168.1.1
+
+#5、在网桥间创建patch口
+ovs-vsctl add-port br-int patch-ovs-0 -- set Interface patch-ovs-0 type=patch options:peer=patch-sw-1
+ovs-vsctl add-port net-br patch-sw-1 -- set Interface patch-sw-1 type=patch options:peer=patch-ovs-0
+
+#6、将物理网卡eth0添加到网桥net-br上，此时物理网卡eth0上的ip和路由全部消失
+ovs-vsctl add-port net-br eth0
+ifconfig anet-br 172.93.73.4/16 up
+route add default gw 172.93.1.1 dev net-br
+route add 172.93.0.0 dev anet-br
+ip addr flush dev eth0
+
+#7、添加流表
+NS1_MAC=ip netns exec ns1 ip a | grep ether | awk '{print $2}'
+NS2_MAC=ip netns exec ns2 ip a | grep ether | awk '{print $2}'
+NET_BR_MAC=ip a | grep net-br: -A1 | grep ether | awk '{print $2}'
+HOST_MAC="00:50:56:95:b0:b2"
+NS1_PORT=ovs-ofctl  show br-int | grep vif_1 | awk -F '(' '{print $1}' | awk '{print $NF}'
+NS2_PORT=ovs-ofctl  show br-int | grep vif_2 | awk -F '(' '{print $1}' | awk '{print $NF}'
+PATCH_PORT=ovs-ofctl  show br-int | grep patch-ovs | awk -F '(' '{print $1}' | awk '{print $NF}'
+ovs-ofctl add-flow br-int "table=0,priority=10,ip,ct_state=-trk,action=ct(nat,table=1)"
+ovs-ofctl add-flow br-int "table=1,in_port=${NS1_PORT},ip,ct_state=+trk+new,action=ct(nat(src=172.93.73.4-172.93.73.4:5000-50000),commit,exec(set_field:0x2->ct_label)),mod_dl_src:${NET_BR_MAC},mod_dl_dst:${HOST_MAC},${PATCH_PORT}"
+ovs-ofctl add-flow br-int "table=1,priority=10,in_port=${NS1_PORT},ip,ct_state=+trk+est,action=mod_dl_src:${NET_BR_MAC},mod_dl_dst:${HOST_MAC},${PATCH_PORT}"
+ovs-ofctl add-flow br-int "table=1,priority=1,ct_label=0x2,ip,ct_state=+trk+est,action=mod_dl_src:${NET_BR_MAC},mod_dl_dst:${NS1_MAC},${NS1_PORT}"
+
+# 8、在ns口抓包
+03:57:56.625643 b2:68:6b:f5:f5:bf > 00:50:56:95:59:53, ethertype IPv4 (0x0800), length 98: (tos 0x0, ttl 64, id 41522, offset 0, flags [DF], proto ICMP (1), length 84)
+192.168.1.102 > 172.93.74.28: ICMP echo request, id 1355, seq 9, length 64
+03:57:56.626220 00:50:56:95:59:53 > b2:68:6b:f5:f5:bf, ethertype IPv4 (0x0800), length 98: (tos 0x0, ttl 64, id 65244, offset 0, flags [none], proto ICMP (1), length 84)
+172.93.74.28 > 192.168.1.102: ICMP echo reply, id 1355, seq 9, length 64
+
+#9、在物理口抓包
+03:57:48.459408 00:50:56:95:59:53 > 00:50:56:95:b0:b2, ethertype IPv4 (0x0800), length 98: (tos 0x0, ttl 64, id 40494, offset 0, flags [DF], proto ICMP (1), length 84)
+172.93.73.4 > 172.93.74.28: ICMP echo request, id 15933, seq 1, length 64
+03:57:49.461041 00:50:56:95:b0:b2 > 00:50:56:95:59:53, ethertype IPv4 (0x0800), length 98: (tos 0x0, ttl 64, id 64042, offset 0, flags [none], proto ICMP (1), length 84)
+172.93.74.28 > 172.93.73.4: ICMP echo reply, id 15933, seq 2, length 64
+
+#10、查看CT表
+ovs-appctl dpctl/dump-conntrack -m | grep 172.93.74.28
+icmp,orig=(src=192.168.1.102,dst=172.93.74.28,id=2167,type=8,code=0),reply=(src=172.93.74.28,dst=172.93.73.4,id=8934,type=0,code=0),status=SEEN_REPLY|CONFIRMED|SRC_NAT|SRC_NAT_DONE,labels=0x1
+
+
+
 -----------------------
 
 调试

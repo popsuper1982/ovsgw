@@ -684,6 +684,290 @@ static int ovs_ct_init_labels(struct nf_conn *ct, struct sw_flow_key *key,
 
 从这里可以看出，ovs内核对于session的存储用的就是netfilter
 
+--------------------
+
+我们先来看linux内核netfilter的实现
+
+Netfilter 在四个 Hook 点对包进行跟踪：
+
+PRE_ROUTING 和 LOCAL_OUT ：调用 nf_conntrack_in() 开始连接跟踪， 正常情况下会创建一条新连接记录，然后将 conntrack entry 放到unconfirmed list。
+
+为什么是这两个 hook 点呢？因为它们都是新连接的第一个包最先达到的地方，
+
+PRE_ROUTING 是外部主动和本机建连时包最先到达的地方
+LOCAL_OUT 是本机主动和外部建连时包最先到达的地方
+
+POST_ROUTING 和 LOCAL_IN：调用 nf_conntrack_confirm() 将 nf_conntrack_in() 创建的连接移到 confirmed list。
+
+同样要问，为什么在这两个 hook 点呢？因为如果新连接的第一个包没有被丢弃，那这 是它们离开 netfilter 之前的最后 hook 点：
+
+外部主动和本机建连的包，如果在中间处理中没有被丢弃，LOCAL_IN 是其被送到应用（例如 nginx 服务）之前的最后 hook 点
+本机主动和外部建连的包，如果在中间处理中没有被丢弃，POST_ROUTING 是其离开主机时的最后 hook 点
+
+下面的代码可以看到这些 handler 是如何注册到 Netfilter hook 点的：
+
+// net/netfilter/nf_conntrack_proto.c
+
+/* Connection tracking may drop packets, but never alters them, so make it the first hook.  */
+static const struct nf_hook_ops ipv4_conntrack_ops[] = {
+    {
+        .hook        = ipv4_conntrack_in,       // 调用 nf_conntrack_in() 进入连接跟踪
+        .pf          = NFPROTO_IPV4,
+        .hooknum     = NF_INET_PRE_ROUTING,     // PRE_ROUTING hook 点
+        .priority    = NF_IP_PRI_CONNTRACK,
+    },
+    {
+        .hook        = ipv4_conntrack_local,    // 调用 nf_conntrack_in() 进入连接跟踪
+        .pf          = NFPROTO_IPV4,
+        .hooknum     = NF_INET_LOCAL_OUT,       // LOCAL_OUT hook 点
+        .priority    = NF_IP_PRI_CONNTRACK,
+    },
+    {
+        .hook        = ipv4_confirm,            // 调用 nf_conntrack_confirm()
+        .pf          = NFPROTO_IPV4,
+        .hooknum     = NF_INET_POST_ROUTING,    // POST_ROUTING hook 点
+        .priority    = NF_IP_PRI_CONNTRACK_CONFIRM,
+    },
+    {
+        .hook        = ipv4_confirm,            // 调用 nf_conntrack_confirm()
+        .pf          = NFPROTO_IPV4,
+        .hooknum     = NF_INET_LOCAL_IN,        // LOCAL_IN hook 点
+        .priority    = NF_IP_PRI_CONNTRACK_CONFIRM,
+    },
+};
+
+nf_conntrack_in() 是连接跟踪模块的核心。
+
+// net/netfilter/nf_conntrack_core.c
+
+unsigned int
+nf_conntrack_in(struct net *net, u_int8_t pf, unsigned int hooknum, struct sk_buff *skb)
+{
+  struct nf_conn *tmpl = nf_ct_get(skb, &ctinfo); // 获取 skb 对应的 conntrack_info 和连接记录
+  if (tmpl || ctinfo == IP_CT_UNTRACKED) {        // 如果记录存在，或者是不需要跟踪的类型
+      if ((tmpl && !nf_ct_is_template(tmpl)) || ctinfo == IP_CT_UNTRACKED) {
+          NF_CT_STAT_INC_ATOMIC(net, ignore);     // 无需跟踪的类型，增加 ignore 计数
+          return NF_ACCEPT;                       // 返回 NF_ACCEPT，继续后面的处理
+      }
+      skb->_nfct = 0;                             // 不属于 ignore 类型，计数器置零，准备后续处理
+  }
+
+  struct nf_conntrack_l4proto *l4proto = __nf_ct_l4proto_find(...);    // 提取协议相关的 L4 头信息
+
+  if (l4proto->error != NULL) {                   // skb 的完整性和合法性验证
+      if (l4proto->error(net, tmpl, skb, dataoff, pf, hooknum) <= 0) {
+          NF_CT_STAT_INC_ATOMIC(net, error);
+          NF_CT_STAT_INC_ATOMIC(net, invalid);
+          goto out;
+      }
+  }
+
+repeat:
+  // 开始连接跟踪：提取 tuple；创建新连接记录，或者更新已有连接的状态
+  resolve_normal_ct(net, tmpl, skb, ... l4proto);
+
+  l4proto->packet(ct, skb, dataoff, ctinfo); // 进行一些协议相关的处理，例如 UDP 会更新 timeout
+
+  if (ctinfo == IP_CT_ESTABLISHED_REPLY && !test_and_set_bit(IPS_SEEN_REPLY_BIT, &ct->status))
+      nf_conntrack_event_cache(IPCT_REPLY, ct);
+out:
+  if (tmpl)
+      nf_ct_put(tmpl); // 解除对连接记录 tmpl 的引用
+}
+
+大致流程：
+
+1.尝试获取这个 skb 对应的连接跟踪记录
+2.判断是否需要对这个包做连接跟踪，如果不需要，更新 ignore 计数（conntrack -S 能看到这个计数）， 返回 NF_ACCEPT；如果需要，就初始化这个 skb 的引用计数。
+3.从包的 L4 header 中提取信息，初始化协议相关的 struct nf_conntrack_l4proto {} 变量，其中包含了该协议的连接跟踪相关的回调方法。
+4.调用该协议的 error() 方法检查包的完整性、校验和等信息。
+5.调用 resolve_normal_ct() 开始连接跟踪，它会创建新 tuple，新 conntrack entry，或者更新已有连接的状态。
+6.调用该协议的 packet() 方法进行一些协议相关的处理，例如对于 UDP，如果 status bit 里面设置了 IPS_SEEN_REPLY 位，就会更新 timeout。timeout 大小和协 议相关，越小越越可以防止 DoS 攻击（DoS 的基本原理就是将机器的可用连接耗尽）
+
+/* On success, returns 0, sets skb->_nfct | ctinfo */
+static int
+resolve_normal_ct(struct nf_conn *tmpl,
+		  struct sk_buff *skb,
+		  unsigned int dataoff,
+		  u_int8_t protonum,
+		  const struct nf_hook_state *state)
+{
+	const struct nf_conntrack_zone *zone;
+	struct nf_conntrack_tuple tuple;
+	struct nf_conntrack_tuple_hash *h;
+	enum ip_conntrack_info ctinfo;
+	struct nf_conntrack_zone tmp;
+	struct nf_conn *ct;
+	u32 hash;
+
+	if (!nf_ct_get_tuple(skb, skb_network_offset(skb),
+			     dataoff, state->pf, protonum, state->net,
+			     &tuple)) {
+		pr_debug("Can't get tuple\n");
+		return 0;
+	}
+
+	/* look for tuple match */
+	zone = nf_ct_zone_tmpl(tmpl, skb, &tmp);
+	hash = hash_conntrack_raw(&tuple, state->net);
+	h = __nf_conntrack_find_get(state->net, zone, &tuple, hash);
+	if (!h) {
+		h = init_conntrack(state->net, tmpl, &tuple,
+				   skb, dataoff, hash);
+		if (!h)
+			return 0;
+		if (IS_ERR(h))
+			return PTR_ERR(h);
+	}
+	ct = nf_ct_tuplehash_to_ctrack(h);
+
+	/* It exists; we have (non-exclusive) reference. */
+	if (NF_CT_DIRECTION(h) == IP_CT_DIR_REPLY) {
+		ctinfo = IP_CT_ESTABLISHED_REPLY;
+	} else {
+		/* Once we've had two way comms, always ESTABLISHED. */
+		if (test_bit(IPS_SEEN_REPLY_BIT, &ct->status)) {
+			pr_debug("normal packet for %p\n", ct);
+			ctinfo = IP_CT_ESTABLISHED;
+		} else if (test_bit(IPS_EXPECTED_BIT, &ct->status)) {
+			pr_debug("related packet for %p\n", ct);
+			ctinfo = IP_CT_RELATED;
+		} else {
+			pr_debug("new packet for %p\n", ct);
+			ctinfo = IP_CT_NEW;
+		}
+	}
+	nf_ct_set(skb, ct, ctinfo);
+	return 0;
+}
+
+init_conntrack()：创建新连接记录
+
+如果连接不存在（flow 的第一个包），resolve_normal_ct() 会调用 init_conntrack ，后者进而会调用 new() 方法创建一个新的 conntrack entry。
+
+// include/net/netfilter/nf_conntrack_core.c
+// Allocate a new conntrack
+static noinline struct nf_conntrack_tuple_hash *
+init_conntrack(struct net *net, struct nf_conn *tmpl,
+           const struct nf_conntrack_tuple *tuple,
+           const struct nf_conntrack_l4proto *l4proto,
+           struct sk_buff *skb, unsigned int dataoff, u32 hash)
+{
+    struct nf_conn *ct;
+
+    // 从 conntrack table 中分配一个 entry，如果哈希表满了，会在内核日志中打印
+    // "nf_conntrack: table full, dropping packet" 信息，通过 `dmesg -T` 能看到
+    ct = __nf_conntrack_alloc(net, zone, tuple, &repl_tuple, GFP_ATOMIC, hash);
+
+    l4proto->new(ct, skb, dataoff); // 协议相关的方法
+
+    local_bh_disable();             // 关闭软中断
+    if (net->ct.expect_count) {
+        exp = nf_ct_find_expectation(net, zone, tuple);
+        if (exp) {
+            /* Welcome, Mr. Bond.  We've been expecting you... */
+            __set_bit(IPS_EXPECTED_BIT, &ct->status);
+
+            /* exp->master safe, refcnt bumped in nf_ct_find_expectation */
+            ct->master = exp->master;
+            ct->mark = exp->master->mark;
+            ct->secmark = exp->master->secmark;
+            NF_CT_STAT_INC(net, expect_new);
+        }
+    }
+
+    /* Now it is inserted into the unconfirmed list, bump refcount */
+    // 至此这个新的 conntrack entry 已经被插入 unconfirmed list
+    nf_conntrack_get(&ct->ct_general);
+    nf_ct_add_to_unconfirmed_list(ct);
+
+    local_bh_enable();              // 重新打开软中断
+
+    if (exp) {
+        if (exp->expectfn)
+            exp->expectfn(ct, exp);
+        nf_ct_expect_put(exp);
+    }
+
+    return &ct->tuplehash[IP_CT_DIR_ORIGINAL];
+}
+
+每种协议需要实现自己的 l4proto->new() 方法，代码见：net/netfilter/nf_conntrack_proto_*.c。 例如 TCP 协议对应的 new() 方法是：
+
+// net/netfilter/nf_conntrack_proto_tcp.c
+
+/* Called when a new connection for this protocol found. */
+static bool tcp_new(struct nf_conn *ct, const struct sk_buff *skb, unsigned int dataoff)
+{
+    if (new_state == TCP_CONNTRACK_SYN_SENT) {
+        memset(&ct->proto.tcp, 0, sizeof(ct->proto.tcp));
+        /* SYN packet */
+        ct->proto.tcp.seen[0].td_end = segment_seq_plus_len(ntohl(th->seq), skb->len, dataoff, th);
+        ct->proto.tcp.seen[0].td_maxwin = ntohs(th->window);
+        ...
+}
+
+如果当前包会影响后面包的状态判断，init_conntrack() 会设置 struct nf_conn 的 master 字段。面向连接的协议会用到这个特性，例如 TCP。
+
+nf_conntrack_confirm()：确认包没有被丢弃
+
+nf_conntrack_in() 创建的新 conntrack entry 会插入到一个 未确认连接（unconfirmed connection）列表。
+
+如果这个包之后没有被丢弃，那它在经过POST_ROUTING时会被nf_conntrack_confirm()方法处理，原理我们在分析过了 3.6 节的开头分析过了。nf_conntrack_confirm()完成之后，状态就变为了IPS_CONFIRMED，并且连接记录从未确认列表移到正常的列表。
+
+之所以把创建一个新 entry 的过程分为创建（new）和确认（confirm）两个阶段 ，是因为包在经过 nf_conntrack_in() 之后，到达 nf_conntrack_confirm() 之前 ，可能会被内核丢弃。这样会导致系统残留大量的半连接状态记录，在性能和安全性上都 是很大问题。分为两步之后，可以加快半连接状态 conntrack entry 的 GC。
+
+// include/net/netfilter/nf_conntrack_core.h
+
+/* Confirm a connection: returns NF_DROP if packet must be dropped. */
+static inline int nf_conntrack_confirm(struct sk_buff *skb)
+{
+    struct nf_conn *ct = (struct nf_conn *)skb_nfct(skb);
+    int ret = NF_ACCEPT;
+
+    if (ct) {
+        if (!nf_ct_is_confirmed(ct))
+            ret = __nf_conntrack_confirm(skb);
+        if (likely(ret == NF_ACCEPT))
+            nf_ct_deliver_cached_events(ct);
+    }
+    return ret;
+}
+
+confirm 逻辑，省略了各种错误处理逻辑：
+
+// net/netfilter/nf_conntrack_core.c
+
+/* Confirm a connection given skb; places it in hash table */
+int
+__nf_conntrack_confirm(struct sk_buff *skb)
+{
+    struct nf_conn *ct;
+    ct = nf_ct_get(skb, &ctinfo);
+
+    local_bh_disable();               // 关闭软中断
+
+    hash = *(unsigned long *)&ct->tuplehash[IP_CT_DIR_REPLY].hnnode.pprev;
+    reply_hash = hash_conntrack(net, &ct->tuplehash[IP_CT_DIR_REPLY].tuple);
+
+    ct->timeout += nfct_time_stamp;   // 更新连接超时时间，超时后会被 GC
+    atomic_inc(&ct->ct_general.use);  // 设置连接引用计数？
+    ct->status |= IPS_CONFIRMED;      // 设置连接状态为 confirmed
+
+    __nf_conntrack_hash_insert(ct, hash, reply_hash);  // 插入到连接跟踪哈希表
+
+    local_bh_enable();                // 重新打开软中断
+
+    nf_conntrack_event_cache(master_ct(ct) ? IPCT_RELATED : IPCT_NEW, ct);
+    return NF_ACCEPT;
+}
+
+ovs就是直接调用nf_conntrack_in和nf_conntrack_confirm进行连接追踪的
+/////////////////////////////////
+
+
+
+
 接下来我们来看清理线程如何做的
 
 创建datapath时，会启动专门的线程 clean_thread_main 清除超期的conntrack表项，这里是清理DPDK模式的用户态的表项的
@@ -1827,287 +2111,6 @@ Applies to an instance only if it is associated with the instance |	Applies to a
 Supports allow rules only                                         | Supports allow rules and deny rules
 Evaluates all rules before deciding whether to allow traffic      | Evaluates rules in order, starting with the lowest numbered rule, when deciding whether to allow traffic
 Stateful: Return traffic is allowed, regardless of the rules      | Stateless: Return traffic must be explicitly allowed by the rules
-
-
---------------------
-
-我们先来看linux内核netfilter的实现
-
-Netfilter 在四个 Hook 点对包进行跟踪：
-
-PRE_ROUTING 和 LOCAL_OUT ：调用 nf_conntrack_in() 开始连接跟踪， 正常情况下会创建一条新连接记录，然后将 conntrack entry 放到unconfirmed list。
-
-为什么是这两个 hook 点呢？因为它们都是新连接的第一个包最先达到的地方，
-
-PRE_ROUTING 是外部主动和本机建连时包最先到达的地方
-LOCAL_OUT 是本机主动和外部建连时包最先到达的地方
-
-POST_ROUTING 和 LOCAL_IN：调用 nf_conntrack_confirm() 将 nf_conntrack_in() 创建的连接移到 confirmed list。
-
-同样要问，为什么在这两个 hook 点呢？因为如果新连接的第一个包没有被丢弃，那这 是它们离开 netfilter 之前的最后 hook 点：
-
-外部主动和本机建连的包，如果在中间处理中没有被丢弃，LOCAL_IN 是其被送到应用（例如 nginx 服务）之前的最后 hook 点
-本机主动和外部建连的包，如果在中间处理中没有被丢弃，POST_ROUTING 是其离开主机时的最后 hook 点
-
-下面的代码可以看到这些 handler 是如何注册到 Netfilter hook 点的：
-
-// net/netfilter/nf_conntrack_proto.c
-
-/* Connection tracking may drop packets, but never alters them, so make it the first hook.  */
-static const struct nf_hook_ops ipv4_conntrack_ops[] = {
-    {
-        .hook        = ipv4_conntrack_in,       // 调用 nf_conntrack_in() 进入连接跟踪
-        .pf          = NFPROTO_IPV4,
-        .hooknum     = NF_INET_PRE_ROUTING,     // PRE_ROUTING hook 点
-        .priority    = NF_IP_PRI_CONNTRACK,
-    },
-    {
-        .hook        = ipv4_conntrack_local,    // 调用 nf_conntrack_in() 进入连接跟踪
-        .pf          = NFPROTO_IPV4,
-        .hooknum     = NF_INET_LOCAL_OUT,       // LOCAL_OUT hook 点
-        .priority    = NF_IP_PRI_CONNTRACK,
-    },
-    {
-        .hook        = ipv4_confirm,            // 调用 nf_conntrack_confirm()
-        .pf          = NFPROTO_IPV4,
-        .hooknum     = NF_INET_POST_ROUTING,    // POST_ROUTING hook 点
-        .priority    = NF_IP_PRI_CONNTRACK_CONFIRM,
-    },
-    {
-        .hook        = ipv4_confirm,            // 调用 nf_conntrack_confirm()
-        .pf          = NFPROTO_IPV4,
-        .hooknum     = NF_INET_LOCAL_IN,        // LOCAL_IN hook 点
-        .priority    = NF_IP_PRI_CONNTRACK_CONFIRM,
-    },
-};
-
-nf_conntrack_in() 是连接跟踪模块的核心。
-
-// net/netfilter/nf_conntrack_core.c
-
-unsigned int
-nf_conntrack_in(struct net *net, u_int8_t pf, unsigned int hooknum, struct sk_buff *skb)
-{
-  struct nf_conn *tmpl = nf_ct_get(skb, &ctinfo); // 获取 skb 对应的 conntrack_info 和连接记录
-  if (tmpl || ctinfo == IP_CT_UNTRACKED) {        // 如果记录存在，或者是不需要跟踪的类型
-      if ((tmpl && !nf_ct_is_template(tmpl)) || ctinfo == IP_CT_UNTRACKED) {
-          NF_CT_STAT_INC_ATOMIC(net, ignore);     // 无需跟踪的类型，增加 ignore 计数
-          return NF_ACCEPT;                       // 返回 NF_ACCEPT，继续后面的处理
-      }
-      skb->_nfct = 0;                             // 不属于 ignore 类型，计数器置零，准备后续处理
-  }
-
-  struct nf_conntrack_l4proto *l4proto = __nf_ct_l4proto_find(...);    // 提取协议相关的 L4 头信息
-
-  if (l4proto->error != NULL) {                   // skb 的完整性和合法性验证
-      if (l4proto->error(net, tmpl, skb, dataoff, pf, hooknum) <= 0) {
-          NF_CT_STAT_INC_ATOMIC(net, error);
-          NF_CT_STAT_INC_ATOMIC(net, invalid);
-          goto out;
-      }
-  }
-
-repeat:
-  // 开始连接跟踪：提取 tuple；创建新连接记录，或者更新已有连接的状态
-  resolve_normal_ct(net, tmpl, skb, ... l4proto);
-
-  l4proto->packet(ct, skb, dataoff, ctinfo); // 进行一些协议相关的处理，例如 UDP 会更新 timeout
-
-  if (ctinfo == IP_CT_ESTABLISHED_REPLY && !test_and_set_bit(IPS_SEEN_REPLY_BIT, &ct->status))
-      nf_conntrack_event_cache(IPCT_REPLY, ct);
-out:
-  if (tmpl)
-      nf_ct_put(tmpl); // 解除对连接记录 tmpl 的引用
-}
-
-大致流程：
-
-1.尝试获取这个 skb 对应的连接跟踪记录
-2.判断是否需要对这个包做连接跟踪，如果不需要，更新 ignore 计数（conntrack -S 能看到这个计数）， 返回 NF_ACCEPT；如果需要，就初始化这个 skb 的引用计数。
-3.从包的 L4 header 中提取信息，初始化协议相关的 struct nf_conntrack_l4proto {} 变量，其中包含了该协议的连接跟踪相关的回调方法。
-4.调用该协议的 error() 方法检查包的完整性、校验和等信息。
-5.调用 resolve_normal_ct() 开始连接跟踪，它会创建新 tuple，新 conntrack entry，或者更新已有连接的状态。
-6.调用该协议的 packet() 方法进行一些协议相关的处理，例如对于 UDP，如果 status bit 里面设置了 IPS_SEEN_REPLY 位，就会更新 timeout。timeout 大小和协 议相关，越小越越可以防止 DoS 攻击（DoS 的基本原理就是将机器的可用连接耗尽）
-
-/* On success, returns 0, sets skb->_nfct | ctinfo */
-static int
-resolve_normal_ct(struct nf_conn *tmpl,
-		  struct sk_buff *skb,
-		  unsigned int dataoff,
-		  u_int8_t protonum,
-		  const struct nf_hook_state *state)
-{
-	const struct nf_conntrack_zone *zone;
-	struct nf_conntrack_tuple tuple;
-	struct nf_conntrack_tuple_hash *h;
-	enum ip_conntrack_info ctinfo;
-	struct nf_conntrack_zone tmp;
-	struct nf_conn *ct;
-	u32 hash;
-
-	if (!nf_ct_get_tuple(skb, skb_network_offset(skb),
-			     dataoff, state->pf, protonum, state->net,
-			     &tuple)) {
-		pr_debug("Can't get tuple\n");
-		return 0;
-	}
-
-	/* look for tuple match */
-	zone = nf_ct_zone_tmpl(tmpl, skb, &tmp);
-	hash = hash_conntrack_raw(&tuple, state->net);
-	h = __nf_conntrack_find_get(state->net, zone, &tuple, hash);
-	if (!h) {
-		h = init_conntrack(state->net, tmpl, &tuple,
-				   skb, dataoff, hash);
-		if (!h)
-			return 0;
-		if (IS_ERR(h))
-			return PTR_ERR(h);
-	}
-	ct = nf_ct_tuplehash_to_ctrack(h);
-
-	/* It exists; we have (non-exclusive) reference. */
-	if (NF_CT_DIRECTION(h) == IP_CT_DIR_REPLY) {
-		ctinfo = IP_CT_ESTABLISHED_REPLY;
-	} else {
-		/* Once we've had two way comms, always ESTABLISHED. */
-		if (test_bit(IPS_SEEN_REPLY_BIT, &ct->status)) {
-			pr_debug("normal packet for %p\n", ct);
-			ctinfo = IP_CT_ESTABLISHED;
-		} else if (test_bit(IPS_EXPECTED_BIT, &ct->status)) {
-			pr_debug("related packet for %p\n", ct);
-			ctinfo = IP_CT_RELATED;
-		} else {
-			pr_debug("new packet for %p\n", ct);
-			ctinfo = IP_CT_NEW;
-		}
-	}
-	nf_ct_set(skb, ct, ctinfo);
-	return 0;
-}
-
-init_conntrack()：创建新连接记录
-
-如果连接不存在（flow 的第一个包），resolve_normal_ct() 会调用 init_conntrack ，后者进而会调用 new() 方法创建一个新的 conntrack entry。
-
-// include/net/netfilter/nf_conntrack_core.c
-// Allocate a new conntrack
-static noinline struct nf_conntrack_tuple_hash *
-init_conntrack(struct net *net, struct nf_conn *tmpl,
-           const struct nf_conntrack_tuple *tuple,
-           const struct nf_conntrack_l4proto *l4proto,
-           struct sk_buff *skb, unsigned int dataoff, u32 hash)
-{
-    struct nf_conn *ct;
-
-    // 从 conntrack table 中分配一个 entry，如果哈希表满了，会在内核日志中打印
-    // "nf_conntrack: table full, dropping packet" 信息，通过 `dmesg -T` 能看到
-    ct = __nf_conntrack_alloc(net, zone, tuple, &repl_tuple, GFP_ATOMIC, hash);
-
-    l4proto->new(ct, skb, dataoff); // 协议相关的方法
-
-    local_bh_disable();             // 关闭软中断
-    if (net->ct.expect_count) {
-        exp = nf_ct_find_expectation(net, zone, tuple);
-        if (exp) {
-            /* Welcome, Mr. Bond.  We've been expecting you... */
-            __set_bit(IPS_EXPECTED_BIT, &ct->status);
-
-            /* exp->master safe, refcnt bumped in nf_ct_find_expectation */
-            ct->master = exp->master;
-            ct->mark = exp->master->mark;
-            ct->secmark = exp->master->secmark;
-            NF_CT_STAT_INC(net, expect_new);
-        }
-    }
-
-    /* Now it is inserted into the unconfirmed list, bump refcount */
-    // 至此这个新的 conntrack entry 已经被插入 unconfirmed list
-    nf_conntrack_get(&ct->ct_general);
-    nf_ct_add_to_unconfirmed_list(ct);
-
-    local_bh_enable();              // 重新打开软中断
-
-    if (exp) {
-        if (exp->expectfn)
-            exp->expectfn(ct, exp);
-        nf_ct_expect_put(exp);
-    }
-
-    return &ct->tuplehash[IP_CT_DIR_ORIGINAL];
-}
-
-每种协议需要实现自己的 l4proto->new() 方法，代码见：net/netfilter/nf_conntrack_proto_*.c。 例如 TCP 协议对应的 new() 方法是：
-
-// net/netfilter/nf_conntrack_proto_tcp.c
-
-/* Called when a new connection for this protocol found. */
-static bool tcp_new(struct nf_conn *ct, const struct sk_buff *skb, unsigned int dataoff)
-{
-    if (new_state == TCP_CONNTRACK_SYN_SENT) {
-        memset(&ct->proto.tcp, 0, sizeof(ct->proto.tcp));
-        /* SYN packet */
-        ct->proto.tcp.seen[0].td_end = segment_seq_plus_len(ntohl(th->seq), skb->len, dataoff, th);
-        ct->proto.tcp.seen[0].td_maxwin = ntohs(th->window);
-        ...
-}
-
-如果当前包会影响后面包的状态判断，init_conntrack() 会设置 struct nf_conn 的 master 字段。面向连接的协议会用到这个特性，例如 TCP。
-
-nf_conntrack_confirm()：确认包没有被丢弃
-
-nf_conntrack_in() 创建的新 conntrack entry 会插入到一个 未确认连接（unconfirmed connection）列表。
-
-如果这个包之后没有被丢弃，那它在经过POST_ROUTING时会被nf_conntrack_confirm()方法处理，原理我们在分析过了 3.6 节的开头分析过了。nf_conntrack_confirm()完成之后，状态就变为了IPS_CONFIRMED，并且连接记录从未确认列表移到正常的列表。
-
-之所以把创建一个新 entry 的过程分为创建（new）和确认（confirm）两个阶段 ，是因为包在经过 nf_conntrack_in() 之后，到达 nf_conntrack_confirm() 之前 ，可能会被内核丢弃。这样会导致系统残留大量的半连接状态记录，在性能和安全性上都 是很大问题。分为两步之后，可以加快半连接状态 conntrack entry 的 GC。
-
-// include/net/netfilter/nf_conntrack_core.h
-
-/* Confirm a connection: returns NF_DROP if packet must be dropped. */
-static inline int nf_conntrack_confirm(struct sk_buff *skb)
-{
-    struct nf_conn *ct = (struct nf_conn *)skb_nfct(skb);
-    int ret = NF_ACCEPT;
-
-    if (ct) {
-        if (!nf_ct_is_confirmed(ct))
-            ret = __nf_conntrack_confirm(skb);
-        if (likely(ret == NF_ACCEPT))
-            nf_ct_deliver_cached_events(ct);
-    }
-    return ret;
-}
-
-confirm 逻辑，省略了各种错误处理逻辑：
-
-// net/netfilter/nf_conntrack_core.c
-
-/* Confirm a connection given skb; places it in hash table */
-int
-__nf_conntrack_confirm(struct sk_buff *skb)
-{
-    struct nf_conn *ct;
-    ct = nf_ct_get(skb, &ctinfo);
-
-    local_bh_disable();               // 关闭软中断
-
-    hash = *(unsigned long *)&ct->tuplehash[IP_CT_DIR_REPLY].hnnode.pprev;
-    reply_hash = hash_conntrack(net, &ct->tuplehash[IP_CT_DIR_REPLY].tuple);
-
-    ct->timeout += nfct_time_stamp;   // 更新连接超时时间，超时后会被 GC
-    atomic_inc(&ct->ct_general.use);  // 设置连接引用计数？
-    ct->status |= IPS_CONFIRMED;      // 设置连接状态为 confirmed
-
-    __nf_conntrack_hash_insert(ct, hash, reply_hash);  // 插入到连接跟踪哈希表
-
-    local_bh_enable();                // 重新打开软中断
-
-    nf_conntrack_event_cache(master_ct(ct) ? IPCT_RELATED : IPCT_NEW, ct);
-    return NF_ACCEPT;
-}
-
-ovs就是直接调用nf_conntrack_in和nf_conntrack_confirm进行连接追踪的
 
 ///////////////
 
